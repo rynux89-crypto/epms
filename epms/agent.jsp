@@ -53,6 +53,13 @@ private String trimToNull(String s) {
     return t.isEmpty() ? null : t;
 }
 
+private String normalizeOllamaUrl(String s) {
+    String t = trimToNull(s);
+    if (t == null) return null;
+    while (t.endsWith("/")) t = t.substring(0, t.length() - 1);
+    return t;
+}
+
 private Integer parsePositiveInt(String s) {
     if (s == null) return null;
     try {
@@ -1854,6 +1861,7 @@ String ollamaUrl = System.getenv("OLLAMA_URL");
 if (ollamaUrl == null || ollamaUrl.isEmpty()) {
     ollamaUrl = "http://localhost:11434";
 }
+ollamaUrl = normalizeOllamaUrl(ollamaUrl);
 
 String model = System.getenv("OLLAMA_MODEL");
 if (model == null || model.isEmpty()) {
@@ -1864,6 +1872,8 @@ if (coderModel == null || coderModel.isEmpty()) {
     coderModel = "qwen2.5-coder:7b";
 }
 Properties modelConfig = loadAgentModelConfig(application);
+String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
+if (configuredOllamaUrl != null) ollamaUrl = configuredOllamaUrl;
 String configuredModel = trimToNull(modelConfig.getProperty("model"));
 String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
 if (configuredModel != null) model = configuredModel;

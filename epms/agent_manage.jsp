@@ -32,6 +32,13 @@ private String esc(String s) {
             .replace("\"", "&quot;");
 }
 
+private String normalizeOllamaUrl(String s) {
+    String t = trimToNull(s);
+    if (t == null) return null;
+    while (t.endsWith("/")) t = t.substring(0, t.length() - 1);
+    return t;
+}
+
 private File getModelConfigFile(javax.servlet.ServletContext app) {
     if (app == null) return null;
     String epmsPath = app.getRealPath("/epms");
@@ -51,10 +58,11 @@ private Properties loadModelConfig(javax.servlet.ServletContext app) {
     return p;
 }
 
-private void saveModelConfig(javax.servlet.ServletContext app, String model, String coderModel, int schemaCacheTtlMinutes, int ollamaConnectTimeoutSeconds, int ollamaReadTimeoutSeconds) throws Exception {
+private void saveModelConfig(javax.servlet.ServletContext app, String ollamaUrl, String model, String coderModel, int schemaCacheTtlMinutes, int ollamaConnectTimeoutSeconds, int ollamaReadTimeoutSeconds) throws Exception {
     File file = getModelConfigFile(app);
     if (file == null) throw new IOException("Config path unavailable");
     Properties p = new Properties();
+    p.setProperty("ollama_url", ollamaUrl);
     p.setProperty("model", model);
     p.setProperty("coder_model", coderModel);
     p.setProperty("schema_cache_ttl_minutes", String.valueOf(schemaCacheTtlMinutes));
@@ -97,8 +105,10 @@ private List<String> fetchOllamaModels(String ollamaUrl) throws Exception {
 }
 %>
 <%
-String ollamaUrl = System.getenv("OLLAMA_URL");
-if (ollamaUrl == null || ollamaUrl.isEmpty()) ollamaUrl = "http://localhost:11434";
+String envOllamaUrl = System.getenv("OLLAMA_URL");
+if (envOllamaUrl == null || envOllamaUrl.isEmpty()) envOllamaUrl = "http://localhost:11434";
+envOllamaUrl = normalizeOllamaUrl(envOllamaUrl);
+String ollamaUrl = envOllamaUrl;
 
 String envModel = System.getenv("OLLAMA_MODEL");
 if (envModel == null || envModel.isEmpty()) envModel = "qwen2.5:14b";
@@ -106,6 +116,8 @@ String envCoderModel = System.getenv("OLLAMA_MODEL_CODER");
 if (envCoderModel == null || envCoderModel.isEmpty()) envCoderModel = "qwen2.5-coder:7b";
 
 Properties modelConfig = loadModelConfig(application);
+String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
+if (configuredOllamaUrl != null) ollamaUrl = configuredOllamaUrl;
 String selectedModel = trimToNull(modelConfig.getProperty("model"));
 String selectedCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
 Integer selectedSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes")));
@@ -135,6 +147,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             if (!file.delete()) {
                 errorMsg = "설정 파일 삭제 실패: " + file.getAbsolutePath();
             } else {
+                ollamaUrl = envOllamaUrl;
                 selectedModel = envModel;
                 selectedCoderModel = envCoderModel;
                 selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
@@ -143,6 +156,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                 successMsg = "모델 설정을 기본값(환경변수)으로 되돌렸습니다. 즉시 반영됩니다.";
             }
         } else {
+            ollamaUrl = envOllamaUrl;
             selectedModel = envModel;
             selectedCoderModel = envCoderModel;
             selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
@@ -151,13 +165,23 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             successMsg = "이미 기본값(환경변수) 상태입니다.";
         }
     } else {
+        String nextOllamaUrl = normalizeOllamaUrl(request.getParameter("ollama_url"));
         String nextModel = trimToNull(request.getParameter("model"));
         String nextCoderModel = trimToNull(request.getParameter("coder_model"));
         Integer nextSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(request.getParameter("schema_cache_ttl_minutes")));
         Integer nextConnectTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_connect_timeout_seconds")));
         Integer nextReadTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_read_timeout_seconds")));
-        if (nextModel == null || nextCoderModel == null || nextSchemaCacheTtlMinutes == null || nextConnectTimeoutSeconds == null || nextReadTimeoutSeconds == null) {
+        if (nextOllamaUrl != null && !nextOllamaUrl.equals(ollamaUrl)) {
+            try {
+                models = fetchOllamaModels(nextOllamaUrl);
+            } catch (Exception e) {
+                errorMsg = "Ollama model list fetch failed: " + e.getMessage();
+            }
+        }
+        if (nextOllamaUrl == null || nextModel == null || nextCoderModel == null || nextSchemaCacheTtlMinutes == null || nextConnectTimeoutSeconds == null || nextReadTimeoutSeconds == null) {
             errorMsg = "모델, 스키마 캐시 시간, 타임아웃을 모두 입력해 주세요.";
+        } else if (!nextOllamaUrl.startsWith("http://") && !nextOllamaUrl.startsWith("https://")) {
+            errorMsg = "Ollama URL은 http:// 또는 https://로 시작해야 합니다.";
         } else if (nextSchemaCacheTtlMinutes.intValue() < 1 || nextSchemaCacheTtlMinutes.intValue() > 1440) {
             errorMsg = "스키마 캐시 시간은 1~1440분으로 입력해 주세요.";
         } else if (nextConnectTimeoutSeconds.intValue() < 1 || nextConnectTimeoutSeconds.intValue() > 60) {
@@ -170,6 +194,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             try {
                 saveModelConfig(
                     application,
+                    nextOllamaUrl,
                     nextModel,
                     nextCoderModel,
                     nextSchemaCacheTtlMinutes.intValue(),
@@ -181,6 +206,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                 selectedSchemaCacheTtlMinutes = nextSchemaCacheTtlMinutes;
                 selectedConnectTimeoutSeconds = nextConnectTimeoutSeconds;
                 selectedReadTimeoutSeconds = nextReadTimeoutSeconds;
+                ollamaUrl = nextOllamaUrl;
                 successMsg = "저장 완료: agent.jsp에 즉시 적용됩니다.";
             } catch (Exception e) {
                 errorMsg = "저장 실패: " + e.getMessage();
@@ -326,6 +352,13 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
 
         <form method="post">
             <div class="grid">
+                <label class="label" for="ollama_url">Ollama URL</label>
+                <input id="ollama_url"
+                       name="ollama_url"
+                       type="text"
+                       value="<%= esc(ollamaUrl) %>"
+                       required
+                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
                 <label class="label" for="model">대화 모델</label>
                 <select id="model" name="model" required>
                     <% for (String m : models) { %>
