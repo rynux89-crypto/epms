@@ -1,0 +1,269 @@
+:root{
+  --bg:#f4f6fb;
+  --card:#ffffff;
+  --bd:#e9edf5;
+  --txt:#1f2a37;
+  --muted:#6b7280;
+  --shadow: 0 10px 24px rgba(15,23,42,.08);
+  --radius:16px;
+}
+
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+               "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  background:var(--bg);
+  color:var(--txt);
+}
+
+/* 공통 유틸 */
+.hidden{ display:none !important; }
+
+.page{
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 16px 16px 24px;
+}
+
+/* 상단바 */
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding: 10px 8px 16px;
+}
+
+.title{
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.controls{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.ctl{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,.65);
+  border:1px solid var(--bd);
+  border-radius: 999px;
+}
+
+.ctl span{
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+select{
+  border:1px solid var(--bd);
+  border-radius: 10px;
+  padding: 6px 8px;
+  background:#fff;
+  outline:none;
+}
+
+.btn{
+  border:1px solid var(--bd);
+  background:#fff;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor:pointer;
+}
+.btn:hover{ filter:brightness(.98); }
+
+.last-update{
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+  padding-left: 6px;
+}
+
+/* 레이아웃 */
+.grid{
+  display:grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr) minmax(0, 0.9fr);
+  gap: 14px;
+}
+.grid > *,.col,.card,.card-body,.chart-pad,.chart{ min-width:0; }
+
+
+/* grid/flex 아이템이 줄어들 수 있게(오른쪽 컬럼 밀림 방지) */
+.grid > *{ min-width:0; }
+.col{ min-width:0; }
+.card{ min-width:0; }
+.card-body{ min-width:0; }
+.chart-pad{ min-width:0; }
+.chart{ min-width:0; }
+
+.col{
+  display:flex;
+  flex-direction:column;
+  gap: 14px;
+}
+
+/* 카드 공통 */
+.card{
+  background: var(--card);
+  border:1px solid var(--bd);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  min-height: 160px;
+}
+
+.card-head{
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--bd);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+}
+
+.card-title{
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+}
+
+/* ✅ ECharts 안정화: card-body에는 padding을 주지 않는다 */
+.card-body{
+  flex:1;
+  position: relative; /* no-data overlay */
+  padding: 0;
+}
+
+/* ✅ 차트 주위 여백은 래퍼에 준다 */
+.chart-pad{
+  height:100%;
+  padding: 10px 12px 14px;
+}
+
+.chart{
+  width:100%;
+  height:100%;
+  min-height: 160px;
+}
+
+/* 높이 통일 */
+.h-sm{ height: 220px; }
+.h-md{ height: 340px; }
+.h-lg{ height: 420px; }
+
+/* 오른쪽 카드(숨김은 .hidden으로 통일) */
+.right-card{
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* 파이 카드: 위 차트/아래 테이블 */
+.pie-wrap{
+  display:flex;
+  flex-direction:column;
+  height:100%;
+}
+
+/* pie-wrap 안에서 차트 영역이 남는 높이를 자동으로 차지 */
+.pie-wrap .chart-pad{
+  flex: 1;
+  min-height: 0;
+}
+
+#myChart4_table.pie-data-table{
+  flex: 1 1 auto;     
+  max-height: none;
+  overflow: visible;
+}
+
+.card:has(#myChart4) .chart-pad{
+  flex: 1 1 auto;       /* ✅ 차트가 남는 높이를 자동으로 먹음 */
+  min-height: 260px;    /* ✅ 차트 최소 높이 보장(원하는 값으로) */
+}
+.pie-wrap .chart{ min-height:0; }
+
+.chart-pie{
+  width:100%;
+  height: auto;
+  min-height: 240px; 
+  position: relative;
+}
+
+/* 테이블 */
+.pie-data-table{
+  flex:1;
+  overflow:auto;
+  border-top: 1px solid var(--bd);
+  padding: 6px 12px 10px; /* table 영역만 padding */
+}
+
+/* no-data overlay (canvas DOM을 건드리지 않음) */
+.no-data{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#9aa0a6;
+  font-weight:800;
+  font-size:14px;
+  pointer-events:none;
+}
+
+/* 표 스타일 */
+.data-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size: 13px;
+}
+.data-table th,
+.data-table td{
+  padding: 8px 6px;
+  border-bottom:1px solid var(--bd);
+}
+.data-table th{
+  text-align:left;
+  font-weight: 900;
+  color:#111827;
+}
+.data-table td{ color:#111827; }
+
+.data-table .total-row td{
+  font-weight: 900;
+  color:#d32f2f;
+}
+
+.spacer-row{
+  height: 10px;
+  background: transparent;
+  border:0;
+}
+
+/* 반응형 */
+@media (max-width: 1200px){
+  .grid{ grid-template-columns: 1fr; }
+  .h-sm,.h-md,.h-lg{ height: 320px; }
+  .chart-pie{ height: 260px; min-height: 260px; }
+}
+
+/* 푸터 */
+footer{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding: 10px;
+  font-size: 14px;
+  color: #555;
+}

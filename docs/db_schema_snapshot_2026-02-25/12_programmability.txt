@@ -1,0 +1,5 @@
+﻿ROUTINE_SCHEMA|ROUTINE_NAME|ROUTINE_TYPE
+--------------|------------|------------
+dbo|sp_aggregate_daily_measurements|PROCEDURE
+dbo|sp_aggregate_monthly_measurements|PROCEDURE
+dbo|sp_aggregate_yearly_measurements|PROCEDURE

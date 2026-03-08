@@ -1,0 +1,8 @@
+﻿TABLE_SCHEMA|VIEW_NAME
+------------|---------
+dbo|vw_alarm_log
+dbo|vw_device_event_log
+dbo|vw_flicker_with_meter
+dbo|vw_harmonic_measurements
+dbo|vw_meter_measurements
+dbo|vw_voltage_event_log

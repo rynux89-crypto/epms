@@ -1,0 +1,538 @@
+/* =========================
+   Base
+========================= */
+:root{
+  --bg: #f7f7f9;
+  --border: #e2e6ef;
+  --card: #ffffff;
+  --text: #333;
+  --muted: #555;
+  --primary: #007bff;
+  --primary-hover: #0056b3;
+  --shadow: 0 1px 3px rgba(0,0,0,0.1);
+  --radius: 10px;
+}
+
+*{ box-sizing: border-box; }
+
+html{ height:100%; }
+
+body{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  margin: 20px;                 /* ✅ 다른 페이지 스크롤 유지 */
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* =========================
+   Title / Meta
+========================= */
+header{ margin-bottom: 20px; }
+
+h2{ margin: 0; color: var(--text); }
+h3{ margin: 0 0 8px 0; color: #555; }
+
+.title-bar{
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.back-btn{
+  padding: 8px 16px;
+  font-size: 14px;
+  background-color: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.back-btn:hover{ background-color: var(--primary-hover); }
+
+.meta-bar{
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+}
+
+.meta-info{
+  width: 100%;
+  padding: 5px 14px;
+  background: var(--card);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.meta-info span{
+  margin-right: 20px;
+  font-weight: 600;
+}
+
+/* =========================
+   Grid / Panel (Cards) - Common
+========================= */
+.grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.grid_h{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+/* 일반용(공통) 3열 grid. (대시보드 고정 레이아웃은 dash-grid 사용) */
+.grid_s{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.panel{
+  background: var(--card);
+  border: 1px solid #ddd;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: var(--shadow);
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.panel_f{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow:0 1px 2px rgba(0,0,0,.04);
+  padding:12px;
+}
+
+.panel_s{
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 공통 컨테이너 */
+.wrap{
+  max-width: 1000px;
+  margin: 20px auto;
+  padding: 0 16px;
+}
+
+/* =========================
+   Canvas
+========================= */
+.canvas-box{
+  height: 58vh;
+  min-height: 520px;
+  position: relative;
+}
+
+canvas{
+  width: 100% !important;
+  height:100% !important;
+  display:block;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#fff;
+}
+
+/* =========================
+   Charts (Common)
+========================= */
+.chartBox{
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  min-height: 300px;
+}
+
+.chartBox_s{
+  position: relative;
+  width: 100%;
+  height: 220px;        /* 공통 기본값 (대시보드에서는 dash 규칙으로 override) */
+}
+
+.chartBox.tall{ height: 320px; }
+
+.chartBox canvas{
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  margin: auto;
+}
+
+.chart-container{
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 600px;
+  margin: 0 auto 40px;
+  height: 70vh;         /* 인라인 쓰지 말고 여기로 통일 추천 */
+  min-height: 520px;
+  background: #fff;
+  border-radius: 4px;
+  padding: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-sizing: border-box;
+}
+
+/* =========================
+   Status / Alerts
+========================= */
+.status-text{
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.alert-box{
+  padding: 12px 16px;
+  background: #fff3cd;
+  border: 1px solid #ffeeba;
+  color: #856404;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* =========================
+   Form / Table (Common)
+========================= */
+form{
+  margin-bottom: 10px;
+  background: var(--card);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+input, select, button{
+  padding: 5px;
+  margin: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+table{
+  border-collapse: collapse;
+  width: 100%;
+  background: var(--card);
+  margin-bottom: 30px;
+  table-layout: fixed;
+}
+
+th, td{
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: center;
+  word-wrap: break-word;
+}
+
+/* =========================
+   Footer (Common)
+========================= */
+footer{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding: 10px;
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 0;
+}
+
+/* =========================
+   Meter Monitoring - Top Bar (Common)
+   (가로 한 줄 유지)
+========================= */
+
+.card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  background-color: #fff;
+}
+
+.search-form{
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.search-form .form-row{
+  display:flex;
+  flex-direction: row;
+  align-items:stretch;
+  gap:20px;                 /* 카드간의 가로 공간 */
+  flex-wrap: wrap;          /* ✅ nowrap -> wrap */
+}
+
+/* 왼쪽(Meter) */
+.search-form .meter-box{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  white-space:nowrap;
+  flex: 0 0 auto;
+}
+
+/* 오른쪽(자동 새로고침) */
+.search-form .refresh-box{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  margin-left: auto;
+}
+
+.refresh-box label{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+  margin: 0;
+}
+
+/* 라디오만 margin 제거 */
+.search-form .refresh-box input[type="radio"]{ margin:0; }
+
+.search-form .refresh-box label{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  margin:0 6px 0 0;
+  white-space:nowrap;       /* ✅ 라벨 텍스트는 한 덩어리로 */
+}
+
+/* ✅ 좁은 화면에서는 자동 새로고침을 아래 줄로 내려서 100% 폭 사용 */
+@media (max-width: 576px){
+  .search-form .meter-box{
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .search-form .meter-box select{
+    max-width: 100%;
+  }
+}
+
+
+/* =========================================================
+   meter_status.jsp 전용 (스크롤 없는 대시보드)
+   - meter_status.jsp 에서만 body에 class="page-meter-status" 적용
+   - main은 <main class="dash-grid"> 로 사용 (grid_s와 같이 쓰지 말 것)
+========================================================= */
+
+.page-meter-status{
+  margin: 0;          /* ✅ meter_status만 margin 제거 */
+  overflow: hidden;   /* ✅ meter_status만 페이지 스크롤 제거 */
+  height: 100vh;
+}
+
+/* meter_status 전용 래퍼 */
+.page-meter-status .dash{
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+/* 메인이 남은 높이 차지 */
+.page-meter-status .dash-main{
+  flex: 1 1 auto;
+  min-height: 0;      /* ✅ 잘림 방지 핵심 */
+}
+
+/* 6카드 고정 그리드 */
+.page-meter-status .dash-grid{
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* 카드 내부 flex 안정화 */
+.page-meter-status .dash-grid .panel_s{
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 차트 영역은 남은 공간 사용 (dash에서만) */
+.page-meter-status .dash-grid .chartBox_s{
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto; /* 공통 220px override */
+}
+
+/* 캔버스 꽉 채우기 */
+.page-meter-status .dash-grid .chartBox_s canvas{
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* 차트 카드(5개) 텍스트: 카드 높이 밀지 않게 제한 */
+.page-meter-status .dash-grid .status-text{
+  flex: 0 0 auto;
+  max-height: 90px;
+  overflow: hidden; /* 스크롤이 싫으면 hidden, 필요하면 auto */
+}
+
+/* 6번째 카드: 텍스트-only (section에 panel-text-only 추가) */
+.page-meter-status .dash-grid .panel-text-only .chartBox_s{
+  display: none;
+}
+
+/* 텍스트-only는 카드 남은 높이를 전부 사용 (스크롤 없이 JS로 폰트 자동 축소) */
+.page-meter-status .dash-grid .panel-text-only .status-text{
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  line-height: 1.25;
+}
+
+/* meter_status footer(선택) */
+.page-meter-status .dash-footer{
+  padding: 6px 0;
+  font-size: 12px;
+  margin: 0;
+}
+
+/* =========================================================
+   phasor_diagram.jsp 전용 (Full width + 75/25 split)
+   - phasor_diagram.jsp 에서 body에 class="page-phasor" 적용
+========================================================= */
+
+.page-phasor{
+  margin: 20;                /* body margin 20px 제거 */
+  background: var(--bg);
+}
+
+/* 공통 .wrap(max-width:1000px)을 이 페이지에서만 풀어줌 */
+.page-phasor .wrap{
+  max-width: none;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 3fr 1fr;   /* ✅ 75% : 25% */
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+/* 차트 카드 */
+.page-phasor #chart{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  height: calc(100vh - 140px); /* 상단 헤더/탭이 있으면 여유 */
+  min-width: 0;
+}
+
+/* 우측 정보 패널(스크롤) */
+.page-phasor .phasor-side.panel{
+  height: calc(100vh - 140px);
+  overflow: auto;
+  min-width: 0;
+}
+
+/* 작은 화면에서는 세로 배치 */
+@media (max-width: 1100px){
+  .page-phasor .wrap{
+    grid-template-columns: 1fr;
+  }
+  .page-phasor #chart{
+    height: 60vh;
+  }
+  .page-phasor .phasor-side.panel{
+    height: auto;
+  }
+}
+/* =========================================================
+   phasor_diagram 우측 패널 폰트 축소 (page-phasor 전용)
+========================================================= */
+
+/* 전체 패널 기본 글씨 */
+.page-phasor .phasor-side{
+  font-size: 13px;        /* 기본 14~15px → 13px */
+  line-height: 1.45;
+}
+
+/* 섹션 제목 */
+.page-phasor .phasor-side h3{
+  font-size: 14px;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+/* key-value 표 */
+.page-phasor .phasor-side .kv{
+  font-size: 12.5px;
+  gap: 4px 8px;
+}
+
+/* 메타 정보 (meter / time / LIVE) */
+.page-phasor .phasor-side .meta-info{
+  font-size: 12px;
+}
+
+/* 경고 색 강조는 유지 */
+.page-phasor .phasor-side .alarm{ font-size: 12.5px; }
+.page-phasor .phasor-side .warn{ font-size: 12.5px; }
+.page-phasor .phasor-side .ok{ font-size: 12.5px; }
+
+/* 하단 설명 */
+.page-phasor .phasor-side .status-text{
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+/* =========================================
+   phasor 우측 패널: 한 줄 key-value 정렬
+========================================= */
+.page-phasor .phasor-side .kv{
+  display: grid;
+  grid-template-columns: 140px 1fr; /* ✅ key 고정폭 */
+  gap: 4px 10px;
+  align-items: start;
+  font-size: 12.5px;
+}
+
+/* key */
+.page-phasor .phasor-side .kv > div:nth-child(odd){
+  font-weight: 600;
+  color: #444;
+  white-space: nowrap;          /* key는 줄바꿈 ❌ */
+}
+
+/* value */
+.page-phasor .phasor-side .kv > div:nth-child(even){
+  white-space: normal;          /* ✅ 값은 줄바꿈 허용 */
+  word-break: break-word;
+  color: #222;
+}

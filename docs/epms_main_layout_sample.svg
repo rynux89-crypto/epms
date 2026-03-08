@@ -1,0 +1,76 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f1f5f9"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+    <style>
+      .title { font: 700 30px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 14px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .h2 { font: 700 18px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 13px 'Segoe UI', Arial, sans-serif; fill: #1e293b; }
+      .tiny { font: 400 12px 'Segoe UI', Arial, sans-serif; fill: #64748b; }
+      .btn { font: 700 12px 'Segoe UI', Arial, sans-serif; fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="900" fill="url(#bg)"/>
+
+  <rect x="32" y="24" width="1336" height="96" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="56" y="64" class="title">EPMS Main Layout Sample</text>
+  <text x="56" y="92" class="sub">Group modules by workflow: Monitoring / Analysis / Operations</text>
+
+  <rect x="980" y="44" width="120" height="40" rx="8" fill="#1d4ed8"/>
+  <text x="1010" y="69" class="btn">Alerts</text>
+  <rect x="1112" y="44" width="120" height="40" rx="8" fill="#0f766e"/>
+  <text x="1132" y="69" class="btn">Meters</text>
+  <rect x="1244" y="44" width="100" height="40" rx="8" fill="#7c3aed"/>
+  <text x="1272" y="69" class="btn">PLC</text>
+
+  <rect x="32" y="140" width="1336" height="220" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="52" y="172" class="h2">Realtime Monitoring</text>
+
+  <rect x="52" y="188" width="420" height="152" rx="10" fill="#f8fafc" stroke="#dbeafe"/>
+  <text x="72" y="216" class="label">Integrated PQ Overview</text>
+  <text x="72" y="236" class="tiny">Power factor, voltage, current, frequency in one page</text>
+
+  <rect x="490" y="188" width="420" height="152" rx="10" fill="#f8fafc" stroke="#dbeafe"/>
+  <text x="510" y="216" class="label">Phasor Monitoring</text>
+  <text x="510" y="236" class="tiny">Phase angle and vector status</text>
+
+  <rect x="928" y="188" width="420" height="152" rx="10" fill="#f8fafc" stroke="#dbeafe"/>
+  <text x="948" y="216" class="label">Meter Status</text>
+  <text x="948" y="236" class="tiny">Live meter health and communication state</text>
+
+  <rect x="32" y="378" width="1336" height="220" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="52" y="410" class="h2">Power Quality Analysis</text>
+
+  <rect x="52" y="426" width="310" height="152" rx="10" fill="#f8fafc" stroke="#fde68a"/>
+  <text x="72" y="454" class="label">Unbalance</text>
+
+  <rect x="374" y="426" width="310" height="152" rx="10" fill="#f8fafc" stroke="#fde68a"/>
+  <text x="394" y="454" class="label">Variation Rate</text>
+
+  <rect x="696" y="426" width="310" height="152" rx="10" fill="#f8fafc" stroke="#fde68a"/>
+  <text x="716" y="454" class="label">Frequency and Voltage</text>
+
+  <rect x="1018" y="426" width="330" height="152" rx="10" fill="#f8fafc" stroke="#fde68a"/>
+  <text x="1038" y="454" class="label">Harmonics</text>
+
+  <rect x="32" y="616" width="1336" height="220" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="52" y="648" class="h2">Operations and Configuration</text>
+
+  <rect x="52" y="664" width="256" height="152" rx="10" fill="#f8fafc" stroke="#bbf7d0"/>
+  <text x="72" y="692" class="label">Alarm View</text>
+
+  <rect x="320" y="664" width="256" height="152" rx="10" fill="#f8fafc" stroke="#bbf7d0"/>
+  <text x="340" y="692" class="label">Meter Register</text>
+
+  <rect x="588" y="664" width="256" height="152" rx="10" fill="#f8fafc" stroke="#bbf7d0"/>
+  <text x="608" y="692" class="label">Data Retention</text>
+
+  <rect x="856" y="664" width="492" height="152" rx="10" fill="#f8fafc" stroke="#bbf7d0"/>
+  <text x="876" y="692" class="label">PLC Management (single CTA + sub pages)</text>
+
+  <text x="32" y="874" class="tiny">Responsive rule: Desktop 4-col / Tablet 2-col / Mobile 1-col</text>
+</svg>

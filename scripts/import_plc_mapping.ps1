@@ -1,0 +1,659 @@
+param(
+    [Parameter(Mandatory=$true)][string]$ExcelPath,
+    [int]$PlcId = 0,
+    [string]$ByteOrder = 'CDAB',
+    [int]$FloatCount = 62,
+    [switch]$Apply
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Normalize-Str([object]$v){
+    if ($null -eq $v) { return '' }
+    return ([string]$v).Trim()
+}
+
+function To-IntOrNull([object]$v){
+    $s = Normalize-Str $v
+    if ($s -eq '') { return $null }
+    $s = $s -replace ',', ''
+    if ($s -match '^\d+(\.\d+)?$') {
+        return [int][double]$s
+    }
+    return $null
+}
+
+function Match-Plc([string]$cell, [int]$target){
+    $s = Normalize-Str $cell
+    if ($s -eq '') { return $false }
+    if ($s -match '(\d+)') {
+        return ([int]$Matches[1]) -eq $target
+    }
+    return $false
+}
+
+function To-PlcBitIndex([int]$bitNo){
+    # Prefer explicit 0-based configuration (0..15). Fallback to 1-based (1..16).
+    if ($bitNo -ge 0 -and $bitNo -le 15) { return $bitNo }
+    if ($bitNo -ge 1 -and $bitNo -le 16) { return ($bitNo - 1) }
+    return $bitNo
+}
+
+function Normalize-AiFloatCount([int]$count){
+    # Keep exact float count from Excel.
+    return $count
+}
+
+function Resolve-AiMetricOrder([System.Data.DataTable]$aiSheet, [string]$fallback){
+    if ($null -eq $aiSheet) { return $fallback }
+    $best = New-Object System.Collections.Generic.List[string]
+    $seen = New-Object System.Collections.Generic.HashSet[string]
+
+    foreach ($row in $aiSheet.Select()) {
+        $tokens = New-Object System.Collections.Generic.List[string]
+        $localSeen = New-Object System.Collections.Generic.HashSet[string]
+        for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
+            $col = "F$c"
+            if (-not $aiSheet.Columns.Contains($col)) { continue }
+            $raw = Normalize-Str $row[$col]
+            if ($raw -eq '') { continue }
+            if ($raw -match '^\d+(\.\d+)?$') { continue } # address/value row
+            $t = $raw -replace '^[\\₩/]+', ''
+            $t = ($t -replace '\s+', '').Trim().ToUpperInvariant()
+            if ($t -eq '') { continue }
+            if ($localSeen.Add($t)) { $tokens.Add($t) }
+        }
+        if ($tokens.Count -gt $best.Count -and $tokens.Count -ge 10) {
+            $best = $tokens
+        }
+    }
+
+    if ($best.Count -lt 1) { return $fallback }
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($t in $best) {
+        if ($seen.Add($t)) { $out.Add($t) }
+    }
+    if ($out.Count -lt 1) { return $fallback }
+    return [string]::Join(',', $out)
+}
+
+function Build-AiTokenByColumn([System.Data.DataTable]$aiSheet){
+    $map = @{}
+    if ($null -eq $aiSheet) { return $map }
+    $bestRow = $null
+    $bestCnt = 0
+
+    foreach ($row in $aiSheet.Select()) {
+        $cnt = 0
+        for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
+            $col = "F$c"
+            if (-not $aiSheet.Columns.Contains($col)) { continue }
+            $raw = Normalize-Str $row[$col]
+            if ($raw -eq '') { continue }
+            if ($raw -match '^\d+(\.\d+)?$') { continue }
+            $cnt++
+        }
+        if ($cnt -gt $bestCnt) {
+            $bestCnt = $cnt
+            $bestRow = $row
+        }
+    }
+
+    if ($null -eq $bestRow -or $bestCnt -lt 1) { return $map }
+    for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
+        $col = "F$c"
+        if (-not $aiSheet.Columns.Contains($col)) { continue }
+        $raw = Normalize-Str $bestRow[$col]
+        if ($raw -eq '') { continue }
+        if ($raw -match '^\d+(\.\d+)?$') { continue }
+        $t = $raw -replace '^[\\₩/]+', ''
+        $t = ($t -replace '\s+', '').Trim().ToUpperInvariant()
+        if ($t -eq '') { continue }
+        $map[$c] = $t
+    }
+    return $map
+}
+
+function New-SqlConnection {
+    $cn = New-Object System.Data.SqlClient.SqlConnection
+    $cn.ConnectionString = 'Server=localhost,1433;Database=epms;User ID=sa;Password=1234;TrustServerCertificate=True;Encrypt=True'
+    $cn.Open()
+    return $cn
+}
+
+function Query-ExcelTable([string]$path, [string]$sheetName){
+    $cs = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$path;Extended Properties='Excel 12.0 Xml;HDR=NO;IMEX=1'"
+    $cn = New-Object System.Data.OleDb.OleDbConnection($cs)
+    $cn.Open()
+    try {
+        $cmd = $cn.CreateCommand()
+        $cmd.CommandText = "SELECT * FROM [$sheetName`$]"
+        $da = New-Object System.Data.OleDb.OleDbDataAdapter($cmd)
+        $dt = New-Object System.Data.DataTable
+        [void]$da.Fill($dt)
+        return ,$dt
+    } finally {
+        $cn.Close()
+    }
+}
+
+function Get-MeterMatch([hashtable]$byName, [hashtable]$byPanel, [string]$name, [string]$panel){
+    if ($null -eq $name) { $name = '' }
+    if ($null -eq $panel) { $panel = '' }
+    $kName = $name.Trim().ToUpperInvariant()
+    if ($kName -ne '' -and $byName.ContainsKey($kName)) {
+        return $byName[$kName]
+    }
+    $kPanel = $panel.Trim().ToUpperInvariant()
+    if ($kPanel -ne '' -and $byPanel.ContainsKey($kPanel)) {
+        $arr = $byPanel[$kPanel]
+        if ($arr.Count -eq 1) {
+            return $arr[0]
+        }
+    }
+    return $null
+}
+
+function Resolve-AutoFloatCount([System.Data.DataTable]$aiSheet, [int]$targetPlcId, [int]$fallback){
+    if ($null -eq $aiSheet) { return $fallback }
+    $maxCount = 0
+    $colCount = $aiSheet.Columns.Count
+    if ($colCount -lt 6) { return $fallback }
+
+    foreach ($row in $aiSheet.Select()) {
+        $no = To-IntOrNull $row['F1']
+        if ($null -eq $no) { continue }
+        $plcCell = Normalize-Str $row['F2']
+        if (-not (Match-Plc -cell $plcCell -target $targetPlcId)) { continue }
+        $itemName = Normalize-Str $row['F3']
+        $baseAddr = To-IntOrNull $row['F5']
+        if ($itemName -eq '' -or $null -eq $baseAddr) { continue }
+
+        $addrList = New-Object System.Collections.Generic.List[int]
+        $seenAddr = New-Object 'System.Collections.Generic.HashSet[int]'
+        $nonEmptyCount = 0
+        for ($c = 6; $c -le $colCount; $c++) {
+            $col = "F$c"
+            if (-not $aiSheet.Columns.Contains($col)) { continue }
+            $raw = Normalize-Str $row[$col]
+            if ($raw -ne '') { $nonEmptyCount++ }
+            $addr = To-IntOrNull $row[$col]
+            if ($null -ne $addr -and [int]$addr -gt [int]$baseAddr) {
+                $addrInt = [int]$addr
+                if ($seenAddr.Add($addrInt)) {
+                    $addrList.Add($addrInt)
+                }
+            }
+        }
+        $count = @($addrList | Sort-Object -Unique).Count
+        if ($count -le 0 -and $nonEmptyCount -gt 0) { $count = $nonEmptyCount }
+        if ($count -gt 0) { $count = Normalize-AiFloatCount -count $count }
+        if ($count -gt $maxCount) { $maxCount = $count }
+    }
+
+    if ($maxCount -gt 0) { return $maxCount }
+    return $fallback
+}
+
+try {
+    if (-not (Test-Path -Path $ExcelPath -PathType Leaf)) {
+        throw "Excel file not found: $ExcelPath"
+    }
+
+    $tokenDefault = 'V12,V23,V31,VVA,V1N,V2N,V3N,VA,A1,A2,A3,AN,AA,PF,HZ,KW,KWH,KVAR,KVARH,PEAK,H_VA_1,H_VA_3,H_VA_5,H_VA_7,H_VA_9,H_VA_11,H_VB_1,H_VB_3,H_VB_5,H_VB_7,H_VB_9,H_VB_11,H_VC_1,H_VC_3,H_VC_5,H_VC_7,H_VC_9,H_VC_11,H_IA_1,H_IA_3,H_IA_5,H_IA_7,H_IA_9,H_IA_11,H_IB_1,H_IB_3,H_IB_5,H_IB_7,H_IB_9,H_IB_11,H_IC_1,H_IC_3,H_IC_5,H_IC_7,H_IC_9,H_IC_11,PV1,PV2,PV3,PI1,PI2,PI3'
+
+    $aiSheet = Query-ExcelTable -path $ExcelPath -sheetName 'PLC_IO_Address_AI'
+    $diSheet = Query-ExcelTable -path $ExcelPath -sheetName 'PLC_IO_Address_DI'
+
+    # Auto mode: if PlcId is not provided (or <= 0), detect PLC IDs from Excel and run per-PLC import.
+    if ($PlcId -le 0) {
+        $plcIdSet = New-Object 'System.Collections.Generic.HashSet[int]'
+        foreach ($tbl in @($aiSheet, $diSheet)) {
+            foreach ($row in $tbl.Select()) {
+                $cell = Normalize-Str $row['F2']
+                if ($cell -eq '') { continue }
+                if ($cell -match '(\d+)') {
+                    [void]$plcIdSet.Add([int]$Matches[1])
+                }
+            }
+        }
+
+        $plcIds = @($plcIdSet | Sort-Object)
+        if ($plcIds.Count -eq 0) {
+            throw "No PLC IDs detected from Excel column F2."
+        }
+
+        $runner = (Get-Process -Id $PID).Path
+        $all = New-Object System.Collections.Generic.List[object]
+        $sumAiCandidates = 0
+        $sumAiRows = 0
+        $sumDiMapRows = 0
+        $sumDiTagRows = 0
+        $sumAiUnmatched = New-Object System.Collections.Generic.List[string]
+        $floatCountByPlc = @{}
+        $floatDistAll = @{}
+        $floatMetersAll = @{}
+
+        foreach ($plcNum in $plcIds) {
+            $args = @(
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', $PSCommandPath,
+                '-ExcelPath', $ExcelPath,
+                '-PlcId', [string]$plcNum,
+                '-ByteOrder', $ByteOrder,
+                '-FloatCount', [string]$FloatCount
+            )
+            if ($Apply.IsPresent) { $args += '-Apply' }
+
+            $raw = & $runner @args 2>&1 | Out-String
+            $text = ($raw | Out-String).Trim()
+            if ($text -eq '') { throw "PLC $plcNum import returned empty output." }
+
+            try {
+                $obj = $text | ConvertFrom-Json -ErrorAction Stop
+            } catch {
+                throw "PLC $plcNum import parse failed: $text"
+            }
+            if (-not $obj.ok) {
+                $msg = if ($obj.message) { [string]$obj.message } else { $text }
+                throw "PLC $plcNum import failed: $msg"
+            }
+
+            $all.Add($obj)
+            $sumAiCandidates += [int]$obj.ai_candidates
+            $sumAiRows += [int]$obj.ai_rows
+            $sumDiMapRows += [int]$obj.di_map_rows
+            $sumDiTagRows += [int]$obj.di_tag_rows
+            if ($obj.PSObject.Properties.Name -contains 'float_count_used') {
+                $floatCountByPlc[[string]$obj.plc_id] = $obj.float_count_used
+            }
+            if ($obj.ai_unmatched) {
+                foreach ($u in $obj.ai_unmatched) { $sumAiUnmatched.Add([string]$u) }
+            }
+            if ($obj.ai_float_distribution) {
+                $pd = $obj.ai_float_distribution.PSObject.Properties
+                foreach ($p in $pd) {
+                    $k = [string]$p.Name
+                    $v = [int]$p.Value
+                    if (-not $floatDistAll.ContainsKey($k)) { $floatDistAll[$k] = 0 }
+                    $floatDistAll[$k] += $v
+                }
+            }
+            if ($obj.ai_float_meter_ids) {
+                $pm = $obj.ai_float_meter_ids.PSObject.Properties
+                foreach ($m in $pm) {
+                    $k = [string]$m.Name
+                    if (-not $floatMetersAll.ContainsKey($k)) {
+                        $floatMetersAll[$k] = New-Object System.Collections.Generic.List[int]
+                    }
+                    foreach ($mid in @($m.Value)) {
+                        $floatMetersAll[$k].Add([int]$mid)
+                    }
+                }
+            }
+        }
+
+        $floatDistinct = @($floatCountByPlc.Values | Sort-Object -Unique)
+        $floatUsed = if ($floatDistinct.Count -eq 1) { $floatDistinct[0] } else { 'VARIES' }
+
+        $out = [PSCustomObject]@{
+            ok = $true
+            mode = $(if ($Apply.IsPresent) { 'apply' } else { 'preview' })
+            auto = $true
+            plc_id = 'AUTO'
+            plc_ids = $plcIds
+            excel_path = $ExcelPath
+            ai_sheet_rows = $aiSheet.Rows.Count
+            di_sheet_rows = $diSheet.Rows.Count
+            ai_candidates = $sumAiCandidates
+            ai_rows = $sumAiRows
+            ai_unmatched = $sumAiUnmatched
+            float_count_used = $floatUsed
+            float_count_by_plc = $floatCountByPlc
+            ai_float_distribution = $floatDistAll
+            ai_float_meter_ids = $floatMetersAll
+            di_map_rows = $sumDiMapRows
+            di_tag_rows = $sumDiTagRows
+            per_plc = $all
+        }
+        $out | ConvertTo-Json -Depth 8 -Compress
+        exit 0
+    }
+
+    $sqlCn = New-SqlConnection
+    try {
+    $effectiveFloatCount = Resolve-AutoFloatCount -aiSheet $aiSheet -targetPlcId $PlcId -fallback $FloatCount
+
+    $meterByName = @{}
+    $meterByPanel = @{}
+
+    $cmdMeters = $sqlCn.CreateCommand()
+    $cmdMeters.CommandText = 'SELECT meter_id, name, panel_name FROM dbo.meters'
+    $rMeters = $cmdMeters.ExecuteReader()
+    while ($rMeters.Read()) {
+        $meterId = [int]$rMeters['meter_id']
+        $name = Normalize-Str $rMeters['name']
+        $panel = Normalize-Str $rMeters['panel_name']
+
+        $nk = $name.ToUpperInvariant()
+        if ($nk -ne '' -and -not $meterByName.ContainsKey($nk)) {
+            $meterByName[$nk] = $meterId
+        }
+
+        $pk = $panel.ToUpperInvariant()
+        if ($pk -ne '') {
+            if (-not $meterByPanel.ContainsKey($pk)) {
+                $meterByPanel[$pk] = New-Object System.Collections.Generic.List[int]
+            }
+            $meterByPanel[$pk].Add($meterId)
+        }
+    }
+    $rMeters.Close()
+
+    $metricOrderFallback = Resolve-AiMetricOrder -aiSheet $aiSheet -fallback ''
+    if ((Normalize-Str $metricOrderFallback) -eq '') {
+        $metricOrderFallback = $tokenDefault
+        $cmdMetric = $sqlCn.CreateCommand()
+        $cmdMetric.CommandText = 'SELECT TOP 1 metric_order FROM dbo.plc_meter_map WHERE plc_id = @plc_id AND metric_order IS NOT NULL AND LEN(metric_order) > 0 ORDER BY map_id'
+        [void]$cmdMetric.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+        $cmdMetric.Parameters['@plc_id'].Value = $PlcId
+        $metricVal = $cmdMetric.ExecuteScalar()
+        if ($null -ne $metricVal -and (Normalize-Str $metricVal) -ne '') {
+            $metricOrderFallback = [string]$metricVal
+        }
+    }
+    $tokenByCol = Build-AiTokenByColumn -aiSheet $aiSheet
+
+    $aiRows = New-Object System.Collections.Generic.List[object]
+    $aiUnmatched = New-Object System.Collections.Generic.List[string]
+    $aiCandidateCount = 0
+
+    foreach ($row in $aiSheet.Select()) {
+        $no = To-IntOrNull $row['F1']
+        if ($null -eq $no) { continue }
+
+        $plcCell = Normalize-Str $row['F2']
+        if (-not (Match-Plc -cell $plcCell -target $PlcId)) { continue }
+
+        $itemName = Normalize-Str $row['F3']
+        $panelName = Normalize-Str $row['F4']
+        $baseAddr = To-IntOrNull $row['F5']
+        if ($itemName -eq '' -or $null -eq $baseAddr) { continue }
+        $aiCandidateCount++
+
+        $meterId = Get-MeterMatch -byName $meterByName -byPanel $meterByPanel -name $itemName -panel $panelName
+        if ($null -eq $meterId) {
+            $aiUnmatched.Add("AI meter unresolved: NO=$no, item=$itemName, panel=$panelName")
+            continue
+        }
+
+        $addrList = New-Object System.Collections.Generic.List[int]
+        $metricTokens = New-Object System.Collections.Generic.List[string]
+        $seenAddr = New-Object 'System.Collections.Generic.HashSet[int]'
+        $nonEmptyCount = 0
+        for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
+            $col = "F$c"
+            if (-not $aiSheet.Columns.Contains($col)) { continue }
+            $raw = Normalize-Str $row[$col]
+            if ($raw -ne '') { $nonEmptyCount++ }
+            $addr = To-IntOrNull $row[$col]
+            if ($null -ne $addr -and [int]$addr -gt [int]$baseAddr) {
+                $addrInt = [int]$addr
+                if ($seenAddr.Add($addrInt)) {
+                    $addrList.Add($addrInt)
+                    $token = ''
+                    if ($tokenByCol.ContainsKey($c)) { $token = [string]$tokenByCol[$c] }
+                    if ((Normalize-Str $token) -eq '') { $token = "F$($metricTokens.Count + 1)" }
+                    $metricTokens.Add($token)
+                }
+            }
+        }
+
+        $rowFloatCount = @($addrList | Sort-Object -Unique).Count
+        if ($rowFloatCount -le 0 -and $nonEmptyCount -gt 0) { $rowFloatCount = $nonEmptyCount }
+        if ($rowFloatCount -le 0) { $rowFloatCount = $effectiveFloatCount }
+        $rowFloatCount = Normalize-AiFloatCount -count ([int]$rowFloatCount)
+        $rowMetricOrder = [string]::Join(',', $metricTokens)
+        if ((Normalize-Str $rowMetricOrder) -eq '') { $rowMetricOrder = $metricOrderFallback }
+
+        $obj = [PSCustomObject]@{
+            meter_id = [int]$meterId
+            start_address = [int]$baseAddr + 1
+            float_count = [int]$rowFloatCount
+            metric_order = [string]$rowMetricOrder
+            item_name = $itemName
+            panel_name = $panelName
+        }
+        $aiRows.Add($obj)
+    }
+
+    $diMapByPoint = @{}
+    $diTags = New-Object System.Collections.Generic.List[object]
+    $diAllRows = $diSheet.Select()
+    $diHeaderTitleRow = if ($diAllRows.Count -gt 4) { $diAllRows[4] } else { $null }
+    $diHeaderCodeRow = if ($diAllRows.Count -gt 6) { $diAllRows[6] } else { $null }
+
+    foreach ($row in $diAllRows) {
+        $pointId = To-IntOrNull $row['F1']
+        if ($null -eq $pointId) { continue }
+
+        $plcCell = Normalize-Str $row['F2']
+        if (-not (Match-Plc -cell $plcCell -target $PlcId)) { continue }
+
+        $itemName = Normalize-Str $row['F3']
+        $panelName = Normalize-Str $row['F4']
+        $baseAddr = To-IntOrNull $row['F5']
+        if ($null -eq $baseAddr) { continue }
+
+        $usedBits = New-Object System.Collections.Generic.HashSet[int]
+        for ($c = 6; $c -le $diSheet.Columns.Count; $c++) {
+            $col = "F$c"
+            $raw = Normalize-Str $row[$col]
+            if ($raw -eq '') { continue }
+
+            if ($raw -match '^(\d+)\.(\d+)$') {
+                $addr = [int]$Matches[1]
+                $bitNo = [int]$Matches[2]
+            } elseif ($raw -match '^\d+$') {
+                $addr = [int]$raw
+                $bitNo = 0
+            } else {
+                continue
+            }
+
+            if ($addr -eq $baseAddr -and $bitNo -ge 0 -and $bitNo -le 16) {
+                # bit_count is "how many bits are defined in Excel", so count distinct raw bit numbers.
+                [void]$usedBits.Add($bitNo)
+            }
+
+            $tagTitle = if ($null -ne $diHeaderTitleRow) { Normalize-Str $diHeaderTitleRow[$col] } else { '' }
+            $tagCode = if ($null -ne $diHeaderCodeRow) { Normalize-Str $diHeaderCodeRow[$col] } else { '' }
+            $tagName = ("$tagTitle $tagCode").Trim()
+            if ($tagName -eq '') { $tagName = $tagCode }
+
+            $diTags.Add([PSCustomObject]@{
+                point_id = [int]$pointId
+                di_address = [int]$addr
+                bit_no = [int]$bitNo
+                tag_name = $tagName
+                item_name = $itemName
+                panel_name = $panelName
+            })
+        }
+
+        # Represent only actual bits used in Excel (address.bit entries for this base address).
+        $bitCount = if ($usedBits.Count -gt 0) { $usedBits.Count } else { 1 }
+        $diMapByPoint[$pointId] = [PSCustomObject]@{
+            point_id = [int]$pointId
+            start_address = [int]$baseAddr
+            bit_count = [int]$bitCount
+        }
+    }
+
+    if ($Apply.IsPresent) {
+        $tx = $sqlCn.BeginTransaction()
+        try {
+            # Soft-reset existing mappings for this PLC, then re-enable only rows present in Excel.
+            foreach ($tbl in @('dbo.plc_meter_map', 'dbo.plc_di_map', 'dbo.plc_di_tag_map')) {
+                $cmdDisable = $sqlCn.CreateCommand()
+                $cmdDisable.Transaction = $tx
+                $cmdDisable.CommandText = "UPDATE $tbl SET enabled = 0, updated_at = SYSUTCDATETIME() WHERE plc_id = @plc_id"
+                [void]$cmdDisable.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+                $cmdDisable.Parameters['@plc_id'].Value = $PlcId
+                [void]$cmdDisable.ExecuteNonQuery()
+            }
+
+            foreach ($r in $aiRows) {
+                $cmd = $sqlCn.CreateCommand()
+                $cmd.Transaction = $tx
+                $cmd.CommandText = @"
+MERGE dbo.plc_meter_map AS t
+USING (SELECT @plc_id AS plc_id, @meter_id AS meter_id) s
+ON (t.plc_id = s.plc_id AND t.meter_id = s.meter_id)
+WHEN MATCHED THEN
+  UPDATE SET start_address = @start_address,
+             float_count = @float_count,
+             byte_order = @byte_order,
+             metric_order = @metric_order,
+             enabled = 1,
+             updated_at = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+  INSERT (plc_id, meter_id, start_address, float_count, byte_order, enabled, updated_at, metric_order)
+  VALUES (@plc_id, @meter_id, @start_address, @float_count, @byte_order, 1, SYSUTCDATETIME(), @metric_order);
+"@
+                [void]$cmd.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@meter_id', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@start_address', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@float_count', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@byte_order', [System.Data.SqlDbType]::NVarChar, 10)
+                [void]$cmd.Parameters.Add('@metric_order', [System.Data.SqlDbType]::NVarChar, -1)
+                $cmd.Parameters['@plc_id'].Value = $PlcId
+                $cmd.Parameters['@meter_id'].Value = [int]$r.meter_id
+                $cmd.Parameters['@start_address'].Value = [int]$r.start_address
+                $cmd.Parameters['@float_count'].Value = [int]$r.float_count
+                $cmd.Parameters['@byte_order'].Value = $ByteOrder
+                $cmd.Parameters['@metric_order'].Value = [string]$r.metric_order
+                [void]$cmd.ExecuteNonQuery()
+            }
+
+            foreach ($k in $diMapByPoint.Keys) {
+                $r = $diMapByPoint[$k]
+                $cmd = $sqlCn.CreateCommand()
+                $cmd.Transaction = $tx
+                $cmd.CommandText = @"
+MERGE dbo.plc_di_map AS t
+USING (SELECT @plc_id AS plc_id, @point_id AS point_id) s
+ON (t.plc_id = s.plc_id AND t.point_id = s.point_id)
+WHEN MATCHED THEN
+  UPDATE SET start_address = @start_address,
+             bit_count = @bit_count,
+             enabled = 1,
+             updated_at = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+  INSERT (plc_id, point_id, start_address, bit_count, enabled, updated_at)
+  VALUES (@plc_id, @point_id, @start_address, @bit_count, 1, SYSUTCDATETIME());
+"@
+                [void]$cmd.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@point_id', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@start_address', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@bit_count', [System.Data.SqlDbType]::Int)
+                $cmd.Parameters['@plc_id'].Value = $PlcId
+                $cmd.Parameters['@point_id'].Value = [int]$r.point_id
+                $cmd.Parameters['@start_address'].Value = [int]$r.start_address
+                $cmd.Parameters['@bit_count'].Value = [int]$r.bit_count
+                [void]$cmd.ExecuteNonQuery()
+            }
+
+            foreach ($r in $diTags) {
+                $cmd = $sqlCn.CreateCommand()
+                $cmd.Transaction = $tx
+                $cmd.CommandText = @"
+MERGE dbo.plc_di_tag_map AS t
+USING (SELECT @plc_id AS plc_id, @point_id AS point_id, @di_address AS di_address, @bit_no AS bit_no) s
+ON (t.plc_id = s.plc_id AND t.point_id = s.point_id AND t.di_address = s.di_address AND t.bit_no = s.bit_no)
+WHEN MATCHED THEN
+  UPDATE SET tag_name = @tag_name,
+             item_name = @item_name,
+             panel_name = @panel_name,
+             enabled = 1,
+             updated_at = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+  INSERT (plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled, updated_at)
+  VALUES (@plc_id, @point_id, @di_address, @bit_no, @tag_name, @item_name, @panel_name, 1, SYSUTCDATETIME());
+"@
+                [void]$cmd.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@point_id', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@di_address', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@bit_no', [System.Data.SqlDbType]::Int)
+                [void]$cmd.Parameters.Add('@tag_name', [System.Data.SqlDbType]::NVarChar, 255)
+                [void]$cmd.Parameters.Add('@item_name', [System.Data.SqlDbType]::NVarChar, 255)
+                [void]$cmd.Parameters.Add('@panel_name', [System.Data.SqlDbType]::NVarChar, 255)
+                $cmd.Parameters['@plc_id'].Value = $PlcId
+                $cmd.Parameters['@point_id'].Value = [int]$r.point_id
+                $cmd.Parameters['@di_address'].Value = [int]$r.di_address
+                $cmd.Parameters['@bit_no'].Value = [int]$r.bit_no
+                $cmd.Parameters['@tag_name'].Value = $r.tag_name
+                $cmd.Parameters['@item_name'].Value = $r.item_name
+                $cmd.Parameters['@panel_name'].Value = $r.panel_name
+                [void]$cmd.ExecuteNonQuery()
+            }
+
+            $tx.Commit()
+        } catch {
+            $tx.Rollback()
+            throw
+        }
+    }
+
+    $floatUsedLocal = $effectiveFloatCount
+    if ($aiRows.Count -gt 0) {
+        $floatUsedLocal = @($aiRows | ForEach-Object { [int]$_.float_count } | Measure-Object -Maximum).Maximum
+    }
+
+    $floatDist = @{}
+    $floatMeters = @{}
+    foreach ($r in $aiRows) {
+        $k = [string]([int]$r.float_count)
+        if (-not $floatDist.ContainsKey($k)) { $floatDist[$k] = 0 }
+        $floatDist[$k] += 1
+        if (-not $floatMeters.ContainsKey($k)) { $floatMeters[$k] = New-Object System.Collections.Generic.List[int] }
+        $floatMeters[$k].Add([int]$r.meter_id)
+    }
+    $aiRowsSample = @($aiRows | Select-Object -First 20)
+
+    $out = [PSCustomObject]@{
+        ok = $true
+        mode = $(if ($Apply.IsPresent) { 'apply' } else { 'preview' })
+        plc_id = $PlcId
+        excel_path = $ExcelPath
+        ai_sheet_rows = $aiSheet.Rows.Count
+        di_sheet_rows = $diSheet.Rows.Count
+        ai_candidates = $aiCandidateCount
+        ai_rows = $aiRows.Count
+        ai_unmatched = $aiUnmatched
+        float_count_used = $floatUsedLocal
+        ai_float_distribution = $floatDist
+        ai_float_meter_ids = $floatMeters
+        ai_rows_sample = $aiRowsSample
+        di_map_rows = $diMapByPoint.Count
+        di_tag_rows = $diTags.Count
+    }
+    $out | ConvertTo-Json -Depth 6 -Compress
+    }
+    finally {
+        $sqlCn.Close()
+    }
+}
+catch {
+    $line = $_.InvocationInfo.ScriptLineNumber
+    $msg = $_.Exception.Message
+    $src = $_.InvocationInfo.Line
+    [PSCustomObject]@{
+        ok = $false
+        line = $line
+        message = $msg
+        source = $src
+    } | ConvertTo-Json -Compress
+    exit 1
+}

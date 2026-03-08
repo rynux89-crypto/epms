@@ -1,0 +1,164 @@
+﻿pages\harmonics_v.jsp:43:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+pages\harmonics_v.jsp:47:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+pages\harmonics_v.jsp:52:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+pages\harmonics_v.jsp:148:        String sql = "SELECT meter_id, harmonic_id, measured_at, thd_voltage_a, thd_voltage_b, thd_voltage_c FROM vw_harmonic_measurements" +
+includes\bems.jsp:45:      "FROM vw_meter_measurements " +
+includes\bems.jsp:55:      "FROM vw_meter_measurements " +
+includes\bems.jsp:105:    "FROM vw_meter_measurements WHERE MONTH(measured_at)=?"
+includes\bems.jsp:114:      "SELECT CAST(MAX(measured_at) AS date) FROM vw_meter_measurements"
+includes\bems.jsp:126:    "SELECT YEAR(MAX(measured_at)) FROM vw_meter_measurements"
+includes\bems.jsp:141:    "FROM vw_meter_measurements " +
+includes\bems.jsp:163:    "FROM vw_meter_measurements " +
+includes\bems.jsp:191:    "FROM vw_meter_measurements " +
+includes\bems.jsp:213:    "SELECT b, mm, SUM(maxv-minv) kwh FROM ( " +
+includes\bems.jsp:216:    " FROM vw_meter_measurements " +
+includes\bems.jsp:239:    "FROM vw_meter_measurements " +
+includes\bems.jsp:258:    "SELECT LTRIM(RTRIM(usage_type)) u, SUM(v) kwh FROM ( " +
+includes\bems.jsp:261:    " FROM vw_meter_measurements " +
+includes\bems.jsp:293:    "FROM vw_meter_measurements " +
+pages\harmonics_i.jsp:41:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+pages\harmonics_i.jsp:45:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+pages\harmonics_i.jsp:50:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+pages\harmonics_i.jsp:146:        String sql = "SELECT meter_id, harmonic_id, measured_at, thd_current_a, thd_current_b, thd_current_c FROM vw_harmonic_measurements" +
+pages\meter_register.jsp:81:                        "INSERT INTO dbo.meters " +
+pages\meter_register.jsp:115:                    "UPDATE dbo.meters " +
+pages\meter_register.jsp:142:                String delSql = "DELETE FROM dbo.meters WHERE meter_id = ?";
+pages\meter_register.jsp:170:            "FROM dbo.meters";
+pages\meter_register.jsp:182:            "FROM INFORMATION_SCHEMA.COLUMNS " +
+pages\meter_register.jsp:198:            "SELECT DISTINCT LTRIM(RTRIM(building_name)) AS building_name FROM dbo.meters " +
+pages\meter_register.jsp:208:            "FROM (" +
+pages\meter_register.jsp:210:            "  FROM dbo.meters " +
+pages\meter_register.jsp:222:            "FROM dbo.meters " +
+pages\harmonic_detail.jsp:39:                         "FROM vw_harmonic_measurements WHERE harmonic_id = ?";
+epms\ai_mapping.jsp:15:        String q = "SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config ORDER BY plc_id";
+epms\ai_mapping.jsp:32:           .append("FROM dbo.plc_meter_map m ")
+epms\ai_mapping.jsp:33:           .append("LEFT JOIN dbo.meters mt ON mt.meter_id = m.meter_id ");
+epms\ai_measurements_match.jsp:40:        try (PreparedStatement ps = conn.prepareStatement("SELECT plc_id, plc_ip, plc_port, unit_id, enabled FROM dbo.plc_config ORDER BY plc_id");
+epms\ai_measurements_match.jsp:53:        String meterSql = "SELECT meter_id, name, panel_name FROM dbo.meters ORDER BY meter_id";
+epms\ai_measurements_match.jsp:67:            "FROM dbo.plc_ai_measurements_match ORDER BY float_index";
+epms\ai_measurements_match.jsp:87:                "    FROM dbo.plc_meter_map " +
+epms\ai_measurements_match.jsp:92:                "    FROM b CROSS JOIN dbo.plc_ai_measurements_match m " +
+epms\ai_measurements_match.jsp:98:                "    FROM a " +
+epms\ai_measurements_match.jsp:99:                "    LEFT JOIN dbo.plc_ai_samples x " +
+epms\ai_measurements_match.jsp:103:                "FROM s WHERE rn = 1 ORDER BY float_index";
+epms\ai_measurements_match.jsp:123:                "SELECT TOP 1 * FROM dbo.measurements WHERE meter_id = ? ORDER BY measured_at DESC";
+pages\meter_status.jsp:27:        ResultSet rsOpt = stmt.executeQuery("SELECT meter_id, name FROM meters ORDER BY meter_id");
+pages\meter_status.jsp:120:                "FROM vw_meter_measurements " +
+pages\meter_status.jsp:185:                "FROM vw_harmonic_measurements " +
+pages\meter_status.jsp:215:                "FROM vw_flicker_with_meter " +
+pages\meter_status.jsp:232:                "FROM vw_voltage_event_log " +
+pages\meter_status.jsp:257:                "FROM vw_alarm_log " +
+epms\alarm_detail.jsp:36:                "FROM vw_alarm_log WHERE alarm_id = ?";
+epms\alarm_detail.jsp:66:                    "FROM vw_meter_measurements " +
+epms\alarm_view.jsp:38:                "SELECT meter_id, name FROM meters ORDER BY meter_id");
+epms\alarm_view.jsp:46:                "SELECT DISTINCT building_name FROM vw_alarm_log WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\alarm_view.jsp:52:                "SELECT DISTINCT usage_type FROM vw_alarm_log WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\alarm_view.jsp:61:           .append("FROM vw_alarm_log WHERE 1=1 ");
+pages\pq_overview.jsp:55:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+pages\pq_overview.jsp:59:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+pages\pq_overview.jsp:64:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+pages\pq_overview.jsp:117:           .append("FROM vw_meter_measurements ")
+pages\variation_ces.jsp:79:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+pages\variation_ces.jsp:83:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+pages\variation_ces.jsp:88:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+pages\variation_ces.jsp:299:           .append("FROM vw_meter_measurements ")
+epms\data_retention_manage.jsp:8:        String sql = "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
+epms\data_retention_manage.jsp:19:        String sql = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
+epms\data_retention_manage.jsp:116:            String cntSql = "SELECT COUNT(*) AS cnt FROM " + fqtn + " WHERE " + timeCol + " < ?";
+epms\data_retention_manage.jsp:141:                        String delSql = "DELETE FROM " + fqtn + " WHERE " + timeCol + " < ?";
+epms\data_retention_manage.jsp:161:                    String cntSql = "SELECT COUNT(*) AS cnt FROM " + fqtn + " WHERE " + timeCol + " < ?";
+epms\di_mapping.jsp:19:        String plcSql = "SELECT plc_id, plc_ip, plc_port, unit_id, enabled FROM dbo.plc_config ORDER BY plc_id";
+epms\di_mapping.jsp:34:              .append("FROM dbo.plc_di_map ");
+epms\di_mapping.jsp:57:              .append("FROM dbo.plc_di_tag_map WHERE 1=1 ");
+pages\variation_ves.jsp:88:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+pages\variation_ves.jsp:92:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+pages\variation_ves.jsp:97:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+pages\variation_ves.jsp:308:           .append("FROM vw_meter_measurements ")
+pages\voltage_unbalance.jsp:79:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+pages\voltage_unbalance.jsp:83:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+pages\voltage_unbalance.jsp:88:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+pages\voltage_unbalance.jsp:292:           .append("FROM vw_meter_measurements ")
+epms\frequency_voltage.jsp:69:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\frequency_voltage.jsp:73:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\frequency_voltage.jsp:78:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+epms\frequency_voltage.jsp:127:           .append("FROM vw_meter_measurements ")
+epms\harmonics_i.jsp:41:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\harmonics_i.jsp:45:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\harmonics_i.jsp:50:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+epms\harmonics_i.jsp:146:        String sql = "SELECT meter_id, harmonic_id, measured_at, thd_current_a, thd_current_b, thd_current_c FROM vw_harmonic_measurements" +
+epms\harmonics_v.jsp:43:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\harmonics_v.jsp:47:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\harmonics_v.jsp:52:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+epms\harmonics_v.jsp:148:        String sql = "SELECT meter_id, harmonic_id, measured_at, thd_voltage_a, thd_voltage_b, thd_voltage_c FROM vw_harmonic_measurements" +
+epms\harmonic_sync.jsp:15:        "    FROM dbo.plc_meter_map " +
+epms\harmonic_sync.jsp:19:        "    FROM dbo.plc_ai_measurements_match " +
+epms\harmonic_sync.jsp:26:        "    FROM m CROSS JOIN t " +
+epms\harmonic_sync.jsp:30:        "    FROM a " +
+epms\harmonic_sync.jsp:31:        "    JOIN dbo.plc_ai_samples x " +
+epms\harmonic_sync.jsp:35:        "    FROM s WHERE rn = 1 " +
+epms\harmonic_sync.jsp:75:        "    FROM l " +
+epms\harmonic_sync.jsp:79:        "    FROM p " +
+epms\harmonic_sync.jsp:80:        "    WHERE p.measured_at > ISNULL((SELECT MAX(h.measured_at) FROM dbo.harmonic_measurements h WHERE h.meter_id = p.meter_id), '1900-01-01') " +
+epms\harmonic_sync.jsp:84:        String pendingSql = baseCte + "SELECT COUNT(*) AS pending_count FROM n;";
+epms\harmonic_sync.jsp:92:                "INSERT INTO dbo.harmonic_measurements ( " +
+epms\harmonic_sync.jsp:113:                "FROM n;";
+epms\harmonic_sync.jsp:127:            "FROM dbo.harmonic_measurements ORDER BY measured_at DESC, harmonic_id DESC";
+epms\harmonic_detail.jsp:39:                         "FROM vw_harmonic_measurements WHERE harmonic_id = ?";
+epms\meter_register.jsp:81:                        "INSERT INTO dbo.meters " +
+epms\meter_register.jsp:115:                    "UPDATE dbo.meters " +
+epms\meter_register.jsp:142:                String delSql = "DELETE FROM dbo.meters WHERE meter_id = ?";
+epms\meter_register.jsp:170:            "FROM dbo.meters";
+epms\meter_register.jsp:182:            "FROM INFORMATION_SCHEMA.COLUMNS " +
+epms\meter_register.jsp:198:            "SELECT DISTINCT LTRIM(RTRIM(building_name)) AS building_name FROM dbo.meters " +
+epms\meter_register.jsp:208:            "FROM (" +
+epms\meter_register.jsp:210:            "  FROM dbo.meters " +
+epms\meter_register.jsp:222:            "FROM dbo.meters " +
+epms\meter_status.jsp:27:        ResultSet rsOpt = stmt.executeQuery("SELECT meter_id, name FROM meters ORDER BY meter_id");
+epms\meter_status.jsp:120:                "FROM vw_meter_measurements " +
+epms\meter_status.jsp:185:                "FROM vw_harmonic_measurements " +
+epms\meter_status.jsp:215:                "FROM vw_flicker_with_meter " +
+epms\meter_status.jsp:232:                "FROM vw_voltage_event_log " +
+epms\meter_status.jsp:257:                "FROM vw_alarm_log " +
+epms\modbus_api.jsp:287:                "SELECT plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config WHERE plc_id = ?")) {
+epms\modbus_api.jsp:322:                "FROM dbo.plc_meter_map WHERE plc_id = ? AND enabled = 1 ORDER BY meter_id, start_address")) {
+epms\modbus_api.jsp:359:                "FROM dbo.plc_di_map WHERE plc_id = ? AND enabled = 1 ORDER BY point_id, start_address")) {
+epms\modbus_api.jsp:392:                "FROM dbo.plc_di_tag_map WHERE plc_id = ? AND enabled = 1 ORDER BY point_id, di_address, bit_no")) {
+epms\modbus_api.jsp:428:            "FROM dbo.plc_ai_measurements_match";
+epms\modbus_api.jsp:474:        sql.append("INSERT INTO dbo.").append(tableName).append(" (meter_id, measured_at");
+epms\modbus_api.jsp:544:            "SELECT TOP 1 event_id FROM dbo.device_events " +
+epms\modbus_api.jsp:548:            "INSERT INTO dbo.device_events (device_id, event_type, event_time, severity, description) " +
+epms\modbus_api.jsp:551:            "UPDATE dbo.device_events " +
+epms\phasor_diagram.jsp:92:      try (PreparedStatement psMeters = conn.prepareStatement("SELECT meter_id, name FROM meters ORDER BY meter_id");
+epms\phasor_diagram.jsp:111:        "FROM vw_meter_measurements " +
+epms\plc_register.jsp:53:                        "SELECT COUNT(*) FROM dbo.plc_config WHERE plc_ip = ? AND plc_port = ? AND unit_id = ?";
+epms\plc_register.jsp:66:                    String idSql = "SELECT ISNULL(MAX(plc_id), 0) + 1 FROM dbo.plc_config WITH (UPDLOCK, HOLDLOCK)";
+epms\plc_register.jsp:74:                        "INSERT INTO dbo.plc_config " +
+epms\plc_register.jsp:113:                    "UPDATE dbo.plc_config " +
+epms\plc_register.jsp:135:                    "UPDATE dbo.plc_config " +
+epms\plc_register.jsp:152:                String sql = "DELETE FROM dbo.plc_config WHERE plc_id = ?";
+epms\plc_register.jsp:168:        "FROM dbo.plc_config ORDER BY plc_id";
+epms\plc_status.jsp:12:                "SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config ORDER BY plc_id");
+epms\plc_status.jsp:26:        try (PreparedStatement ps = conn.prepareStatement("SELECT meter_id, name, panel_name FROM dbo.meters ORDER BY meter_id");
+epms\pq_overview.jsp:55:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\pq_overview.jsp:59:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\pq_overview.jsp:64:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+epms\pq_overview.jsp:117:           .append("FROM vw_meter_measurements ")
+epms\plc_excel_import.jsp:44:                "SELECT plc_id, plc_ip, plc_port, unit_id, enabled FROM dbo.plc_config ORDER BY plc_id");
+epms\plc_write.jsp:211:    try (PreparedStatement ps = conn.prepareStatement("SELECT plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config WHERE plc_id = ?")) {
+epms\plc_write.jsp:234:    try (PreparedStatement ps = conn.prepareStatement("SELECT meter_id, start_address, float_count, byte_order, metric_order FROM dbo.plc_meter_map WHERE plc_id = ? AND enabled = 1 ORDER BY meter_id, start_address")) {
+epms\plc_write.jsp:260:    try (PreparedStatement ps = conn.prepareStatement("SELECT point_id, di_address, bit_no, tag_name, item_name, panel_name FROM dbo.plc_di_tag_map WHERE plc_id = ? AND enabled = 1 ORDER BY di_address, bit_no")) {
+epms\plc_write.jsp:905:    try (PreparedStatement ps = conn.prepareStatement("SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config ORDER BY plc_id");
+epms\plc_write.jsp:918:    try (PreparedStatement ps = conn.prepareStatement("SELECT meter_id, name, panel_name FROM dbo.meters ORDER BY meter_id");
+epms\plc_write.jsp:926:    try (PreparedStatement ps = conn.prepareStatement("SELECT metric_order FROM dbo.plc_meter_map WHERE enabled = 1");
+epms\variation_ces.jsp:79:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\variation_ces.jsp:83:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\variation_ces.jsp:88:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+epms\variation_ces.jsp:299:           .append("FROM vw_meter_measurements ")
+epms\variation_ves.jsp:88:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\variation_ves.jsp:92:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\variation_ves.jsp:97:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+epms\variation_ves.jsp:308:           .append("FROM vw_meter_measurements ")
+epms\voltage_unbalance.jsp:79:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+epms\voltage_unbalance.jsp:83:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
+epms\voltage_unbalance.jsp:88:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
+epms\voltage_unbalance.jsp:292:           .append("FROM vw_meter_measurements ")

@@ -1,0 +1,11 @@
+﻿FK_NAME|FK_SCHEMA|FK_TABLE|FK_COLUMN|PK_SCHEMA|PK_TABLE|PK_COLUMN|ORDINAL|ON_DELETE|ON_UPDATE
+-------|---------|--------|---------|---------|--------|---------|-------|---------|---------
+FK__alarm_log__meter__5165187F|dbo|alarm_log|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK__daily_mea__meter__628FA481|dbo|daily_measurements|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK_device_events_meters_meter_id|dbo|device_events|device_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK__flicker_m__meter__571DF1D5|dbo|flicker_measurements|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK__harmonic___meter__02FC7413|dbo|harmonic_measurements|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK__measureme__meter__4BAC3F29|dbo|measurements|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK__monthly_m__meter__656C112C|dbo|monthly_measurements|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK__voltage_e__meter__5441852A|dbo|voltage_events|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION
+FK__yearly_me__meter__68487DD7|dbo|yearly_measurements|meter_id|dbo|meters|meter_id|1|NO_ACTION|NO_ACTION

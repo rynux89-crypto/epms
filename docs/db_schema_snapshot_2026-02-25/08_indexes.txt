@@ -1,0 +1,42 @@
+﻿TABLE_SCHEMA|TABLE_NAME|INDEX_NAME|type_desc|is_primary_key|is_unique|is_unique_constraint|has_filter|filter_definition|KEY_COLUMNS|INCLUDED_COLUMNS
+------------|----------|----------|---------|--------------|---------|--------------------|----------|-----------------|-----------|----------------
+dbo|alarm_log|idx_alarm_meter_time|NONCLUSTERED|0|0|0|0|NULL|meter_id ASC,triggered_at DESC|NULL
+dbo|alarm_log|idx_alarm_severity|NONCLUSTERED|0|0|0|0|NULL|severity ASC|NULL
+dbo|alarm_log|PK__alarm_lo__84139119CF66D75E|CLUSTERED|1|1|0|0|NULL|alarm_id ASC|NULL
+dbo|daily_measurements|idx_daily_meter_date|NONCLUSTERED|0|1|0|0|NULL|meter_id ASC,measured_date ASC|NULL
+dbo|daily_measurements|PK__daily_me__8B516ABB1712964D|CLUSTERED|1|1|0|0|NULL|day_id ASC|NULL
+dbo|device_events|idx_device_event_time|NONCLUSTERED|0|0|0|0|NULL|device_id ASC,event_time DESC|NULL
+dbo|device_events|idx_device_event_type|NONCLUSTERED|0|0|0|0|NULL|event_type ASC|NULL
+dbo|device_events|PK__device_e__2370F7278F4A331D|CLUSTERED|1|1|0|0|NULL|event_id ASC|NULL
+dbo|devices|idx_devices_id|NONCLUSTERED|0|1|0|0|NULL|device_id ASC|NULL
+dbo|devices|idx_devices_location|NONCLUSTERED|0|0|0|0|NULL|location ASC|NULL
+dbo|devices|PK__devices__3B085D8B1AD5163B|CLUSTERED|1|1|0|0|NULL|device_id ASC|NULL
+dbo|flicker_measurements|idx_flicker_measured_at|NONCLUSTERED|0|0|0|0|NULL|measured_at ASC|NULL
+dbo|flicker_measurements|idx_flicker_meter_id|NONCLUSTERED|0|0|0|0|NULL|meter_id ASC|NULL
+dbo|flicker_measurements|PK__flicker___E7C989C1083484E4|CLUSTERED|1|1|0|0|NULL|flicker_id ASC|NULL
+dbo|harmonic_measurements|PK__harmonic__2521C05186D98574|CLUSTERED|1|1|0|0|NULL|harmonic_id ASC|NULL
+dbo|measurements|idx_measurements_id|NONCLUSTERED|0|1|0|0|NULL|measurement_id ASC|NULL
+dbo|measurements|idx_measurements_meter_time|NONCLUSTERED|0|0|0|0|NULL|meter_id ASC,measured_at DESC|NULL
+dbo|measurements|PK__measurem__E3D1E1C19E50917C|CLUSTERED|1|1|0|0|NULL|measurement_id ASC|NULL
+dbo|measurenets|PK__measuren__4B29A91C9029B809|CLUSTERED|1|1|0|0|NULL|plc_id ASC|NULL
+dbo|measurenets|UQ_measurenets_ip_port|NONCLUSTERED|0|1|1|0|NULL|ip_address ASC,port ASC|NULL
+dbo|meters|idx_meters_building_usage|NONCLUSTERED|0|0|0|0|NULL|building_name ASC,usage_type ASC|NULL
+dbo|meters|idx_meters_meter_id|NONCLUSTERED|0|1|0|0|NULL|meter_id ASC|NULL
+dbo|meters|PK__meters__6647C315720761B5|CLUSTERED|1|1|0|0|NULL|meter_id ASC|NULL
+dbo|monthly_measurements|idx_monthly_meter_month|NONCLUSTERED|0|1|0|0|NULL|meter_id ASC,measured_month ASC|NULL
+dbo|monthly_measurements|PK__monthly___05AA95639D9F9A8A|CLUSTERED|1|1|0|0|NULL|month_id ASC|NULL
+dbo|plc_ai_measurements_match|PK__plc_ai_m__CA90DA7B333B2F0B|CLUSTERED|1|1|0|0|NULL|token ASC|NULL
+dbo|plc_ai_samples|PK__plc_ai_s__3213E83FD38CAE27|CLUSTERED|1|1|0|0|NULL|id ASC|NULL
+dbo|plc_ai_write_task|PK__plc_ai_w__0492148D9AF1CFED|CLUSTERED|1|1|0|0|NULL|task_id ASC|NULL
+dbo|plc_config|PK__plc_conf__4B29A91C93FAAD17|CLUSTERED|1|1|0|0|NULL|plc_id ASC|NULL
+dbo|plc_di_map|PK__plc_di_m__77BB2575B3114ED8|CLUSTERED|1|1|0|0|NULL|di_map_id ASC|NULL
+dbo|plc_di_samples|PK__plc_di_s__3213E83F4E5EDED8|CLUSTERED|1|1|0|0|NULL|id ASC|NULL
+dbo|plc_di_tag_map|PK__plc_di_t__4296A2B6E31163A0|CLUSTERED|1|1|0|0|NULL|tag_id ASC|NULL
+dbo|plc_meter_map|PK__plc_mete__52A788194294ED8B|CLUSTERED|1|1|0|0|NULL|map_id ASC|NULL
+dbo|plc_metric_random_range|PK__plc_metr__7A667D1D637839BE|CLUSTERED|1|1|0|0|NULL|metric_token ASC|NULL
+dbo|plc_write_control|PK__plc_writ__3213E83F55C6C94D|CLUSTERED|1|1|0|0|NULL|id ASC|NULL
+dbo|voltage_events|idx_voltage_meter_time|NONCLUSTERED|0|0|0|0|NULL|meter_id ASC,triggered_at DESC|NULL
+dbo|voltage_events|idx_voltage_type|NONCLUSTERED|0|0|0|0|NULL|event_type ASC|NULL
+dbo|voltage_events|PK__voltage___2370F727A077EFA7|CLUSTERED|1|1|0|0|NULL|event_id ASC|NULL
+dbo|yearly_measurements|idx_yearly_meter_year|NONCLUSTERED|0|1|0|0|NULL|meter_id ASC,measured_year ASC|NULL
+dbo|yearly_measurements|PK__yearly_m__B2A06B62F05C3B22|CLUSTERED|1|1|0|0|NULL|year_id ASC|NULL

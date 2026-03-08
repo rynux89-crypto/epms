@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Context>
+  <Resource
+      name="jdbc/epms"
+      auth="Container"
+      type="javax.sql.DataSource"
+      driverClassName="com.microsoft.sqlserver.jdbc.SQLServerDriver"
+      url="jdbc:sqlserver://localhost:1433;databaseName=epms;encrypt=true;trustServerCertificate=true;charset=UTF-8"
+      username="sa"
+      password="1234"
+      maxTotal="60"
+      maxIdle="20"
+      minIdle="8"
+      maxWaitMillis="8000"
+      validationQuery="SELECT 1"
+      testOnBorrow="true"
+      testWhileIdle="true"
+      timeBetweenEvictionRunsMillis="30000"
+      minEvictableIdleTimeMillis="300000"
+      removeAbandonedOnBorrow="true"
+      removeAbandonedTimeout="60"
+      logAbandoned="true" />
+</Context>

@@ -1,0 +1,7 @@
+﻿db_name|sql_version
+-------|-----------
+EPMS|Microsoft SQL Server 2022 (RTM-GDR) (KB5073031) - 16.0.1165.1 (X64) 
+	Nov 24 2025 19:08:45 
+	Copyright (C) 2022 Microsoft Corporation
+	Developer Edition (64-bit) on Windows 10 Pro 10.0 <X64> (Build 26200: ) (Hypervisor)
+
