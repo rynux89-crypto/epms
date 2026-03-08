@@ -439,21 +439,21 @@
 
 <script>
 (function(){
-  var data = <%= phasorJson.toString() %>;
-  var selectedMeter = (typeof data.meter_id === 'string') ? data.meter_id : '';
-  var lockVaZero = <%= vaZero ? "true" : "false" %>;
-  var POLL_MS = 10000;
-  var pollTimer = null;
-  var scanTimer = null;
-  var isScanning = false;
-  var scanIndex = 0;
+  let data = <%= phasorJson.toString() %>;
+  let selectedMeter = (typeof data.meter_id === 'string') ? data.meter_id : '';
+  let lockVaZero = <%= vaZero ? "true" : "false" %>;
+  let POLL_MS = 10000;
+  let pollTimer = null;
+  let scanTimer = null;
+  let isScanning = false;
+  let scanIndex = 0;
 
-  var TH_V_UNBAL_WARN = 2.0;
-  var TH_V_UNBAL_ALARM = 3.0;
-  var TH_PF_WARN = 0.90;
-  var TH_PF_ALARM = 0.80;
-  var TH_V_OVER = 1.10;
-  var TH_V_UNDER = 0.90;
+  let TH_V_UNBAL_WARN = 2.0;
+  let TH_V_UNBAL_ALARM = 3.0;
+  let TH_PF_WARN = 0.90;
+  let TH_PF_ALARM = 0.80;
+  let TH_V_OVER = 1.10;
+  let TH_V_UNDER = 0.90;
 
   function num(k){ return (typeof data[k] === 'number' && isFinite(data[k])) ? data[k] : 0; }
   function strv(k){ return (typeof data[k] === 'string') ? data[k] : ''; }
@@ -461,40 +461,40 @@
   function rad2deg(r){ return r * 180 / Math.PI; }
 
   function norm180(deg){
-    var a = deg % 360;
+    let a = deg % 360;
     if (a > 180) a -= 360;
     if (a <= -180) a += 360;
     return a;
   }
   function norm360(deg){
-    var a = deg % 360;
+    let a = deg % 360;
     if (a < 0) a += 360;
     return a;
   }
   function chartAngle(rawDeg){
-    var a = rawDeg;
+    let a = rawDeg;
     if (lockVaZero) a = a - num('voltage_phase_a');
     return norm360(a);
   }
   function shortestDelta(startDeg, endDeg){
-    var s = norm360(startDeg);
-    var e = norm360(endDeg);
-    var d = e - s;
+    let s = norm360(startDeg);
+    let e = norm360(endDeg);
+    let d = e - s;
     // JS modulo can stay negative, so shift by +540 for stable [-180,180) normalization.
     d = ((d + 540) % 360) - 180;
     return d;
   }
   function arcShortInfo(startDeg, endDeg){
-    var s = norm360(startDeg);
-    var d = shortestDelta(startDeg, endDeg);
-    var e = s + d;
-    var midDeg = s + d/2;
+    let s = norm360(startDeg);
+    let d = shortestDelta(startDeg, endDeg);
+    let e = s + d;
+    let midDeg = s + d/2;
     return { sDeg:s, eDeg:e, midDeg:midDeg, dDeg:d, diffAbs: Math.abs(d) };
   }
   function toCanvasRad(deg){ return -deg2rad(deg); }
 
   function cFromPolar(mag, deg){
-    var r = deg2rad(deg);
+    let r = deg2rad(deg);
     return { re: mag*Math.cos(r), im: mag*Math.sin(r) };
   }
   function cAdd(a,b){ return { re:a.re+b.re, im:a.im+b.im }; }
@@ -503,12 +503,12 @@
   function cAbs(a){ return Math.hypot(a.re,a.im); }
   function cArgDeg(a){ return rad2deg(Math.atan2(a.im,a.re)); }
 
-  var A = cFromPolar(1, 120);
-  var A2 = cFromPolar(1, 240);
+  let A = cFromPolar(1, 120);
+  let A2 = cFromPolar(1, 240);
   function symComp(Va, Vb, Vc){
-    var V0 = cScale(cAdd(cAdd(Va,Vb),Vc), 1/3);
-    var V1 = cScale(cAdd(cAdd(Va, cMul(A, Vb)), cMul(A2, Vc)), 1/3);
-    var V2 = cScale(cAdd(cAdd(Va, cMul(A2, Vb)), cMul(A, Vc)), 1/3);
+    let V0 = cScale(cAdd(cAdd(Va,Vb),Vc), 1/3);
+    let V1 = cScale(cAdd(cAdd(Va, cMul(A, Vb)), cMul(A2, Vc)), 1/3);
+    let V2 = cScale(cAdd(cAdd(Va, cMul(A2, Vb)), cMul(A, Vc)), 1/3);
     return { V0:V0, V1:V1, V2:V2 };
   }
 
@@ -518,52 +518,52 @@
       coordinateSystem: 'polar',
       silent: true,
       renderItem: function(params){
-        var cx = params.coordSys.cx;
-        var cy = params.coordSys.cy;
-        var r = params.coordSys.r * radiusFrac;
-        var info = arcShortInfo(startDeg, endDeg);
+        let cx = params.coordSys.cx;
+        let cy = params.coordSys.cy;
+        let r = params.coordSys.r * radiusFrac;
+        let info = arcShortInfo(startDeg, endDeg);
 
-        var a1 = toCanvasRad(info.sDeg);
-        var a2 = toCanvasRad(info.eDeg);
-        var amid = toCanvasRad(info.midDeg);
+        let a1 = toCanvasRad(info.sDeg);
+        let a2 = toCanvasRad(info.eDeg);
+        let amid = toCanvasRad(info.midDeg);
 
-        var labelR = r * (labelRScale || 1.10);
-        var txt = (labelPrefix ? (labelPrefix + ' ') : '') + info.diffAbs.toFixed(1) + '°';
-        var clockwise = info.dDeg < 0;
-        var labelShift = (typeof labelOffsetPx === 'number') ? labelOffsetPx : 0;
+        let labelR = r * (labelRScale || 1.10);
+        let txt = (labelPrefix ? (labelPrefix + ' ') : '') + info.diffAbs.toFixed(1) + '°';
+        let clockwise = info.dDeg < 0;
+        let labelShift = (typeof labelOffsetPx === 'number') ? labelOffsetPx : 0;
 
         // Arc endpoints
-        var sx = cx + r * Math.cos(a1);
-        var sy = cy + r * Math.sin(a1);
-        var ex = cx + r * Math.cos(a2);
-        var ey = cy + r * Math.sin(a2);
+        let sx = cx + r * Math.cos(a1);
+        let sy = cy + r * Math.sin(a1);
+        let ex = cx + r * Math.cos(a2);
+        let ey = cy + r * Math.sin(a2);
 
         function tangent(theta, cw){
           // CCW tangent: (-sin, cos), CW is opposite
           return cw ? { x: Math.sin(theta), y: -Math.cos(theta) } : { x: -Math.sin(theta), y: Math.cos(theta) };
         }
         function arrowPoints(px, py, tx, ty, size){
-          var len = Math.hypot(tx, ty) || 1;
-          var ux = tx / len, uy = ty / len;
-          var bx = px - ux * size;
-          var by = py - uy * size;
-          var nx = -uy, ny = ux;
-          var half = size * 0.55;
+          let len = Math.hypot(tx, ty) || 1;
+          let ux = tx / len, uy = ty / len;
+          let bx = px - ux * size;
+          let by = py - uy * size;
+          let nx = -uy, ny = ux;
+          let half = size * 0.55;
           return [
             [px, py],
             [bx + nx * half, by + ny * half],
             [bx - nx * half, by - ny * half]
           ];
         }
-        var tStart = tangent(a1, clockwise);
-        var tEnd = tangent(a2, clockwise);
+        let tStart = tangent(a1, clockwise);
+        let tEnd = tangent(a2, clockwise);
         // 양방향 화살표 방향 보정
-        var startArrow = arrowPoints(sx, sy, tStart.x, tStart.y, 9);
-        var endArrow = arrowPoints(ex, ey, -tEnd.x, -tEnd.y, 9);
+        let startArrow = arrowPoints(sx, sy, tStart.x, tStart.y, 9);
+        let endArrow = arrowPoints(ex, ey, -tEnd.x, -tEnd.y, 9);
 
-        var tMid = tangent(amid, clockwise);
-        var labelX = cx + labelR * Math.cos(amid) + tMid.x * labelShift;
-        var labelY = cy + labelR * Math.sin(amid) + tMid.y * labelShift;
+        let tMid = tangent(amid, clockwise);
+        let labelX = cx + labelR * Math.cos(amid) + tMid.x * labelShift;
+        let labelY = cy + labelR * Math.sin(amid) + tMid.y * labelShift;
 
         return {
           type: 'group',
@@ -638,13 +638,13 @@
       silent: true,
       z: 1,
       renderItem: function(params){
-        var cx = params.coordSys.cx;
-        var cy = params.coordSys.cy;
-        var r = params.coordSys.r;
-        var degs = [0, 90, 180, 270];
-        var children = [];
-        for (var i = 0; i < degs.length; i++) {
-          var th = toCanvasRad(degs[i]);
+        let cx = params.coordSys.cx;
+        let cy = params.coordSys.cy;
+        let r = params.coordSys.r;
+        let degs = [0, 90, 180, 270];
+        let children = [];
+        for (let i = 0; i < degs.length; i++) {
+          let th = toCanvasRad(degs[i]);
           children.push({
             type: 'line',
             shape: {
@@ -674,13 +674,13 @@
       silent: true,
       z: 7,
       renderItem: function(params){
-        var cx = params.coordSys.cx;
-        var cy = params.coordSys.cy;
-        var r = params.coordSys.r;
-        var th = toCanvasRad(0);
-        var ex = cx + r * Math.cos(th);
-        var ey = cy + r * Math.sin(th);
-        var active = !!lockVaZero;
+        let cx = params.coordSys.cx;
+        let cy = params.coordSys.cy;
+        let r = params.coordSys.r;
+        let th = toCanvasRad(0);
+        let ex = cx + r * Math.cos(th);
+        let ey = cy + r * Math.sin(th);
+        let active = !!lockVaZero;
         return {
           type: 'group',
           children: [
@@ -700,7 +700,7 @@
     };
   }
 
-  var phasors = [
+  let phasors = [
     { name:'Va', magKey:'voltage_an', angKey:'voltage_phase_a', color:'#ef4444', dashed:true, unit:'V', offset:[8,-14] },
     { name:'Vb', magKey:'voltage_bn', angKey:'voltage_phase_b', color:'#22c55e', dashed:true, unit:'V', offset:[-6,10] },
     { name:'Vc', magKey:'voltage_cn', angKey:'voltage_phase_c', color:'#0ea5e9', dashed:true, unit:'V', offset:[10,6] },
@@ -709,7 +709,7 @@
     { name:'Ic', magKey:'current_c',  angKey:'current_phase_c', color:'#1d4ed8', dashed:false, unit:'A', offset:[10,2] }
   ];
 
-  var chart = echarts.init(document.getElementById('chart'));
+  let chart = echarts.init(document.getElementById('chart'));
 
   function makePhasorSeries(p){
     return {
@@ -718,29 +718,29 @@
       coordinateSystem: 'polar',
       data: [[Math.abs(num(p.magKey)), chartAngle(num(p.angKey))]],
       renderItem: function(params, api){
-        var cx = params.coordSys.cx, cy = params.coordSys.cy;
-        var mag = api.value(0), ang = norm360(api.value(1));
-        var end = api.coord([mag, ang]);
+        let cx = params.coordSys.cx, cy = params.coordSys.cy;
+        let mag = api.value(0), ang = norm360(api.value(1));
+        let end = api.coord([mag, ang]);
 
-        var sx = cx, sy = cy, ex = end[0], ey = end[1];
-        var size = p.dashed ? 12 : 14;
-        var half = size * 0.55;
+        let sx = cx, sy = cy, ex = end[0], ey = end[1];
+        let size = p.dashed ? 12 : 14;
+        let half = size * 0.55;
 
-        var dx = ex - sx, dy = ey - sy;
-        var len = Math.hypot(dx, dy) || 1;
+        let dx = ex - sx, dy = ey - sy;
+        let len = Math.hypot(dx, dy) || 1;
         dx /= len; dy /= len;
 
-        var bx = ex - dx * size;
-        var by = ey - dy * size;
-        var px = -dy, py = dx;
+        let bx = ex - dx * size;
+        let by = ey - dy * size;
+        let px = -dy, py = dx;
 
-        var t1 = [ex, ey];
-        var t2 = [bx + px * half, by + py * half];
-        var t3 = [bx - px * half, by - py * half];
+        let t1 = [ex, ey];
+        let t2 = [bx + px * half, by + py * half];
+        let t3 = [bx - px * half, by - py * half];
 
-        var ox = p.offset ? p.offset[0] : 0;
-        var oy = p.offset ? p.offset[1] : 0;
-        var labelText = p.name + ' ' + (mag||0).toFixed(2) + p.unit + ' @ ' + (ang||0).toFixed(1) + '°';
+        let ox = p.offset ? p.offset[0] : 0;
+        let oy = p.offset ? p.offset[1] : 0;
+        let labelText = p.name + ' ' + (mag||0).toFixed(2) + p.unit + ' @ ' + (ang||0).toFixed(1) + '°';
 
         return {
           type: 'group',
@@ -769,19 +769,19 @@
   }
 
   function buildOption(){
-    var mags = phasors.map(function(p){ return Math.abs(num(p.magKey)); });
-    var rMax = Math.max(10, Math.ceil(Math.max.apply(null, mags) * 1.25));
+    let mags = phasors.map(function(p){ return Math.abs(num(p.magKey)); });
+    let rMax = Math.max(10, Math.ceil(Math.max.apply(null, mags) * 1.25));
 
-    var VaA = chartAngle(num('voltage_phase_a'));
-    var VbA = chartAngle(num('voltage_phase_b'));
-    var VcA = chartAngle(num('voltage_phase_c'));
+    let VaA = chartAngle(num('voltage_phase_a'));
+    let VbA = chartAngle(num('voltage_phase_b'));
+    let VcA = chartAngle(num('voltage_phase_c'));
 
-    var legendSeries = [
+    let legendSeries = [
       { name:'Voltage', type:'scatter', coordinateSystem:'polar', data:[[0,0]], symbolSize:0, tooltip:{show:false}, silent:true },
       { name:'Current', type:'scatter', coordinateSystem:'polar', data:[[0,0]], symbolSize:0, tooltip:{show:false}, silent:true }
     ];
 
-    var series = legendSeries
+    let series = legendSeries
       .concat([ makeOuterRing() ])
       .concat([ makeCardinalLines() ])
       .concat(phasors.map(makePhasorSeries))
@@ -839,15 +839,15 @@
   }
 
   function setKV(containerId, rows){
-    var el = document.getElementById(containerId);
+    let el = document.getElementById(containerId);
     el.innerHTML = '';
-    for (var i = 0; i < rows.length; i++) {
-      var k = document.createElement('div');
+    for (let i = 0; i < rows.length; i++) {
+      let k = document.createElement('div');
       k.className = 'k';
       k.textContent = rows[i][0];
 
-      var v = document.createElement('div');
-      var cls = rows[i][2] || '';
+      let v = document.createElement('div');
+      let cls = rows[i][2] || '';
       v.className = 'v' + (cls ? (' ' + cls) : '');
 
       if (rows[i][3]) v.innerHTML = rows[i][1];
@@ -859,7 +859,7 @@
   }
 
   function pfClass(pf){
-    var apf = Math.abs(pf);
+    let apf = Math.abs(pf);
     if (apf < TH_PF_ALARM) return 'alarm';
     if (apf < TH_PF_WARN) return 'warn';
     return 'ok';
@@ -870,19 +870,19 @@
   function leadLagTag(isLag){ return isLag ? '<span class="tag lag">Lag</span>' : '<span class="tag lead">Lead</span>'; }
 
   function updateTimeDiff(){
-    var el = document.getElementById('timeDiff');
+    let el = document.getElementById('timeDiff');
     if (!el) return;
-    var measuredAt = strv('measured_at');
+    let measuredAt = strv('measured_at');
     el.textContent = measuredAt && measuredAt !== '-' ? measuredAt : '-';
     el.style.color = '#64748b';
   }
 
   function updatePanels(){
-    var pfRows = [];
+    let pfRows = [];
     ['a','b','c'].forEach(function(ph){
-      var th = norm180(num('current_phase_' + ph) - num('voltage_phase_' + ph));
-      var pf = Math.cos(deg2rad(th));
-      var isLag = (th >= 0);
+      let th = norm180(num('current_phase_' + ph) - num('voltage_phase_' + ph));
+      let pf = Math.cos(deg2rad(th));
+      let isLag = (th >= 0);
 
       pfRows.push([
         'φ(I' + ph.toUpperCase() + '-V' + ph.toUpperCase() + ')',
@@ -900,19 +900,19 @@
     });
     setKV('pfBox', pfRows);
 
-    var Va = num('voltage_an'), Vb = num('voltage_bn'), Vc = num('voltage_cn');
-    var vavg = (Va + Vb + Vc) / 3;
-    var vdev = Math.max(Math.abs(Va-vavg), Math.abs(Vb-vavg), Math.abs(Vc-vavg));
-    var vunb = (vavg > 1e-9) ? (vdev / vavg * 100) : 0;
-    var vunbClass = (vunb > TH_V_UNBAL_ALARM) ? 'alarm' : (vunb > TH_V_UNBAL_WARN ? 'warn' : 'ok');
+    let Va = num('voltage_an'), Vb = num('voltage_bn'), Vc = num('voltage_cn');
+    let vavg = (Va + Vb + Vc) / 3;
+    let vdev = Math.max(Math.abs(Va-vavg), Math.abs(Vb-vavg), Math.abs(Vc-vavg));
+    let vunb = (vavg > 1e-9) ? (vdev / vavg * 100) : 0;
+    let vunbClass = (vunb > TH_V_UNBAL_ALARM) ? 'alarm' : (vunb > TH_V_UNBAL_WARN ? 'warn' : 'ok');
 
-    var over = (vavg > 0 && (Va/vavg > TH_V_OVER || Vb/vavg > TH_V_OVER || Vc/vavg > TH_V_OVER));
-    var under = (vavg > 0 && (Va/vavg < TH_V_UNDER || Vb/vavg < TH_V_UNDER || Vc/vavg < TH_V_UNDER));
+    let over = (vavg > 0 && (Va/vavg > TH_V_OVER || Vb/vavg > TH_V_OVER || Vc/vavg > TH_V_OVER));
+    let under = (vavg > 0 && (Va/vavg < TH_V_UNDER || Vb/vavg < TH_V_UNDER || Vc/vavg < TH_V_UNDER));
 
-    var pfA = Math.cos(deg2rad(norm180(num('current_phase_a') - num('voltage_phase_a'))));
-    var pfB = Math.cos(deg2rad(norm180(num('current_phase_b') - num('voltage_phase_b'))));
-    var pfC = Math.cos(deg2rad(norm180(num('current_phase_c') - num('voltage_phase_c'))));
-    var minPf = Math.min(Math.abs(pfA), Math.abs(pfB), Math.abs(pfC));
+    let pfA = Math.cos(deg2rad(norm180(num('current_phase_a') - num('voltage_phase_a'))));
+    let pfB = Math.cos(deg2rad(norm180(num('current_phase_b') - num('voltage_phase_b'))));
+    let pfC = Math.cos(deg2rad(norm180(num('current_phase_c') - num('voltage_phase_c'))));
+    let minPf = Math.min(Math.abs(pfA), Math.abs(pfB), Math.abs(pfC));
 
     setKV('alarmBox', [
       ['Vavg', fmtNum(vavg,2) + fmtUnit('V'), '', true],
@@ -922,23 +922,23 @@
       ['최소 PF', fmtNum(minPf,3), pfClass(minPf), true]
     ]);
 
-    var VaC = cFromPolar(Va, num('voltage_phase_a'));
-    var VbC = cFromPolar(Vb, num('voltage_phase_b'));
-    var VcC = cFromPolar(Vc, num('voltage_phase_c'));
-    var IaC = cFromPolar(num('current_a'), num('current_phase_a'));
-    var IbC = cFromPolar(num('current_b'), num('current_phase_b'));
-    var IcC = cFromPolar(num('current_c'), num('current_phase_c'));
+    let VaC = cFromPolar(Va, num('voltage_phase_a'));
+    let VbC = cFromPolar(Vb, num('voltage_phase_b'));
+    let VcC = cFromPolar(Vc, num('voltage_phase_c'));
+    let IaC = cFromPolar(num('current_a'), num('current_phase_a'));
+    let IbC = cFromPolar(num('current_b'), num('current_phase_b'));
+    let IcC = cFromPolar(num('current_c'), num('current_phase_c'));
 
-    var Vs = symComp(VaC, VbC, VcC);
-    var Is = symComp(IaC, IbC, IcC);
+    let Vs = symComp(VaC, VbC, VcC);
+    let Is = symComp(IaC, IbC, IcC);
 
-    var V0m = cAbs(Vs.V0), V1m = cAbs(Vs.V1), V2m = cAbs(Vs.V2);
-    var I0m = cAbs(Is.V0), I1m = cAbs(Is.V1), I2m = cAbs(Is.V2);
+    let V0m = cAbs(Vs.V0), V1m = cAbs(Vs.V1), V2m = cAbs(Vs.V2);
+    let I0m = cAbs(Is.V0), I1m = cAbs(Is.V1), I2m = cAbs(Is.V2);
 
-    var Vunb2 = (V1m > 1e-9) ? (V2m / V1m * 100) : 0;
-    var Iunb2 = (I1m > 1e-9) ? (I2m / I1m * 100) : 0;
-    var Vunb0 = (V1m > 1e-9) ? (V0m / V1m * 100) : 0;
-    var Iunb0 = (I1m > 1e-9) ? (I0m / I1m * 100) : 0;
+    let Vunb2 = (V1m > 1e-9) ? (V2m / V1m * 100) : 0;
+    let Iunb2 = (I1m > 1e-9) ? (I2m / I1m * 100) : 0;
+    let Vunb0 = (V1m > 1e-9) ? (V0m / V1m * 100) : 0;
+    let Iunb0 = (I1m > 1e-9) ? (I0m / I1m * 100) : 0;
 
     function unbClass(pct){
       if (pct >= 10) return 'alarm';
@@ -969,9 +969,9 @@
 
   async function pollOnce(){
     try {
-      var va0Query = lockVaZero ? '&va0=1' : '';
-      var url = location.pathname + '?meter=' + encodeURIComponent(selectedMeter) + '&ajax=1' + va0Query;
-      var res = await fetch(url, { cache: 'no-store' });
+      let va0Query = lockVaZero ? '&va0=1' : '';
+      let url = location.pathname + '?meter=' + encodeURIComponent(selectedMeter) + '&ajax=1' + va0Query;
+      let res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) return;
       data = await res.json();
       render();
@@ -984,8 +984,8 @@
     chart.resize();
     autoCollapseSideIfNeeded();
   });
-  var va0Opt = document.getElementById('va0Opt');
-  var va0Wrap = document.getElementById('va0Wrap');
+  let va0Opt = document.getElementById('va0Opt');
+  let va0Wrap = document.getElementById('va0Wrap');
   function syncVa0Visual(){
     if (!va0Wrap || !va0Opt) return;
     va0Wrap.classList.toggle('active', !!va0Opt.checked);
@@ -998,19 +998,19 @@
       render();
     });
   }
-  var meterSel = document.getElementById('meter');
-  var scanLabel = document.getElementById('scanLabel');
-  var scanIntervalSel = document.getElementById('scanInterval');
-  var scanStartBtn = document.getElementById('scanStart');
-  var scanStopBtn = document.getElementById('scanStop');
-  var secToggles = document.querySelectorAll('.sec-toggle');
-  var sidePanel = document.querySelector('.side');
-  var meterIds = meterSel ? Array.prototype.map.call(meterSel.options, function(opt){ return opt.value; }) : [];
+  let meterSel = document.getElementById('meter');
+  let scanLabel = document.getElementById('scanLabel');
+  let scanIntervalSel = document.getElementById('scanInterval');
+  let scanStartBtn = document.getElementById('scanStart');
+  let scanStopBtn = document.getElementById('scanStop');
+  let secToggles = document.querySelectorAll('.sec-toggle');
+  let sidePanel = document.querySelector('.side');
+  let meterIds = meterSel ? Array.prototype.map.call(meterSel.options, function(opt){ return opt.value; }) : [];
 
   function setSectionCollapsed(secId, collapsed){
-    var sec = document.getElementById(secId);
+    let sec = document.getElementById(secId);
     if (!sec) return;
-    var btn = sec.querySelector('.sec-toggle');
+    let btn = sec.querySelector('.sec-toggle');
     sec.classList.toggle('collapsed', !!collapsed);
     if (btn) btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   }
@@ -1018,16 +1018,16 @@
   function autoCollapseSideIfNeeded(){
     if (!sidePanel) return;
     if (sidePanel.scrollHeight <= sidePanel.clientHeight) return;
-    var order = ['secAlarm', 'secPf'];
-    for (var i = 0; i < order.length; i++) {
+    let order = ['secAlarm', 'secPf'];
+    for (let i = 0; i < order.length; i++) {
       if (sidePanel.scrollHeight <= sidePanel.clientHeight) break;
       setSectionCollapsed(order[i], true);
     }
   }
 
-  for (var t = 0; t < secToggles.length; t++) {
+  for (let t = 0; t < secToggles.length; t++) {
     secToggles[t].addEventListener('click', function(){
-      var sec = this.closest('.summary-sec');
+      let sec = this.closest('.summary-sec');
       if (!sec) return;
       sec.classList.toggle('collapsed');
       this.setAttribute('aria-expanded', sec.classList.contains('collapsed') ? 'false' : 'true');
@@ -1081,9 +1081,9 @@
       pollTimer = null;
     }
     if (scanTimer) clearInterval(scanTimer);
-    var ms = parseInt(scanIntervalSel ? scanIntervalSel.value : '3000', 10);
+    let ms = parseInt(scanIntervalSel ? scanIntervalSel.value : '3000', 10);
     if (!isFinite(ms) || ms <= 0) ms = 3000;
-    var curIdx = meterIds.indexOf(selectedMeter);
+    let curIdx = meterIds.indexOf(selectedMeter);
     scanIndex = (curIdx >= 0) ? curIdx : 0;
     setScanUi(true);
     scanTick();
@@ -1105,3 +1105,4 @@
 </script>
 </body>
 </html>
+

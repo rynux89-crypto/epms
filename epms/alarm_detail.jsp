@@ -1,7 +1,23 @@
 ﻿<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.sql.*, java.util.*, java.net.URLEncoder, java.text.SimpleDateFormat" %>
 <%@ include file="../includes/dbconn.jsp" %>
-<%
+<%!
+    private static String h(Object v) {
+        if (v == null) return "";
+        String s = String.valueOf(v);
+        StringBuilder b = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '&') b.append("&amp;");
+            else if (c == '<') b.append("&lt;");
+            else if (c == '>') b.append("&gt;");
+            else if (c == '"') b.append("&quot;");
+            else if (c == '\'') b.append("&#39;");
+            else b.append(c);
+        }
+        return b.toString();
+    }
+%><%
     request.setCharacterEncoding("UTF-8");
 
     String alarmIdParam = request.getParameter("alarm_id");
@@ -203,7 +219,7 @@
 
     <div class="dash-main" style="display:flex; flex-direction:column; gap:12px; min-height:0;">
         <% if (queryError != null) { %>
-            <div class="msg-box"><%= queryError %></div>
+            <div class="msg-box"><%= h(queryError) %></div>
         <% } %>
 
         <% if (!foundAlarm) { %>
@@ -212,19 +228,19 @@
             <section class="panel_s">
                 <div class="kv-grid">
                     <div class="kv"><div class="k">Alarm ID</div><div class="v"><%= alarm.get("alarm_id") %></div></div>
-                    <div class="kv"><div class="k">Meter</div><div class="v"><%= alarm.get("meter_name") %> (#<%= alarm.get("meter_id") %>)</div></div>
-                    <div class="kv"><div class="k">건물/용도</div><div class="v"><%= alarm.get("building_name") %> / <%= alarm.get("usage_type") %></div></div>
-                    <div class="kv"><div class="k">패널</div><div class="v"><%= alarm.get("panel_name") %></div></div>
-                    <div class="kv"><div class="k">알람유형</div><div class="v"><%= alarm.get("alarm_type") %></div></div>
-                    <div class="kv"><div class="k">심각도</div><div class="v sev-<%= alarm.get("severity") %>"><%= alarm.get("severity") %></div></div>
+                    <div class="kv"><div class="k">Meter</div><div class="v"><%= h(alarm.get("meter_name")) %> (#<%= alarm.get("meter_id") %>)</div></div>
+                    <div class="kv"><div class="k">건물/용도</div><div class="v"><%= h(alarm.get("building_name")) %> / <%= h(alarm.get("usage_type")) %></div></div>
+                    <div class="kv"><div class="k">패널</div><div class="v"><%= h(alarm.get("panel_name")) %></div></div>
+                    <div class="kv"><div class="k">알람유형</div><div class="v"><%= h(alarm.get("alarm_type")) %></div></div>
+                    <div class="kv"><div class="k">심각도</div><div class="v sev-<%= h(alarm.get("severity")) %>"><%= h(alarm.get("severity")) %></div></div>
                     <div class="kv"><div class="k">발생시각</div><div class="v"><%= alarm.get("triggered_at") %></div></div>
                     <%
                         Object clearedObj = alarm.get("cleared_at");
                         String clearedText = (clearedObj == null) ? "-" : String.valueOf(clearedObj);
                         if ("null".equalsIgnoreCase(clearedText.trim()) || clearedText.trim().isEmpty()) clearedText = "-";
                     %>
-                    <div class="kv"><div class="k">해제시각</div><div class="v"><%= clearedText %></div></div>
-                    <div class="kv" style="grid-column: 1 / -1;"><div class="k">설명</div><div class="v one-line" title="<%= alarm.get("description") %>"><%= alarm.get("description") %></div></div>
+                    <div class="kv"><div class="k">해제시각</div><div class="v"><%= h(clearedText) %></div></div>
+                    <div class="kv" style="grid-column: 1 / -1;"><div class="k">설명</div><div class="v one-line" title="<%= h(alarm.get("description")) %>"><%= h(alarm.get("description")) %></div></div>
                 </div>
                 <div class="status-text">조회 구간: 발생시각 기준 전후 1시간</div>
             </section>
@@ -312,12 +328,12 @@
 
     function findClosestIndex(times, target) {
         if (!times || times.length === 0 || target === null) return -1;
-        var idx = -1;
-        var best = Number.MAX_SAFE_INTEGER;
-        for (var i = 0; i < times.length; i++) {
-            var t = times[i];
+        let idx = -1;
+        let best = Number.MAX_SAFE_INTEGER;
+        for (let i = 0; i < times.length; i++) {
+            const t = times[i];
             if (t === null || t === undefined) continue;
-            var diff = Math.abs(Number(t) - Number(target));
+            const diff = Math.abs(Number(t) - Number(target));
             if (diff < best) { best = diff; idx = i; }
         }
         return idx;
@@ -401,4 +417,5 @@
 </script>
 </body>
 </html>
+
 

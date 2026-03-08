@@ -2,6 +2,21 @@
 <%@ page import="java.sql.*, java.util.*, java.net.URLEncoder, java.time.*" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%!
+    private static String h(Object v) {
+        if (v == null) return "";
+        String s = String.valueOf(v);
+        StringBuilder b = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '&') b.append("&amp;");
+            else if (c == '<') b.append("&lt;");
+            else if (c == '>') b.append("&gt;");
+            else if (c == '"') b.append("&quot;");
+            else if (c == '\'') b.append("&#39;");
+            else b.append(c);
+        }
+        return b.toString();
+    }
     private static String cleanAlarmDesc(Object v) {
         if (v == null) return "";
         String s = String.valueOf(v).trim();
@@ -160,7 +175,7 @@
             }
         }
     } catch (Exception e) {
-        out.println("<pre style='color:#b42318'>" + e.getMessage() + "</pre>");
+        error = "조회 실패: " + e.getMessage();
     } finally {
         try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
@@ -215,7 +230,7 @@
                         <select id="building_name" name="building_name">
                             <option value="">전체</option>
                             <% for (String b : buildingOptions) { %>
-                                <option value="<%= b %>" <%= b.equals(buildingName) ? "selected" : "" %>><%= b %></option>
+                                <option value="<%= h(b) %>" <%= b.equals(buildingName) ? "selected" : "" %>><%= h(b) %></option>
                             <% } %>
                         </select>
 
@@ -223,7 +238,7 @@
                         <select id="usage_type" name="usage_type">
                             <option value="">전체</option>
                             <% for (String u : usageOptions) { %>
-                                <option value="<%= u %>" <%= u.equals(usageType) ? "selected" : "" %>><%= u %></option>
+                                <option value="<%= h(u) %>" <%= u.equals(usageType) ? "selected" : "" %>><%= h(u) %></option>
                             <% } %>
                         </select>
 
@@ -231,7 +246,7 @@
                         <select id="meter_id" name="meter_id">
                             <option value="">전체</option>
                             <% for (String[] m : meterOptions) { %>
-                                <option value="<%= m[0] %>" <%= m[0].equals(meterId) ? "selected" : "" %>><%= m[1] %> (#<%= m[0] %>)</option>
+                                <option value="<%= h(m[0]) %>" <%= m[0].equals(meterId) ? "selected" : "" %>><%= h(m[1]) %> (#<%= h(m[0]) %>)</option>
                             <% } %>
                         </select>
 
@@ -275,15 +290,15 @@
                         if ("null".equalsIgnoreCase(clearedText.trim()) || clearedText.trim().isEmpty()) clearedText = "-";
                     %>
                         <tr onclick="location.href='alarm_detail.jsp?alarm_id=<%= aid %>&<%= filterQuery %>'">
-                            <td><%= a.get("triggered_at") %></td>
-                            <td><%= a.get("building_name") %></td>
-                            <td><%= a.get("usage_type") %></td>
-                            <td><%= a.get("meter_name") %> (#<%= a.get("meter_id") %>)</td>
-                            <td><%= a.get("panel_name") %></td>
-                            <td><%= a.get("alarm_type") %></td>
-                            <td class="sev-<%= a.get("severity") %>"><%= a.get("severity") %></td>
-                            <td><%= clearedText %></td>
-                            <td><%= cleanAlarmDesc(a.get("description")) %></td>
+                            <td><%= h(a.get("triggered_at")) %></td>
+                            <td><%= h(a.get("building_name")) %></td>
+                            <td><%= h(a.get("usage_type")) %></td>
+                            <td><%= h(a.get("meter_name")) %> (#<%= h(a.get("meter_id")) %>)</td>
+                            <td><%= h(a.get("panel_name")) %></td>
+                            <td><%= h(a.get("alarm_type")) %></td>
+                            <td class="sev-<%= h(a.get("severity")) %>"><%= h(a.get("severity")) %></td>
+                            <td><%= h(clearedText) %></td>
+                            <td><%= h(cleanAlarmDesc(a.get("description"))) %></td>
                         </tr>
                     <% } %>
                     <% if (alarms.isEmpty()) { %>
@@ -297,10 +312,10 @@
 </div>
 <script>
 (function(){
-    var form = document.getElementById("alarmFilterForm");
-    var building = document.getElementById("building_name");
-    var usage = document.getElementById("usage_type");
-    var meter = document.getElementById("meter_id");
+    const form = document.getElementById("alarmFilterForm");
+    const building = document.getElementById("building_name");
+    const usage = document.getElementById("usage_type");
+    const meter = document.getElementById("meter_id");
     if (!form || !building || !usage || !meter) return;
 
     function refreshMeterOptions() {
@@ -314,3 +329,4 @@
 </script>
 </body>
 </html>
+

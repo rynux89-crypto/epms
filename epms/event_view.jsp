@@ -403,8 +403,8 @@
 
 <script>
 function goEventDetail(tr) {
-    var meterId = tr.getAttribute("data-meter-id");
-    var eventTime = tr.getAttribute("data-event-time");
+    const meterId = tr.getAttribute("data-meter-id");
+    const eventTime = tr.getAttribute("data-event-time");
     if (!meterId || !eventTime) {
         alert("이벤트 전달 파라미터가 없습니다.");
         return;
@@ -414,10 +414,10 @@ function goEventDetail(tr) {
 }
 
 (function(){
-    var form = document.getElementById("eventFilterForm");
-    var building = document.getElementById("building_name");
-    var usage = document.getElementById("usage_type");
-    var meter = document.getElementById("meter_id");
+    const form = document.getElementById("eventFilterForm");
+    const building = document.getElementById("building_name");
+    const usage = document.getElementById("usage_type");
+    const meter = document.getElementById("meter_id");
     if (!form || !building || !usage || !meter) return;
 
     function refreshMeterOptions() {
@@ -431,3 +431,4 @@ function goEventDetail(tr) {
 </script>
 </body>
 </html>
+

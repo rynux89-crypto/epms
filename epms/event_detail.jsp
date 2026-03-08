@@ -330,12 +330,12 @@
 
     function findClosestIndex(times, target) {
         if (!times || times.length === 0 || target === null) return -1;
-        var idx = -1;
-        var best = Number.MAX_SAFE_INTEGER;
-        for (var i = 0; i < times.length; i++) {
-            var t = times[i];
+        let idx = -1;
+        let best = Number.MAX_SAFE_INTEGER;
+        for (let i = 0; i < times.length; i++) {
+            const t = times[i];
             if (t === null || t === undefined) continue;
-            var diff = Math.abs(Number(t) - Number(target));
+            const diff = Math.abs(Number(t) - Number(target));
             if (diff < best) { best = diff; idx = i; }
         }
         return idx;
@@ -419,4 +419,5 @@
 </script>
 </body>
 </html>
+
 
