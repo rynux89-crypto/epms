@@ -51,13 +51,15 @@ private Properties loadModelConfig(javax.servlet.ServletContext app) {
     return p;
 }
 
-private void saveModelConfig(javax.servlet.ServletContext app, String model, String coderModel, int schemaCacheTtlMinutes) throws Exception {
+private void saveModelConfig(javax.servlet.ServletContext app, String model, String coderModel, int schemaCacheTtlMinutes, int ollamaConnectTimeoutSeconds, int ollamaReadTimeoutSeconds) throws Exception {
     File file = getModelConfigFile(app);
     if (file == null) throw new IOException("Config path unavailable");
     Properties p = new Properties();
     p.setProperty("model", model);
     p.setProperty("coder_model", coderModel);
     p.setProperty("schema_cache_ttl_minutes", String.valueOf(schemaCacheTtlMinutes));
+    p.setProperty("ollama_connect_timeout_seconds", String.valueOf(ollamaConnectTimeoutSeconds));
+    p.setProperty("ollama_read_timeout_seconds", String.valueOf(ollamaReadTimeoutSeconds));
     p.setProperty("updated_at", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
     try (OutputStream out = new FileOutputStream(file);
          Writer writer = new OutputStreamWriter(out, "UTF-8")) {
@@ -108,6 +110,10 @@ String selectedModel = trimToNull(modelConfig.getProperty("model"));
 String selectedCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
 Integer selectedSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes")));
 if (selectedSchemaCacheTtlMinutes == null) selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
+Integer selectedConnectTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
+if (selectedConnectTimeoutSeconds == null) selectedConnectTimeoutSeconds = Integer.valueOf(5);
+Integer selectedReadTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
+if (selectedReadTimeoutSeconds == null) selectedReadTimeoutSeconds = Integer.valueOf(60);
 if (selectedModel == null) selectedModel = envModel;
 if (selectedCoderModel == null) selectedCoderModel = envCoderModel;
 
@@ -132,30 +138,49 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                 selectedModel = envModel;
                 selectedCoderModel = envCoderModel;
                 selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
+                selectedConnectTimeoutSeconds = Integer.valueOf(5);
+                selectedReadTimeoutSeconds = Integer.valueOf(60);
                 successMsg = "모델 설정을 기본값(환경변수)으로 되돌렸습니다. 즉시 반영됩니다.";
             }
         } else {
             selectedModel = envModel;
             selectedCoderModel = envCoderModel;
             selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
+            selectedConnectTimeoutSeconds = Integer.valueOf(5);
+            selectedReadTimeoutSeconds = Integer.valueOf(60);
             successMsg = "이미 기본값(환경변수) 상태입니다.";
         }
     } else {
         String nextModel = trimToNull(request.getParameter("model"));
         String nextCoderModel = trimToNull(request.getParameter("coder_model"));
         Integer nextSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(request.getParameter("schema_cache_ttl_minutes")));
-        if (nextModel == null || nextCoderModel == null || nextSchemaCacheTtlMinutes == null) {
-            errorMsg = "모델과 스키마 캐시 시간을 모두 입력해 주세요.";
+        Integer nextConnectTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_connect_timeout_seconds")));
+        Integer nextReadTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_read_timeout_seconds")));
+        if (nextModel == null || nextCoderModel == null || nextSchemaCacheTtlMinutes == null || nextConnectTimeoutSeconds == null || nextReadTimeoutSeconds == null) {
+            errorMsg = "모델, 스키마 캐시 시간, 타임아웃을 모두 입력해 주세요.";
         } else if (nextSchemaCacheTtlMinutes.intValue() < 1 || nextSchemaCacheTtlMinutes.intValue() > 1440) {
             errorMsg = "스키마 캐시 시간은 1~1440분으로 입력해 주세요.";
+        } else if (nextConnectTimeoutSeconds.intValue() < 1 || nextConnectTimeoutSeconds.intValue() > 60) {
+            errorMsg = "연결 타임아웃은 1~60초로 입력해 주세요.";
+        } else if (nextReadTimeoutSeconds.intValue() < 3 || nextReadTimeoutSeconds.intValue() > 600) {
+            errorMsg = "응답 타임아웃은 3~600초로 입력해 주세요.";
         } else if (!models.isEmpty() && (!models.contains(nextModel) || !models.contains(nextCoderModel))) {
             errorMsg = "선택한 모델이 현재 Ollama 목록에 없습니다.";
         } else {
             try {
-                saveModelConfig(application, nextModel, nextCoderModel, nextSchemaCacheTtlMinutes.intValue());
+                saveModelConfig(
+                    application,
+                    nextModel,
+                    nextCoderModel,
+                    nextSchemaCacheTtlMinutes.intValue(),
+                    nextConnectTimeoutSeconds.intValue(),
+                    nextReadTimeoutSeconds.intValue()
+                );
                 selectedModel = nextModel;
                 selectedCoderModel = nextCoderModel;
                 selectedSchemaCacheTtlMinutes = nextSchemaCacheTtlMinutes;
+                selectedConnectTimeoutSeconds = nextConnectTimeoutSeconds;
+                selectedReadTimeoutSeconds = nextReadTimeoutSeconds;
                 successMsg = "저장 완료: agent.jsp에 즉시 적용됩니다.";
             } catch (Exception e) {
                 errorMsg = "저장 실패: " + e.getMessage();
@@ -291,6 +316,12 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
 
             <div class="label">스키마 캐시 시간(분)</div>
             <div><code><%= selectedSchemaCacheTtlMinutes %></code></div>
+
+            <div class="label">연결 타임아웃(초)</div>
+            <div><code><%= selectedConnectTimeoutSeconds %></code></div>
+
+            <div class="label">응답 타임아웃(초)</div>
+            <div><code><%= selectedReadTimeoutSeconds %></code></div>
         </div>
 
         <form method="post">
@@ -316,6 +347,26 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                        min="1"
                        max="1440"
                        value="<%= selectedSchemaCacheTtlMinutes %>"
+                       required
+                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+
+                <label class="label" for="ollama_connect_timeout_seconds">연결 타임아웃(초)</label>
+                <input id="ollama_connect_timeout_seconds"
+                       name="ollama_connect_timeout_seconds"
+                       type="number"
+                       min="1"
+                       max="60"
+                       value="<%= selectedConnectTimeoutSeconds %>"
+                       required
+                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+
+                <label class="label" for="ollama_read_timeout_seconds">응답 타임아웃(초)</label>
+                <input id="ollama_read_timeout_seconds"
+                       name="ollama_read_timeout_seconds"
+                       type="number"
+                       min="3"
+                       max="600"
+                       value="<%= selectedReadTimeoutSeconds %>"
                        required
                        style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
             </div>

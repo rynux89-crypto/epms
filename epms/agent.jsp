@@ -1868,6 +1868,23 @@ String configuredModel = trimToNull(modelConfig.getProperty("model"));
 String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
 if (configuredModel != null) model = configuredModel;
 if (configuredCoderModel != null) coderModel = configuredCoderModel;
+
+int ollamaConnectTimeoutMs = 5000;
+int ollamaReadTimeoutMs = 60000;
+Integer connectSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
+Integer readSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
+if (connectSec != null) {
+    int s = connectSec.intValue();
+    if (s < 1) s = 1;
+    if (s > 60) s = 60;
+    ollamaConnectTimeoutMs = s * 1000;
+}
+if (readSec != null) {
+    int s = readSec.intValue();
+    if (s < 3) s = 3;
+    if (s > 600) s = 600;
+    ollamaReadTimeoutMs = s * 1000;
+}
 String ttlMinutesRaw = trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes"));
 long prevTtlMs = schemaCacheTtlMs;
 long nextTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
@@ -1889,8 +1906,8 @@ try {
         URL listUrl = new URL(ollamaUrl + "/api/tags");
         HttpURLConnection listConn = (HttpURLConnection) listUrl.openConnection();
         listConn.setRequestMethod("GET");
-        listConn.setConnectTimeout(3000);
-        listConn.setReadTimeout(3000);
+        listConn.setConnectTimeout(ollamaConnectTimeoutMs);
+        listConn.setReadTimeout(ollamaReadTimeoutMs);
         int listCode = listConn.getResponseCode();
 
         if (listCode != 200) {
@@ -1936,7 +1953,7 @@ try {
         "Classify if EPMS DB lookup is needed. " +
         "Return only one JSON object with keys: needs_db(boolean), needs_meter(boolean), needs_alarm(boolean), needs_frequency(boolean), needs_power_by_meter(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null). " +
         "No markdown. No explanation.\n\nUser: " + userMessage;
-    String classifierRaw = callOllamaOnce(ollamaUrl, model, classifierPrompt, 5000, 30000, 0.1d);
+    String classifierRaw = callOllamaOnce(ollamaUrl, model, classifierPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
 
     boolean needsMeter = wantsMeterSummary(userMessage);
     boolean needsAlarm = wantsAlarmSummary(userMessage);
@@ -1983,7 +2000,7 @@ try {
             "User: " + userMessage + "\n" +
             "Classifier JSON: " + classifierRaw + "\n\n" +
             "Schema Context:\n" + schemaContext;
-        String coderRaw = callOllamaOnce(ollamaUrl, coderModel, coderPrompt, 5000, 30000, 0.1d);
+        String coderRaw = callOllamaOnce(ollamaUrl, coderModel, coderPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
 
         String task = extractJsonStringField(coderRaw, "task");
         Boolean planNeedsFrequency = extractJsonBoolField(coderRaw, "needs_frequency");
@@ -2034,7 +2051,7 @@ try {
                 "Return concise plain text, no markdown fences.\n\n" +
                 "User: " + userMessage + "\n\n" +
                 "Schema Context:\n" + schemaContext;
-            coderDraft = callOllamaOnce(ollamaUrl, coderModel, coderAnswerPrompt, 5000, 45000, 0.2d);
+            coderDraft = callOllamaOnce(ollamaUrl, coderModel, coderAnswerPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.2d);
         } else if (!runMeter && !runAlarm && !runFrequency && !runPower && !runHarmonic) {
             needsDb = false;
         }
@@ -2116,7 +2133,7 @@ try {
             "You are an EPMS expert assistant. " +
             "Answer in Korean briefly and accurately.\n\nUser: " + userMessage;
     }
-    String finalAnswer = callOllamaOnce(ollamaUrl, model, finalPrompt, 5000, 60000, 0.4d);
+    String finalAnswer = callOllamaOnce(ollamaUrl, model, finalPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.4d);
     String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
 
     response.setStatus(200);
