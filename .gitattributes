@@ -1,0 +1,33 @@
+# 모든 텍스트 파일은 LF로 통일
+* text=auto eol=lf
+
+# Java 소스 코드
+*.java text eol=lf
+
+# JSP 파일
+*.jsp text eol=lf
+
+# XML 설정 파일
+*.xml text eol=lf
+
+# Properties 파일
+*.properties text eol=lf
+
+# HTML, CSS, JS 파일
+*.html text eol=lf
+*.css  text eol=lf
+*.js   text eol=lf
+
+# Markdown, 문서 파일
+*.md   text eol=lf
+*.txt  text eol=lf
+
+# 바이너리 파일은 변환하지 않음
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.jar  binary

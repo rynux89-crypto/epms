@@ -13,12 +13,13 @@ private static final int RATE_LIMIT_WINDOW_MS = 60000;
 private static final int RATE_LIMIT_MAX_REQUESTS = 10;
 private static final String DB_JNDI_NAME = "java:comp/env/jdbc/epms";
 private static final Object SCHEMA_CACHE_LOCK = new Object();
-private static final long SCHEMA_CACHE_TTL_MS = 5L * 60L * 1000L;
+private static final long DEFAULT_SCHEMA_CACHE_TTL_MS = 5L * 60L * 1000L;
 private static final int SCHEMA_MAX_TABLES = 60;
 private static final int SCHEMA_MAX_COLUMNS_PER_TABLE = 40;
 private static final int SCHEMA_MAX_CHARS = 16000;
 private static volatile String schemaContextCache = "";
 private static volatile long schemaContextCacheAt = 0L;
+private static volatile long schemaCacheTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
 
 private boolean checkRateLimit(String clientIp) {
     long now = System.currentTimeMillis();
@@ -50,6 +51,17 @@ private String trimToNull(String s) {
     if (s == null) return null;
     String t = s.trim();
     return t.isEmpty() ? null : t;
+}
+
+private Integer parsePositiveInt(String s) {
+    if (s == null) return null;
+    try {
+        int n = Integer.parseInt(s.trim());
+        if (n <= 0) return null;
+        return Integer.valueOf(n);
+    } catch (Exception ignore) {
+        return null;
+    }
 }
 
 private Properties loadAgentModelConfig(javax.servlet.ServletContext app) {
@@ -156,13 +168,15 @@ private String buildSchemaContextFromDb() {
 
 private String getSchemaContextCached() {
     long now = System.currentTimeMillis();
+    long ttlMs = schemaCacheTtlMs > 0 ? schemaCacheTtlMs : DEFAULT_SCHEMA_CACHE_TTL_MS;
     String cached = schemaContextCache;
-    if (cached != null && !cached.isEmpty() && (now - schemaContextCacheAt) < SCHEMA_CACHE_TTL_MS) {
+    if (cached != null && !cached.isEmpty() && (now - schemaContextCacheAt) < ttlMs) {
         return cached;
     }
     synchronized (SCHEMA_CACHE_LOCK) {
         long now2 = System.currentTimeMillis();
-        if (schemaContextCache != null && !schemaContextCache.isEmpty() && (now2 - schemaContextCacheAt) < SCHEMA_CACHE_TTL_MS) {
+        long ttlMs2 = schemaCacheTtlMs > 0 ? schemaCacheTtlMs : DEFAULT_SCHEMA_CACHE_TTL_MS;
+        if (schemaContextCache != null && !schemaContextCache.isEmpty() && (now2 - schemaContextCacheAt) < ttlMs2) {
             return schemaContextCache;
         }
         String fresh = buildSchemaContextFromDb();
@@ -1854,6 +1868,20 @@ String configuredModel = trimToNull(modelConfig.getProperty("model"));
 String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
 if (configuredModel != null) model = configuredModel;
 if (configuredCoderModel != null) coderModel = configuredCoderModel;
+String ttlMinutesRaw = trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes"));
+long prevTtlMs = schemaCacheTtlMs;
+long nextTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
+Integer ttlMin = parsePositiveInt(ttlMinutesRaw);
+if (ttlMin != null) {
+    int m = ttlMin.intValue();
+    if (m < 1) m = 1;
+    if (m > 1440) m = 1440;
+    nextTtlMs = m * 60L * 1000L;
+}
+schemaCacheTtlMs = nextTtlMs;
+if (prevTtlMs != nextTtlMs) {
+    schemaContextCacheAt = 0L;
+}
 
 try {
     String listStr = "";
