@@ -1,121 +1,90 @@
-﻿# EPMS AI Agent
+﻿# EPMS (Electric Power Monitoring System)
 
-EPMS(전력 모니터링) 시스템의 AI 질의 응답 기능을 위한 서버/관리 구성 문서입니다.
+EPMS는 전력 품질/에너지/알람/이벤트/PLC 매핑을 JSP 기반으로 운영하는 웹 애플리케이션입니다.
 
-## 1) 시스템 개요
+## 1. 개요
 
-- 사용자 질문은 `epms/agent.jsp`로 전달됩니다.
-- `agent.jsp`는 요청을 분기합니다.
-- 규칙 기반으로 바로 처리 가능한 질문은 DB 조회 후 즉시 응답합니다.
-- 그 외 질문은 Ollama 모델을 호출해 분류/계획/최종 답변을 생성합니다.
-- 관리자 화면 `epms/agent_manage.jsp`에서 모델/캐시/타임아웃을 변경하면 즉시 반영됩니다.
+- 런타임: Tomcat 9, JSP/Servlet
+- DB: SQL Server (JNDI 사용)
+- 주요 경로: `epms/`
+- 메인 화면: `epms/epms_main.jsp`
 
-## 2) 핵심 파일과 역할
+## 2. 주요 기능 화면
 
-- `epms/agent.jsp`
-  - AI 에이전트 메인 엔드포인트
-  - 요청 검증, Rate Limit, 의도 분석, DB 컨텍스트 조회, Ollama 호출, 응답 생성
-- `epms/agent_manage.jsp`
-  - 에이전트 운영 설정 화면
-  - Ollama 등록 모델 조회(`/api/tags`), 모델 선택, 캐시/타임아웃 설정 저장
-- `epms/agent_model.properties`
-  - 런타임 설정 저장 파일
-  - `agent_manage.jsp` 저장값을 `agent.jsp`가 매 요청 시 읽어 적용
+`epms_main.jsp` 기준으로 다음 화면으로 이동합니다.
 
-## 3) 요청 처리 흐름 (`agent.jsp`)
+- 전력 품질 통합: `pq_overview.jsp`
+- 계측기 상세: `meter_status.jsp`
+- 페이저 다이어그램: `phasor_diagram.jsp`
+- 불평형/변동률: `voltage_unbalance.jsp`, `variation_ves.jsp`, `variation_ces.jsp`
+- 주파수/전압 분석: `frequency_voltage.jsp`
+- 고조파 분석: `harmonics_v.jsp`, `harmonics_i.jsp`, `harmonic_detail.jsp`, `harmonic_sync.jsp`
+- 에너지 관리: `energy_overview.jsp`, `energy_manage.jsp`, `energy_sankey.jsp`
+- 알람: `alarm_view.jsp`, `alarm_detail.jsp`, `alarm_rule.jsp`, `alarm_rule_manage.jsp`, `metric_catalog_manage.jsp`
+- 이벤트: `event_view.jsp`, `event_detail.jsp`
+- 계측기/트리 관리: `meter_register.jsp`, `meter_tree_manage.jsp`
+- 데이터 보관/정리: `data_retention_manage.jsp`
+- PLC/매핑: `plc_register.jsp`, `plc_status.jsp`, `plc_write.jsp`, `plc_excel_import.jsp`, `ai_mapping.jsp`, `di_mapping.jsp`, `ai_measurements_match.jsp`, `ai_measurements_match_manage.jsp`
 
-1. HTTP/입력 검증
-- `POST`만 허용
-- `message` 길이 제한(최대 2000)
-- IP 기준 Rate Limit
+## 3. AI Agent 구성
 
-2. 규칙 기반 직접 처리
-- 전압 평균, 알람 요약, 고조파/주파수/역률 이상치 등은 직접 SQL 조회 후 즉답
+- API 엔드포인트: `epms/agent.jsp`
+- 관리 화면: `epms/agent_manage.jsp`
+- 설정 파일: `epms/agent_model.properties`
 
-3. LLM 3단계 처리
-- Stage 1: 분류 모델(`model`)로 DB 조회 필요 여부/파라미터 추론
-- Stage 2: 코더 모델(`coder_model`)로 DB task 계획 및 SQL 성격 답변 초안
-- Stage 3: 분류 모델(`model`)로 최종 사용자 답변 생성
+### 3.1 Agent 동작 요약
 
-4. 응답
-- JSON 형태로 `provider_response`, `db_context` 반환
+- 입력 검증, rate limit 처리
+- 규칙 기반 즉답 가능한 질의는 DB 조회 후 응답
+- 그 외 질의는 Ollama 모델 호출로 분류/생성 응답
+- JSON 응답 반환
 
-## 4) 모델/운영 설정
+### 3.2 관리 화면에서 조정 가능한 항목
 
-설정 파일: `epms/agent_model.properties`
+- Ollama URL
+- 대화 모델 (`model`)
+- 코더 모델 (`coder_model`)
+- 스키마 캐시 시간 (`schema_cache_ttl_minutes`)
+- 연결 타임아웃 (`ollama_connect_timeout_seconds`)
+- 응답 타임아웃 (`ollama_read_timeout_seconds`)
 
-- `model`
-  - 기본 대화/분류/최종 응답 모델
-- `coder_model`
-  - DB/SQL 해석용 모델
-- `schema_cache_ttl_minutes`
-  - DB 스키마 자동 수집 캐시 유지 시간(분)
-- `ollama_connect_timeout_seconds`
-  - Ollama 연결 타임아웃(초)
-- `ollama_read_timeout_seconds`
-  - Ollama 응답 타임아웃(초)
-- `updated_at`
-  - 마지막 저장 시간(메타데이터)
+## 4. Ollama URL 반영 방식
 
-## 5) 즉시 반영 정책
+현재 코드는 다음 우선순위로 Ollama URL을 결정합니다.
 
-- `agent.jsp`는 요청마다 `agent_model.properties`를 읽습니다.
-- 따라서 `agent_manage.jsp`에서 저장하면 Tomcat 재시작 없이 즉시 적용됩니다.
-- 스키마 캐시 TTL 변경 시 내부 캐시 만료 시점을 갱신해 새 정책으로 동작합니다.
+1. `agent_model.properties`의 `ollama_url` (관리 화면 저장값)
+2. 환경변수 `OLLAMA_URL`
+3. 기본값 `http://localhost:11434`
 
-## 6) 스키마 자동 주입
+즉, `agent_manage.jsp`에서 URL을 저장하면 `agent.jsp` 요청 시 즉시 해당 주소로 연결됩니다.
 
-- `agent.jsp`는 `INFORMATION_SCHEMA.TABLES/COLUMNS`를 조회해 스키마 컨텍스트를 생성합니다.
-- 생성한 스키마는 캐시 후 코더 프롬프트에 자동 주입됩니다.
-- 캐시 TTL은 `schema_cache_ttl_minutes`로 제어됩니다.
+## 5. 설정 파일 예시 (`epms/agent_model.properties`)
 
-## 7) API
-
-### `POST /epms/agent.jsp`
-
-요청 예시:
-
-```json
-{"message":"최근 알람 요약 알려줘"}
+```properties
+ollama_url=http\://localhost\:11434
+model=exaone-db\:latest
+coder_model=qwen2.5-coder\:7b
+schema_cache_ttl_minutes=60
+ollama_connect_timeout_seconds=60
+ollama_read_timeout_seconds=60
+updated_at=2026-03-08 20\:23\:55
 ```
 
-응답 예시:
-
-```json
-{
-  "provider_response": "{\"response\":\"...\",\"done\":true}\n",
-  "db_context": "..."
-}
-```
-
-주요 상태 코드:
-- `200`: 성공
-- `400`: 잘못된 요청(입력 오류, 모델 없음 등)
-- `405`: 허용되지 않은 메서드
-- `429`: Rate Limit 초과
-- `500`: 서버 내부 오류
-- `502`: Ollama 연결 실패
-
-## 8) 관리 화면
-
-### `GET/POST /epms/agent_manage.jsp`
-
-기능:
-- Ollama 모델 목록 조회
-- `model`, `coder_model` 선택 저장
-- `schema_cache_ttl_minutes` 설정
-- Ollama 연결/응답 타임아웃 설정
-- 기본값(환경변수 기반) 복원
-
-## 9) 실행 전제
+## 6. 실행 전제
 
 - Tomcat 9+
 - Java 8+
-- SQL Server (JNDI: `java:comp/env/jdbc/epms`)
-- Ollama 서버 접근 가능 (`OLLAMA_URL`, 기본 `http://localhost:11434`)
+- SQL Server 연결 가능한 JNDI 리소스: `java:comp/env/jdbc/epms`
+- Ollama 서버 접근 가능
 
-## 10) 운영 체크 포인트
+## 7. 운영 체크리스트
 
-- 모델 교체 후 `agent_manage.jsp`에서 현재 적용값 확인
-- 대형 모델 사용 시 `ollama_read_timeout_seconds` 상향
-- 빈번한 스키마 변경 환경이면 `schema_cache_ttl_minutes`를 짧게 조정
+- `agent_manage.jsp`에서 URL/모델 저장 후 `agent.jsp` 응답 확인
+- 모델 변경 시 `/api/tags` 조회가 정상인지 확인
+- 타임아웃은 모델 크기/응답시간에 맞게 조정
+- 스키마 변경이 잦으면 캐시 시간을 짧게 조정
+
+## 8. 참고
+
+- 일부 JSP 파일명에 과거 오타 파일(`event_detaul.jsp`)이 남아 있을 수 있습니다.
+- 메인에서 실제 사용하는 상세 화면은 `event_detail.jsp`입니다.
