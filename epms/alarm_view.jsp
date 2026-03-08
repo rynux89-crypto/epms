@@ -85,6 +85,7 @@
     List<String> buildingOptions = new ArrayList<>();
     List<String> usageOptions = new ArrayList<>();
     List<Map<String, Object>> alarms = new ArrayList<>();
+    String error = null;
 
     try {
         try (PreparedStatement ps = conn.prepareStatement(
@@ -266,6 +267,9 @@
 
     <div class="dash-main" style="display:flex; min-height:0;">
         <section class="panel_s" style="width:100%; min-height:0;">
+            <% if (error != null && !error.trim().isEmpty()) { %>
+            <div class="msg-box"><%= h(error) %></div>
+            <% } %>
             <div style="font-weight:700; margin-bottom:8px;">조회 건수: <%= alarms.size() %></div>
             <div class="table-wrap">
                 <table class="alarm-table">
