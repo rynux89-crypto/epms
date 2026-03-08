@@ -46,7 +46,7 @@
     </style>
 </head>
 <body>
-<h1>📊 EPMS 전력 품질 관리 시스템 Ver 0.5</h1>
+<h1>📊 EPMS 전력 품질 관리 시스템 Ver 0.5.1</h1>
 
 <div class="container">
     <div class="section">
