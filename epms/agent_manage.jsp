@@ -325,6 +325,31 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             gap: 8px;
             flex-wrap: wrap;
         }
+        .split-panels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+        .panel-box {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+            background: #fff;
+            box-shadow: 0 4px 14px rgba(22, 40, 80, 0.04);
+        }
+        .panel-title {
+            margin: 0 0 10px 0;
+            font-size: 15px;
+            font-weight: 700;
+            color: #22324a;
+        }
+        .section-title {
+            margin: 2px 0 8px 0;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 600;
+        }
         button {
             border: 0;
             border-radius: 8px;
@@ -344,6 +369,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
         }
         @media (max-width: 720px) {
             .grid { grid-template-columns: 1fr; }
+            .split-panels { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -360,117 +386,124 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
         <div class="msg err"><%= esc(errorMsg) %></div>
         <% } %>
 
-        <div class="grid">
-            <div class="label">Ollama URL</div>
-            <div><code><%= esc(ollamaUrl) %></code></div>
-
-            <div class="label">현재 적용 모델</div>
-            <div><code><%= esc(selectedModel) %></code></div>
-
-            <div class="label">현재 적용 코더 모델</div>
-            <div><code><%= esc(selectedCoderModel) %></code></div>
-
-            <div class="label">스키마 캐시 시간(분)</div>
-            <div><code><%= selectedSchemaCacheTtlMinutes %></code></div>
-
-            <div class="label">연결 타임아웃(초)</div>
-            <div><code><%= selectedConnectTimeoutSeconds %></code></div>
-
-            <div class="label">응답 타임아웃(초)</div>
-            <div><code><%= selectedReadTimeoutSeconds %></code></div>
-
-            <div class="label">Chat width (px)</div>
-            <div><code><%= selectedChatWidthPx %></code></div>
-
-            <div class="label">Chat max height (vh)</div>
-            <div><code><%= selectedChatMaxHeightVh %></code></div>
-
-            <div class="label">Chat font size (px)</div>
-            <div><code><%= selectedChatFontSizePx %></code></div>
-        </div>
-
         <form method="post">
-            <div class="grid">
-                <label class="label" for="ollama_url">Ollama URL</label>
-                <input id="ollama_url"
-                       name="ollama_url"
-                       type="text"
-                       value="<%= esc(ollamaUrl) %>"
-                       required
-                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
-                <label class="label" for="model">대화 모델</label>
-                <select id="model" name="model" required>
-                    <% for (String m : models) { %>
-                    <option value="<%= esc(m) %>" <%= m.equals(selectedModel) ? "selected" : "" %>><%= esc(m) %></option>
-                    <% } %>
-                </select>
+            <div class="split-panels">
+                <div class="panel-box">
+                    <h3 class="panel-title">AI 모델 설정</h3>
+                    <div class="section-title">현재 적용값</div>
+                    <div class="grid">
+                        <div class="label">Ollama URL</div>
+                        <div><code><%= esc(ollamaUrl) %></code></div>
+                        <div class="label">대화 모델</div>
+                        <div><code><%= esc(selectedModel) %></code></div>
+                        <div class="label">코더 모델</div>
+                        <div><code><%= esc(selectedCoderModel) %></code></div>
+                        <div class="label">스키마 캐시(분)</div>
+                        <div><code><%= selectedSchemaCacheTtlMinutes %></code></div>
+                        <div class="label">연결 타임아웃(초)</div>
+                        <div><code><%= selectedConnectTimeoutSeconds %></code></div>
+                        <div class="label">응답 타임아웃(초)</div>
+                        <div><code><%= selectedReadTimeoutSeconds %></code></div>
+                    </div>
+                    <div class="section-title">변경값 입력</div>
+                    <div class="grid">
+                        <label class="label" for="ollama_url">Ollama URL</label>
+                        <input id="ollama_url"
+                               name="ollama_url"
+                               type="text"
+                               value="<%= esc(ollamaUrl) %>"
+                               required
+                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <label class="label" for="model">대화 모델</label>
+                        <select id="model" name="model" required>
+                            <% for (String m : models) { %>
+                            <option value="<%= esc(m) %>" <%= m.equals(selectedModel) ? "selected" : "" %>><%= esc(m) %></option>
+                            <% } %>
+                        </select>
 
-                <label class="label" for="coder_model">코더 모델</label>
-                <select id="coder_model" name="coder_model" required>
-                    <% for (String m : models) { %>
-                    <option value="<%= esc(m) %>" <%= m.equals(selectedCoderModel) ? "selected" : "" %>><%= esc(m) %></option>
-                    <% } %>
-                </select>
+                        <label class="label" for="coder_model">코더 모델</label>
+                        <select id="coder_model" name="coder_model" required>
+                            <% for (String m : models) { %>
+                            <option value="<%= esc(m) %>" <%= m.equals(selectedCoderModel) ? "selected" : "" %>><%= esc(m) %></option>
+                            <% } %>
+                        </select>
 
-                <label class="label" for="schema_cache_ttl_minutes">스키마 캐시 시간(분)</label>
-                <input id="schema_cache_ttl_minutes"
-                       name="schema_cache_ttl_minutes"
-                       type="number"
-                       min="1"
-                       max="1440"
-                       value="<%= selectedSchemaCacheTtlMinutes %>"
-                       required
-                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <label class="label" for="schema_cache_ttl_minutes">스키마 캐시 시간(분)</label>
+                        <input id="schema_cache_ttl_minutes"
+                               name="schema_cache_ttl_minutes"
+                               type="number"
+                               min="1"
+                               max="1440"
+                               value="<%= selectedSchemaCacheTtlMinutes %>"
+                               required
+                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
-                <label class="label" for="ollama_connect_timeout_seconds">연결 타임아웃(초)</label>
-                <input id="ollama_connect_timeout_seconds"
-                       name="ollama_connect_timeout_seconds"
-                       type="number"
-                       min="1"
-                       max="60"
-                       value="<%= selectedConnectTimeoutSeconds %>"
-                       required
-                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <label class="label" for="ollama_connect_timeout_seconds">연결 타임아웃(초)</label>
+                        <input id="ollama_connect_timeout_seconds"
+                               name="ollama_connect_timeout_seconds"
+                               type="number"
+                               min="1"
+                               max="60"
+                               value="<%= selectedConnectTimeoutSeconds %>"
+                               required
+                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
-                <label class="label" for="ollama_read_timeout_seconds">응답 타임아웃(초)</label>
-                <input id="ollama_read_timeout_seconds"
-                       name="ollama_read_timeout_seconds"
-                       type="number"
-                       min="3"
-                       max="600"
-                       value="<%= selectedReadTimeoutSeconds %>"
-                       required
-                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <label class="label" for="ollama_read_timeout_seconds">응답 타임아웃(초)</label>
+                        <input id="ollama_read_timeout_seconds"
+                               name="ollama_read_timeout_seconds"
+                               type="number"
+                               min="3"
+                               max="600"
+                               value="<%= selectedReadTimeoutSeconds %>"
+                               required
+                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                    </div>
+                </div>
 
-                <label class="label" for="chat_width_px">Chat width (px)</label>
-                <input id="chat_width_px"
-                       name="chat_width_px"
-                       type="number"
-                       min="300"
-                       max="560"
-                       value="<%= selectedChatWidthPx %>"
-                       required
-                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                <div class="panel-box">
+                    <h3 class="panel-title">채팅창 설정</h3>
+                    <div class="section-title">현재 적용값</div>
+                    <div class="grid">
+                        <div class="label">채팅창 폭(px)</div>
+                        <div><code><%= selectedChatWidthPx %></code></div>
+                        <div class="label">채팅창 최대 높이(vh)</div>
+                        <div><code><%= selectedChatMaxHeightVh %></code></div>
+                        <div class="label">채팅 글자 크기(px)</div>
+                        <div><code><%= selectedChatFontSizePx %></code></div>
+                    </div>
+                    <div class="section-title">변경값 입력</div>
+                    <div class="grid">
+                        <label class="label" for="chat_width_px">채팅창 폭(px)</label>
+                        <input id="chat_width_px"
+                               name="chat_width_px"
+                               type="number"
+                               min="300"
+                               max="560"
+                               value="<%= selectedChatWidthPx %>"
+                               required
+                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
-                <label class="label" for="chat_max_height_vh">Chat max height (vh)</label>
-                <input id="chat_max_height_vh"
-                       name="chat_max_height_vh"
-                       type="number"
-                       min="40"
-                       max="90"
-                       value="<%= selectedChatMaxHeightVh %>"
-                       required
-                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <label class="label" for="chat_max_height_vh">채팅창 최대 높이(vh)</label>
+                        <input id="chat_max_height_vh"
+                               name="chat_max_height_vh"
+                               type="number"
+                               min="40"
+                               max="90"
+                               value="<%= selectedChatMaxHeightVh %>"
+                               required
+                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
-                <label class="label" for="chat_font_size_px">Chat font size (px)</label>
-                <input id="chat_font_size_px"
-                       name="chat_font_size_px"
-                       type="number"
-                       min="12"
-                       max="20"
-                       value="<%= selectedChatFontSizePx %>"
-                       required
-                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <label class="label" for="chat_font_size_px">채팅 글자 크기(px)</label>
+                        <input id="chat_font_size_px"
+                               name="chat_font_size_px"
+                               type="number"
+                               min="12"
+                               max="20"
+                               value="<%= selectedChatFontSizePx %>"
+                               required
+                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                    </div>
+                </div>
             </div>
             <div class="row">
                 <button class="primary" type="submit">저장하고 즉시 적용</button>

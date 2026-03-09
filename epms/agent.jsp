@@ -291,6 +291,20 @@ private boolean wantsVoltageAverageSummary(String userMessage) {
     return hasVoltage && hasAvg && hasPeriod;
 }
 
+private boolean wantsVoltagePhaseAngle(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasVoltage = m.contains("전압") || m.contains("voltage");
+    boolean hasPhase = m.contains("위상각") || m.contains("phaseangle") || m.contains("phase");
+    return hasVoltage && hasPhase;
+}
+
+private boolean wantsCurrentPhaseAngle(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasCurrent = m.contains("전류") || m.contains("current");
+    boolean hasPhase = m.contains("위상각") || m.contains("phaseangle") || m.contains("phase");
+    return hasCurrent && hasPhase;
+}
+
 private boolean wantsPerMeterPowerSummary(String userMessage) {
     String m = normalizeForIntent(userMessage);
     boolean meterScope = m.contains("각계측기") || m.contains("모든계측기") || m.contains("계측기별")
@@ -324,9 +338,11 @@ private boolean wantsBuildingPowerTopN(String userMessage) {
 
 private boolean wantsPanelLatestStatus(String userMessage) {
     String m = normalizeForIntent(userMessage);
-    boolean hasPanel = m.contains("패널") || m.contains("panel") || m.contains("계열");
+    boolean hasPanel = m.contains("패널") || m.contains("panel") || m.contains("판넬") || m.contains("계열");
     boolean hasStatus = m.contains("상태") || m.contains("status");
     boolean hasPanelCode = m.matches(".*(mdb|vcb|acb)[a-z0-9_\\-]*.*");
+    boolean hasMeterScope = m.contains("계측기") || m.contains("meter");
+    if (hasMeterScope && !hasPanel) return false;
     return (hasPanel || hasPanelCode) && hasStatus;
 }
 
@@ -337,14 +353,182 @@ private boolean wantsAlarmSeveritySummary(String userMessage) {
         (m.contains("건수") || m.contains("요약") || m.contains("count"));
 }
 
+private boolean wantsAlarmTypeSummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasAlarm = m.contains("알람") || m.contains("alarm") || m.contains("경보");
+    boolean hasType = m.contains("종류") || m.contains("유형") || m.contains("타입")
+        || m.contains("type") || m.contains("무슨알람") || m.contains("어떤알람");
+    boolean hasSeverity = m.contains("심각도") || m.contains("severity");
+    return hasAlarm && hasType && !hasSeverity;
+}
+
 private boolean wantsAlarmCountSummary(String userMessage) {
     String m = normalizeForIntent(userMessage);
     boolean hasAlarm = m.contains("알람") || m.contains("alarm") || m.contains("경보");
-    boolean hasCount = m.contains("건수") || m.contains("개수") || m.contains("count")
+    boolean hasCount = m.contains("건수") || m.contains("개수") || m.contains("갯수") || m.contains("count")
         || m.contains("몇건") || m.contains("몇개")
         || m.contains("알람의수") || m.contains("수는") || m.endsWith("수");
     boolean hasOccurred = m.contains("발생") || m.contains("trigger");
     return hasAlarm && (hasCount || hasOccurred || m.endsWith("수는?") || m.endsWith("수?"));
+}
+
+private boolean wantsTripAlarmOnly(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    return m.contains("트립") || m.contains("trip") || m.contains("트림");
+}
+
+private String extractAlarmTypeToken(String userMessage) {
+    if (userMessage == null) return null;
+    if (wantsTripAlarmOnly(userMessage)) return "TRIP";
+    String src = userMessage.trim();
+    java.util.regex.Matcher m1 = java.util.regex.Pattern
+        .compile("([A-Za-z][A-Za-z0-9_\\-]{1,15})\\s*알람", java.util.regex.Pattern.CASE_INSENSITIVE)
+        .matcher(src);
+    if (m1.find()) return m1.group(1).toUpperCase(java.util.Locale.ROOT);
+    java.util.regex.Matcher m2 = java.util.regex.Pattern
+        .compile("알람\\s*([A-Za-z][A-Za-z0-9_\\-]{1,15})", java.util.regex.Pattern.CASE_INSENSITIVE)
+        .matcher(src);
+    if (m2.find()) return m2.group(1).toUpperCase(java.util.Locale.ROOT);
+    return null;
+}
+
+private String extractAlarmAreaToken(String userMessage) {
+    if (userMessage == null) return null;
+    String src = userMessage.trim();
+    java.util.regex.Matcher m0 = java.util.regex.Pattern
+        .compile("(.+?)\\s*(?:과|와)?\\s*관련된\\s*계측기")
+        .matcher(src);
+    if (m0.find()) {
+        String token0 = trimToNull(m0.group(1));
+        if (token0 != null) {
+            token0 = token0.replaceAll("[\"'`]", "").trim();
+            String n0 = normalizeForIntent(token0);
+            if (token0.length() >= 2
+                && !n0.contains("ocr")
+                && !n0.contains("trip")
+                && !n0.contains("트립")
+                && !n0.contains("트림")) {
+                return token0;
+            }
+        }
+    }
+    java.util.regex.Matcher m00 = java.util.regex.Pattern
+        .compile("(.+?)\\s*계측기\\s*의\\s*알람")
+        .matcher(src);
+    if (m00.find()) {
+        String token00 = trimToNull(m00.group(1));
+        if (token00 != null) {
+            token00 = token00.replaceAll("[\"'`]", "").trim();
+            String n00 = normalizeForIntent(token00);
+            if (token00.length() >= 2
+                && !n00.contains("ocr")
+                && !n00.contains("trip")
+                && !n00.contains("트립")
+                && !n00.contains("트림")) {
+                return token00;
+            }
+        }
+    }
+    java.util.regex.Matcher m = java.util.regex.Pattern
+        .compile("(.+?)\\s*의\\s*알람")
+        .matcher(src);
+    if (!m.find()) return null;
+    String token = trimToNull(m.group(1));
+    if (token == null) return null;
+    token = token.replaceAll("[\"'`]", "").trim();
+    if (token.length() < 2) return null;
+    String n = normalizeForIntent(token);
+    if (n.contains("ocr") || n.contains("trip") || n.contains("트립") || n.contains("트림")) return null;
+    if (n.contains("계측기") || n.contains("meter")) return null;
+    return token;
+}
+
+private List<String> splitAlarmAreaTokens(String areaToken) {
+    ArrayList<String> out = new ArrayList<String>();
+    String raw = trimToNull(areaToken);
+    if (raw == null) return out;
+    String norm = raw.replaceAll("[\"'`]", " ").trim();
+    if (norm.isEmpty()) return out;
+    String[] parts = norm.split("\\s*(?:의|과|와|및|그리고|,|/|\\\\|\\s+)\\s*");
+    LinkedHashSet<String> uniq = new LinkedHashSet<String>();
+    for (int i = 0; i < parts.length; i++) {
+        String p = trimToNull(parts[i]);
+        if (p == null) continue;
+        String n = normalizeForIntent(p);
+        if (n.length() < 2) continue;
+        if ("알람".equals(n) || "계측기".equals(n) || "관련된".equals(n)) continue;
+        uniq.add(p);
+    }
+    out.addAll(uniq);
+    if (out.isEmpty()) out.add(norm);
+    return out;
+}
+
+private boolean wantsMeterListSummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasList = m.contains("리스트") || m.contains("목록") || m.contains("list");
+    boolean hasMeter = m.contains("계측기") || m.contains("미터") || m.contains("meter") || m.contains("게츠기");
+    boolean hasScoped = m.contains("관련된") || m.contains("의");
+    return hasList && (hasMeter || hasScoped);
+}
+
+private String extractMeterScopeToken(String userMessage) {
+    if (userMessage == null) return null;
+    String src = userMessage.trim();
+    java.util.regex.Matcher m0 = java.util.regex.Pattern
+        .compile("(.+?)\\s*(?:과|와)?\\s*관련된\\s*(?:계측기|게츠기|미터)")
+        .matcher(src);
+    if (m0.find()) return trimToNull(m0.group(1));
+    java.util.regex.Matcher m1 = java.util.regex.Pattern
+        .compile("(.+?)\\s*(?:계측기|게츠기|미터)\\s*(?:리스트|목록)")
+        .matcher(src);
+    if (m1.find()) return trimToNull(m1.group(1));
+    java.util.regex.Matcher m2 = java.util.regex.Pattern
+        .compile("(.+?)\\s*의\\s*(?:계측기|게츠기|미터)")
+        .matcher(src);
+    if (m2.find()) return trimToNull(m2.group(1));
+    return null;
+}
+
+private String getMeterListContext(String scopeToken, Integer topN) {
+    List<String> tokens = splitAlarmAreaTokens(scopeToken);
+    int n = topN != null ? topN.intValue() : 20;
+    if (n < 1) n = 20;
+    if (n > 100) n = 100;
+    StringBuilder sql = new StringBuilder(
+        "SELECT TOP " + n + " meter_id, name, panel_name FROM dbo.meters WHERE 1=1 "
+    );
+    for (int i = 0; i < tokens.size(); i++) {
+        sql.append("AND (UPPER(ISNULL(name,'')) LIKE ? OR UPPER(ISNULL(panel_name,'')) LIKE ?) ");
+    }
+    sql.append("ORDER BY meter_id ASC");
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+        int pi = 1;
+        for (int i = 0; i < tokens.size(); i++) {
+            String t = "%" + tokens.get(i).toUpperCase(java.util.Locale.ROOT) + "%";
+            ps.setString(pi++, t);
+            ps.setString(pi++, t);
+        }
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            StringBuilder sb = new StringBuilder("[Meter list]");
+            if (tokens != null && !tokens.isEmpty()) sb.append(" scope=").append(String.join(",", tokens));
+            sb.append(";");
+            int i = 0;
+            while (rs.next()) {
+                i++;
+                sb.append(" ").append(i).append(")")
+                  .append("meter_id=").append(rs.getInt("meter_id"))
+                  .append(", ").append(clip(rs.getString("name"), 40))
+                  .append(", panel=").append(clip(rs.getString("panel_name"), 40))
+                  .append(";");
+            }
+            if (i == 0) return "[Meter list] no data";
+            return sb.toString();
+        }
+    } catch (Exception e) {
+        return "[Meter list] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
 }
 
 private boolean wantsOpenAlarms(String userMessage) {
@@ -576,6 +760,41 @@ private Integer extractMeterId(String userMessage) {
     java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("([0-9]{1,6})\\s*번").matcher(src);
     if (m2.find()) {
         try { return Integer.valueOf(m2.group(1)); } catch (Exception ignore) {}
+    }
+    return null;
+}
+
+private String extractMeterNameToken(String userMessage) {
+    if (userMessage == null) return null;
+    String src = userMessage.trim();
+    java.util.regex.Matcher m1 = java.util.regex.Pattern
+        .compile("(?:계측기|meter)\\s*([A-Za-z][A-Za-z0-9_\\-]{2,})", java.util.regex.Pattern.CASE_INSENSITIVE)
+        .matcher(src);
+    if (m1.find()) return trimToNull(m1.group(1));
+    return null;
+}
+
+private Integer resolveMeterIdByName(String meterNameToken) {
+    String token = trimToNull(meterNameToken);
+    if (token == null) return null;
+    String normalized = token.replaceAll("[\\s_\\-]+", "").toUpperCase(java.util.Locale.ROOT);
+    if (normalized.length() < 3) return null;
+    String sql =
+        "SELECT TOP 1 meter_id " +
+        "FROM dbo.meters " +
+        "WHERE UPPER(REPLACE(REPLACE(REPLACE(name,'_',''),'-',''),' ','')) = ? " +
+        "   OR UPPER(REPLACE(REPLACE(REPLACE(name,'_',''),'-',''),' ','')) LIKE ? " +
+        "ORDER BY CASE WHEN UPPER(REPLACE(REPLACE(REPLACE(name,'_',''),'-',''),' ','')) = ? THEN 0 ELSE 1 END, meter_id ASC";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setString(1, normalized);
+        ps.setString(2, "%" + normalized + "%");
+        ps.setString(3, normalized);
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return Integer.valueOf(rs.getInt("meter_id"));
+        }
+    } catch (Exception ignore) {
     }
     return null;
 }
@@ -1205,6 +1424,10 @@ private String getPanelLatestStatusContext(List<String> panelTokens, Integer top
         " SELECT *, " +
         " CASE " +
         "   WHEN EXISTS (SELECT 1 FROM tree_edges te WHERE te.parent_meter_id = latest.meter_id) " +
+        "        AND NOT EXISTS (SELECT 1 FROM tree_edges te WHERE te.child_meter_id = latest.meter_id) THEN 1 " +
+        "   ELSE 0 END AS is_tree_main, " +
+        " CASE " +
+        "   WHEN EXISTS (SELECT 1 FROM tree_edges te WHERE te.parent_meter_id = latest.meter_id) " +
         "        AND NOT EXISTS (SELECT 1 FROM tree_edges te WHERE te.child_meter_id = latest.meter_id) THEN 0 " +
         "   WHEN NOT EXISTS (SELECT 1 FROM tree_edges te WHERE te.child_meter_id = latest.meter_id) THEN 1 " +
         "   WHEN EXISTS (SELECT 1 FROM tree_edges te WHERE te.parent_meter_id = latest.meter_id) THEN 2 " +
@@ -1213,6 +1436,7 @@ private String getPanelLatestStatusContext(List<String> panelTokens, Integer top
         " FROM latest WHERE rn=1 " +
         ") " +
         "SELECT TOP 1 meter_id, name, panel_name, measured_at, average_voltage, line_voltage_avg, phase_voltage_avg, voltage_ab, " +
+        "is_tree_main, " +
         "average_current, power_factor, frequency, active_power_total, reactive_power_total, panel_meter_count " +
         "FROM ranked ORDER BY main_rank ASC, measured_at DESC, meter_id ASC";
     try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -1233,9 +1457,11 @@ private String getPanelLatestStatusContext(List<String> panelTokens, Integer top
             double hz = rs.getDouble("frequency");
             double kw = rs.getDouble("active_power_total");
             double kvar = rs.getDouble("reactive_power_total");
+            int isTreeMain = rs.getInt("is_tree_main");
             int meterCount = rs.getInt("panel_meter_count");
             return "[Panel latest status] panel=" + panelTokens
                 + "; meter_count=" + meterCount
+                + "; is_tree_main=" + isTreeMain
                 + "; main_meter_id=" + meterId
                 + ", " + (meterName.isEmpty() ? "-" : meterName)
                 + ", panel=" + (panelName.isEmpty() ? "-" : panelName)
@@ -1303,12 +1529,73 @@ private String getAlarmSeveritySummaryContext(Integer days, Timestamp fromTs, Ti
     }
 }
 
+private String getAlarmTypeSummaryContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId, boolean tripOnly, Integer topN) {
+    int d = days != null ? days.intValue() : 7;
+    int n = topN != null ? topN.intValue() : 20;
+    if (n < 1) n = 20;
+    if (n > 50) n = 50;
+    boolean byRange = (fromTs != null || toTs != null);
+    String meterName = getMeterNameById(meterId);
+    boolean byMeter = (meterId != null && meterName != null && !meterName.isEmpty());
+    String scope = tripOnly ? "trip" : "all";
+
+    StringBuilder where = new StringBuilder("WHERE 1=1 ");
+    if (byMeter) where.append("AND meter_name = ? ");
+    if (tripOnly) where.append("AND UPPER(ISNULL(alarm_type,'')) LIKE '%TRIP%' ");
+    if (byRange) {
+        if (fromTs != null) where.append("AND triggered_at >= ? ");
+        if (toTs != null) where.append("AND triggered_at < ? ");
+    } else {
+        where.append("AND triggered_at >= DATEADD(DAY, -?, GETDATE()) ");
+    }
+
+    String sql =
+        "SELECT TOP " + n + " ISNULL(NULLIF(LTRIM(RTRIM(alarm_type)),''), '(미분류)') AS alarm_type, COUNT(1) AS cnt " +
+        "FROM dbo.vw_alarm_log " +
+        where.toString() +
+        "GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(alarm_type)),''), '(미분류)') " +
+        "ORDER BY cnt DESC, alarm_type ASC";
+
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        int pi = 1;
+        if (byMeter) ps.setString(pi++, meterName);
+        if (byRange) {
+            if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+            if (toTs != null) ps.setTimestamp(pi++, toTs);
+        } else {
+            ps.setInt(pi++, d);
+        }
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            StringBuilder sb = new StringBuilder("[Alarm types] ");
+            if (byRange) sb.append("period=").append(periodLabel == null ? "-" : periodLabel).append(";");
+            else sb.append("days=").append(d).append(";");
+            sb.append(" scope=").append(scope).append(";");
+            if (byMeter) sb.append(" meter_id=").append(meterId.intValue()).append("; meter_name=").append(meterName).append(";");
+
+            int i = 0;
+            while (rs.next()) {
+                i++;
+                sb.append(" ").append(i).append(")")
+                  .append(clip(rs.getString("alarm_type"), 40))
+                  .append("=")
+                  .append(rs.getLong("cnt"))
+                  .append(";");
+            }
+            if (i == 0) return "[Alarm types] no data";
+            return sb.toString();
+        }
+    } catch (Exception e) {
+        return "[Alarm types] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
 private String getAlarmCountContext(Integer days) {
-    return getAlarmCountContext(days, null, null, null, null);
+    return getAlarmCountContext(days, null, null, null, null, null, null);
 }
 
 private String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel) {
-    return getAlarmCountContext(days, fromTs, toTs, periodLabel, null);
+    return getAlarmCountContext(days, fromTs, toTs, periodLabel, null, null, null);
 }
 
 private String getMeterNameById(Integer meterId) {
@@ -1325,27 +1612,54 @@ private String getMeterNameById(Integer meterId) {
     return null;
 }
 
-private String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId) {
+private String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId, String alarmTypeToken, String areaToken) {
     int d = days != null ? days.intValue() : 7;
     boolean byRange = (fromTs != null || toTs != null);
     String meterName = getMeterNameById(meterId);
     boolean byMeter = (meterId != null && meterName != null && !meterName.isEmpty());
+    String token = trimToNull(alarmTypeToken);
+    String area = trimToNull(areaToken);
+    List<String> areaTokens = splitAlarmAreaTokens(area);
+    if (token != null) token = token.toUpperCase(java.util.Locale.ROOT);
+    String scope = (token == null) ? "all" : ("type:" + token);
     String sql;
     if (byRange) {
-        StringBuilder sb = new StringBuilder("SELECT COUNT(1) AS cnt FROM dbo.vw_alarm_log WHERE 1=1 ");
-        if (byMeter) sb.append("AND meter_name = ? ");
-        if (fromTs != null) sb.append("AND triggered_at >= ? ");
-        if (toTs != null) sb.append("AND triggered_at < ? ");
+        StringBuilder sb = new StringBuilder("SELECT COUNT(1) AS cnt FROM dbo.vw_alarm_log al WHERE 1=1 ");
+        if (byMeter) sb.append("AND al.meter_name = ? ");
+        if (token != null) sb.append("AND UPPER(ISNULL(alarm_type,'')) LIKE ? ");
+        if (areaTokens != null && !areaTokens.isEmpty()) {
+            for (int i = 0; i < areaTokens.size(); i++) {
+                sb.append("AND (UPPER(ISNULL(al.meter_name,'')) LIKE ? ");
+                sb.append("OR EXISTS (SELECT 1 FROM dbo.meters m WHERE m.name = al.meter_name AND UPPER(ISNULL(m.panel_name,'')) LIKE ?)) ");
+            }
+        }
+        if (fromTs != null) sb.append("AND al.triggered_at >= ? ");
+        if (toTs != null) sb.append("AND al.triggered_at < ? ");
         sql = sb.toString();
     } else {
-        StringBuilder sb = new StringBuilder("SELECT COUNT(1) AS cnt FROM dbo.vw_alarm_log WHERE 1=1 ");
-        if (byMeter) sb.append("AND meter_name = ? ");
-        sb.append("AND triggered_at >= DATEADD(DAY, -?, GETDATE())");
+        StringBuilder sb = new StringBuilder("SELECT COUNT(1) AS cnt FROM dbo.vw_alarm_log al WHERE 1=1 ");
+        if (byMeter) sb.append("AND al.meter_name = ? ");
+        if (token != null) sb.append("AND UPPER(ISNULL(alarm_type,'')) LIKE ? ");
+        if (areaTokens != null && !areaTokens.isEmpty()) {
+            for (int i = 0; i < areaTokens.size(); i++) {
+                sb.append("AND (UPPER(ISNULL(al.meter_name,'')) LIKE ? ");
+                sb.append("OR EXISTS (SELECT 1 FROM dbo.meters m WHERE m.name = al.meter_name AND UPPER(ISNULL(m.panel_name,'')) LIKE ?)) ");
+            }
+        }
+        sb.append("AND al.triggered_at >= DATEADD(DAY, -?, GETDATE())");
         sql = sb.toString();
     }
     try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
         int pi = 1;
         if (byMeter) ps.setString(pi++, meterName);
+        if (token != null) ps.setString(pi++, "%" + token + "%");
+        if (areaTokens != null && !areaTokens.isEmpty()) {
+            for (int i = 0; i < areaTokens.size(); i++) {
+                String a = "%" + areaTokens.get(i).toUpperCase(java.util.Locale.ROOT) + "%";
+                ps.setString(pi++, a);
+                ps.setString(pi++, a);
+            }
+        }
         if (byRange) {
             if (fromTs != null) ps.setTimestamp(pi++, fromTs);
             if (toTs != null) ps.setTimestamp(pi++, toTs);
@@ -1357,8 +1671,9 @@ private String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp to
             if (rs.next()) {
                 long cnt = rs.getLong("cnt");
                 String meterTag = byMeter ? ("; meter_id=" + meterId.intValue() + "; meter_name=" + meterName) : "";
-                if (byRange) return "[Alarm count] period=" + (periodLabel == null ? "-" : periodLabel) + meterTag + "; count=" + cnt;
-                return "[Alarm count] days=" + d + meterTag + "; count=" + cnt;
+                String areaTag = (areaTokens == null || areaTokens.isEmpty()) ? "" : ("; area=" + String.join(",", areaTokens));
+                if (byRange) return "[Alarm count] period=" + (periodLabel == null ? "-" : periodLabel) + "; scope=" + scope + areaTag + meterTag + "; count=" + cnt;
+                return "[Alarm count] days=" + d + "; scope=" + scope + areaTag + meterTag + "; count=" + cnt;
             }
         }
         return "[Alarm count] no data";
@@ -1628,6 +1943,80 @@ private int getPowerFactorNoSignalCount(Timestamp fromTs, Timestamp toTs) {
     }
 }
 
+private String getVoltagePhaseAngleContext(Integer meterId) {
+    if (meterId == null) return "[Voltage phase angle] meter_id required";
+    String sql =
+        "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " +
+        "ms.voltage_phase_a, ms.voltage_phase_b, ms.voltage_phase_c " +
+        "FROM dbo.measurements ms " +
+        "INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id " +
+        "WHERE m.meter_id = ? " +
+        "ORDER BY ms.measurement_id DESC";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, meterId.intValue());
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) return "[Voltage phase angle] meter_id=" + meterId + ", no data";
+            String meterName = clip(rs.getString("meter_name"), 40);
+            String panelName = clip(rs.getString("panel_name"), 40);
+            String ts = fmtTs(rs.getTimestamp("measured_at"));
+            double va = rs.getDouble("voltage_phase_a");
+            if (rs.wasNull()) va = Double.NaN;
+            double vb = rs.getDouble("voltage_phase_b");
+            if (rs.wasNull()) vb = Double.NaN;
+            double vc = rs.getDouble("voltage_phase_c");
+            if (rs.wasNull()) vc = Double.NaN;
+            return "[Voltage phase angle] meter_id=" + meterId
+                + ", meter=" + (meterName.isEmpty() ? "-" : meterName)
+                + ", panel=" + (panelName.isEmpty() ? "-" : panelName)
+                + ", t=" + ts
+                + ", Va=" + fmtNum(va)
+                + ", Vb=" + fmtNum(vb)
+                + ", Vc=" + fmtNum(vc);
+        }
+    } catch (Exception e) {
+        return "[Voltage phase angle] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
+private String getCurrentPhaseAngleContext(Integer meterId) {
+    if (meterId == null) return "[Current phase angle] meter_id required";
+    String sql =
+        "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " +
+        "ms.current_phase_a, ms.current_phase_b, ms.current_phase_c " +
+        "FROM dbo.measurements ms " +
+        "INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id " +
+        "WHERE m.meter_id = ? " +
+        "ORDER BY ms.measurement_id DESC";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, meterId.intValue());
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) return "[Current phase angle] meter_id=" + meterId + ", no data";
+            String meterName = clip(rs.getString("meter_name"), 40);
+            String panelName = clip(rs.getString("panel_name"), 40);
+            String ts = fmtTs(rs.getTimestamp("measured_at"));
+            double ia = rs.getDouble("current_phase_a");
+            if (rs.wasNull()) ia = Double.NaN;
+            double ib = rs.getDouble("current_phase_b");
+            if (rs.wasNull()) ib = Double.NaN;
+            double ic = rs.getDouble("current_phase_c");
+            if (rs.wasNull()) ic = Double.NaN;
+            return "[Current phase angle] meter_id=" + meterId
+                + ", meter=" + (meterName.isEmpty() ? "-" : meterName)
+                + ", panel=" + (panelName.isEmpty() ? "-" : panelName)
+                + ", t=" + ts
+                + ", Ia=" + fmtNum(ia)
+                + ", Ib=" + fmtNum(ib)
+                + ", Ic=" + fmtNum(ic);
+        }
+    } catch (Exception e) {
+        return "[Current phase angle] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
 private String buildFrequencyDirectAnswer(String frequencyCtx, Integer meterId, Integer month) {
     if (frequencyCtx == null || frequencyCtx.trim().isEmpty()) {
         return "월 평균 주파수 정보를 찾지 못했습니다.";
@@ -1730,32 +2119,91 @@ private String buildUserDbContext(String dbContext) {
         if (ctx.contains("unavailable")) return "알람 건수를 현재 조회할 수 없습니다.";
         java.util.regex.Matcher p = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
         java.util.regex.Matcher d = java.util.regex.Pattern.compile("days=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher s = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(ctx);
+        java.util.regex.Matcher a = java.util.regex.Pattern.compile("area=([^;]+)").matcher(ctx);
         java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
         java.util.regex.Matcher c = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(ctx);
         String period = p.find() ? p.group(1) : null;
         String days = d.find() ? d.group(1) : null;
+        String scopeRaw = s.find() ? s.group(1) : "all";
+        String area = a.find() ? a.group(1) : null;
         String meterId = mid.find() ? mid.group(1) : null;
         String cnt = c.find() ? c.group(1) : "0";
-        String scope = (meterId != null ? (meterId + "번 계측기 ") : "");
+        String scope = "";
+        if (meterId != null) scope += meterId + "번 계측기 ";
+        if (area != null && !area.trim().isEmpty()) scope += area.trim() + " ";
+        String alarmLabel = "알람";
+        if (scopeRaw != null && scopeRaw.toLowerCase(java.util.Locale.ROOT).startsWith("type:")) {
+            String t = scopeRaw.substring(5).trim();
+            if (!t.isEmpty()) alarmLabel = t + " 알람";
+        }
         if (period != null && !period.trim().isEmpty() && !"-".equals(period.trim())) {
-            return scope + period + " 발생 알람은 " + cnt + "건입니다.";
+            return scope + period + " 발생 " + alarmLabel + "은 " + cnt + "건입니다.";
         }
         if (days != null) {
-            return scope + "최근 " + days + "일 발생 알람은 " + cnt + "건입니다.";
+            return scope + "최근 " + days + "일 발생 " + alarmLabel + "은 " + cnt + "건입니다.";
         }
-        return scope + "발생 알람은 " + cnt + "건입니다.";
+        return scope + "발생 " + alarmLabel + "은 " + cnt + "건입니다.";
+    }
+    if (ctx.contains("[Alarm types]")) {
+        if (ctx.contains("unavailable")) return "알람 종류를 현재 조회할 수 없습니다.";
+        if (ctx.contains("no data")) return "알람 종류 데이터가 없습니다.";
+        java.util.regex.Matcher p = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
+        java.util.regex.Matcher d = java.util.regex.Pattern.compile("days=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher s = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(ctx);
+        java.util.regex.Matcher item = java.util.regex.Pattern.compile("\\s[0-9]+\\)([^=;]+)=([0-9]+);").matcher(ctx);
+        String period = p.find() ? p.group(1) : null;
+        String days = d.find() ? d.group(1) : null;
+        String scopeRaw = s.find() ? s.group(1) : "all";
+        boolean tripOnly = "trip".equalsIgnoreCase(scopeRaw);
+        StringBuilder out = new StringBuilder();
+        if (period != null && !period.trim().isEmpty() && !"-".equals(period.trim())) {
+            out.append(period).append(" ");
+        } else if (days != null) {
+            out.append("최근 ").append(days).append("일 ");
+        }
+        out.append(tripOnly ? "트립 알람 종류는 다음과 같습니다:\n" : "알람 종류는 다음과 같습니다:\n");
+        int i = 0;
+        while (item.find() && i < 10) {
+            i++;
+            out.append("- ").append(item.group(1).trim()).append(": ").append(item.group(2)).append("건\n");
+        }
+        if (i == 0) return tripOnly ? "트립 알람 종류를 찾지 못했습니다." : "알람 종류를 찾지 못했습니다.";
+        return out.toString().trim();
+    }
+    if (ctx.contains("[Meter list]")) {
+        if (ctx.contains("unavailable")) return "계측기 목록을 현재 조회할 수 없습니다.";
+        if (ctx.contains("no data")) return "조건에 맞는 계측기 목록이 없습니다.";
+        java.util.regex.Matcher sc = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(ctx);
+        java.util.regex.Matcher row = java.util.regex.Pattern.compile("\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^;]+);").matcher(ctx);
+        String scope = sc.find() ? sc.group(1) : null;
+        StringBuilder out = new StringBuilder();
+        if (scope != null && !scope.trim().isEmpty()) {
+            out.append(scope.trim()).append(" 관련 계측기 목록입니다:\n");
+        } else {
+            out.append("계측기 목록입니다:\n");
+        }
+        int i = 0;
+        while (row.find() && i < 20) {
+            i++;
+            out.append("- ").append(row.group(1)).append("번(").append(row.group(2).trim()).append("), 패널 ").append(row.group(3).trim()).append("\n");
+        }
+        if (i == 0) return "조건에 맞는 계측기 목록을 찾지 못했습니다.";
+        return out.toString().trim();
     }
     if (ctx.contains("[Panel latest status]")) {
         if (ctx.contains("unavailable")) return "패널 상태를 현재 조회할 수 없습니다.";
         if (ctx.contains("no data")) return "요청한 패널 상태 데이터가 없습니다.";
         java.util.regex.Matcher panel = java.util.regex.Pattern.compile("panel=\\[([^\\]]+)\\]").matcher(ctx);
         java.util.regex.Matcher mc = java.util.regex.Pattern.compile("meter_count=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher tm = java.util.regex.Pattern.compile("is_tree_main=([01])").matcher(ctx);
         java.util.regex.Matcher row = java.util.regex.Pattern.compile(
             "main_meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^,;]+),\\s*t=([0-9\\-:\\s]+),\\s*V=([0-9.\\-]+),\\s*I=([0-9.\\-]+),\\s*PF=([0-9.\\-]+),\\s*Hz=([0-9.\\-]+),\\s*kW=([0-9.\\-]+),\\s*kVAr=([0-9.\\-]+)",
             java.util.regex.Pattern.CASE_INSENSITIVE
         ).matcher(ctx);
         String panelName = panel.find() ? panel.group(1) : "-";
         int meterCount = mc.find() ? Integer.parseInt(mc.group(1)) : countDistinctMeterIds(ctx);
+        boolean treeMain = tm.find() && "1".equals(tm.group(1));
         if (row.find()) {
             String meterId = row.group(1);
             String meterName = clip(row.group(2), 30);
@@ -1769,10 +2217,92 @@ private String buildUserDbContext(String dbContext) {
             String kvar = row.group(10);
             String scope = meterCount > 0 ? (" (계측기 " + meterCount + "개)") : "";
             String viewPanel = (panelLabel == null || panelLabel.isEmpty() || "-".equals(panelLabel)) ? panelName : panelLabel;
-            return viewPanel + " 패널 최신 상태입니다" + scope + ". 메인 계측기 " + meterId + "(" + meterName + "), 시각 " + ts
-                + ", 전압 " + v + "V, 전류 " + i + "A, 역률 " + pf + ", 주파수 " + hz + "Hz, 유효전력 " + kw + "kW, 무효전력 " + kvar + "kVAr입니다.";
+            String meterRole = treeMain ? "메인 계측기" : "대표 계측기";
+            StringBuilder out = new StringBuilder();
+            out.append(viewPanel).append(" 패널 ").append(meterRole).append(" ");
+            out.append(meterId).append("번");
+            if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+                out.append("(").append(meterName).append(")");
+            }
+            out.append("의 현재 상태는 다음과 같습니다");
+            out.append(scope).append(":\n\n")
+               .append("- 전압(V): ").append(v).append("V\n")
+               .append("- 전류(I): ").append(i).append("A\n")
+               .append("- 역률(PF): ").append(pf).append("\n")
+               .append("- 주파수(Hz): ").append(hz).append("Hz\n")
+               .append("- 유효전력(kW): ").append(kw).append("kW\n")
+               .append("- 무효전력(kVAr): ").append(kvar).append("kVAr\n\n")
+               .append("측정 시각: ").append(ts).append("\n")
+               .append("패널: ").append(viewPanel);
+            return out.toString();
         }
         return panelName + " 패널 상태를 조회했습니다.";
+    }
+    if (ctx.contains("[Voltage phase angle]")) {
+        if (ctx.contains("unavailable")) return "전압 위상각 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("no data")) return "요청한 계측기의 전압 위상각 데이터가 없습니다.";
+        java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher pn = java.util.regex.Pattern.compile("panel=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher ts = java.util.regex.Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        java.util.regex.Matcher va = java.util.regex.Pattern.compile("Va=([0-9.\\-]+)").matcher(ctx);
+        java.util.regex.Matcher vb = java.util.regex.Pattern.compile("Vb=([0-9.\\-]+)").matcher(ctx);
+        java.util.regex.Matcher vc = java.util.regex.Pattern.compile("Vc=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String a = va.find() ? va.group(1) : "-";
+        String b = vb.find() ? vb.group(1) : "-";
+        String c = vc.find() ? vc.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+            out.append("(").append(meterName.trim()).append(")");
+        }
+        out.append("의 전압 위상각은 다음과 같습니다:\n\n")
+           .append("- Va: ").append(a).append("°\n")
+           .append("- Vb: ").append(b).append("°\n")
+           .append("- Vc: ").append(c).append("°\n\n")
+           .append("측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) {
+            out.append("\n패널: ").append(panel.trim());
+        }
+        return out.toString();
+    }
+    if (ctx.contains("[Current phase angle]")) {
+        if (ctx.contains("unavailable")) return "전류 위상각 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("no data")) return "요청한 계측기의 전류 위상각 데이터가 없습니다.";
+        java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher pn = java.util.regex.Pattern.compile("panel=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher ts = java.util.regex.Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        java.util.regex.Matcher ia = java.util.regex.Pattern.compile("Ia=([0-9.\\-]+)").matcher(ctx);
+        java.util.regex.Matcher ib = java.util.regex.Pattern.compile("Ib=([0-9.\\-]+)").matcher(ctx);
+        java.util.regex.Matcher ic = java.util.regex.Pattern.compile("Ic=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String a = ia.find() ? ia.group(1) : "-";
+        String b = ib.find() ? ib.group(1) : "-";
+        String c = ic.find() ? ic.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+            out.append("(").append(meterName.trim()).append(")");
+        }
+        out.append("의 전류 위상각은 다음과 같습니다:\n\n")
+           .append("- Ia: ").append(a).append("°\n")
+           .append("- Ib: ").append(b).append("°\n")
+           .append("- Ic: ").append(c).append("°\n\n")
+           .append("측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) {
+            out.append("\n패널: ").append(panel.trim());
+        }
+        return out.toString();
     }
 
     String fallback = ctx
@@ -2030,6 +2560,9 @@ if (!isValidInput(userMessage)) {
 boolean isAdmin = isAdminRequest(request, application);
 
 Integer directMeterId = extractMeterId(userMessage);
+if (directMeterId == null) {
+    directMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
+}
 Integer directMonth = extractMonth(userMessage);
 Integer directTopN = extractTopN(userMessage, 10, 50);
 Integer directDays = extractDays(userMessage, 7, 90);
@@ -2037,6 +2570,13 @@ Integer directExplicitDays = extractExplicitDays(userMessage, 90);
 TimeWindow directWindow = extractTimeWindow(userMessage);
 Double directHz = extractHzThreshold(userMessage);
 Double directPf = extractPfThreshold(userMessage);
+boolean directTripOnly = wantsTripAlarmOnly(userMessage);
+String directAlarmTypeToken = extractAlarmTypeToken(userMessage);
+if (directTripOnly && (directAlarmTypeToken == null || directAlarmTypeToken.trim().isEmpty())) {
+    directAlarmTypeToken = "TRIP";
+}
+String directAlarmAreaToken = extractAlarmAreaToken(userMessage);
+String directMeterScopeToken = extractMeterScopeToken(userMessage);
 List<String> directPanelTokens = extractPanelTokens(userMessage);
 if (wantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
     directPanelTokens = extractPanelTokensLoose(userMessage);
@@ -2062,6 +2602,22 @@ if (wantsVoltageAverageSummary(userMessage)) {
     directAnswer = directDbContext.contains("no data")
         ? "건물별 전력 TOP 데이터가 없습니다."
         : "건물별 전력 TOP 조회 결과입니다.";
+} else if (wantsVoltagePhaseAngle(userMessage)) {
+    directDbContext = getVoltagePhaseAngleContext(directMeterId);
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty())
+        ? "전압 위상각을 조회했습니다."
+        : userCtx;
+} else if (wantsCurrentPhaseAngle(userMessage)) {
+    directDbContext = getCurrentPhaseAngleContext(directMeterId);
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty())
+        ? "전류 위상각을 조회했습니다."
+        : userCtx;
+} else if (wantsMeterListSummary(userMessage)) {
+    directDbContext = getMeterListContext(directMeterScopeToken, directTopN);
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "계측기 목록을 조회했습니다." : userCtx;
 } else if (wantsPanelLatestStatus(userMessage)) {
     directDbContext = getPanelLatestStatusContext(directPanelTokens, directTopN);
     if (directDbContext.contains("no data")) {
@@ -2072,11 +2628,19 @@ if (wantsVoltageAverageSummary(userMessage)) {
             ? "패널 최신 상태를 조회했습니다."
             : userCtx;
     }
+} else if (wantsAlarmTypeSummary(userMessage)) {
+    if (directWindow != null) {
+        directDbContext = getAlarmTypeSummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directTripOnly, directTopN);
+    } else {
+        directDbContext = getAlarmTypeSummaryContext(directDays, null, null, null, directMeterId, directTripOnly, directTopN);
+    }
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 종류를 조회했습니다." : userCtx;
 } else if (wantsAlarmCountSummary(userMessage)) {
     if (directWindow != null) {
-        directDbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId);
+        directDbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
     } else {
-        directDbContext = getAlarmCountContext(directDays, null, null, null, directMeterId);
+        directDbContext = getAlarmCountContext(directDays, null, null, null, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
     }
     String userCtx = buildUserDbContext(directDbContext);
     directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 건수를 조회했습니다." : userCtx;
@@ -2283,6 +2847,9 @@ try {
     }
 
     Integer requestedMeterId = extractMeterId(userMessage);
+    if (requestedMeterId == null) {
+        requestedMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
+    }
     Integer requestedMonth = extractMonth(userMessage);
     boolean needsPerMeterPower = wantsPerMeterPowerSummary(userMessage);
     boolean needsHarmonic = wantsHarmonicSummary(userMessage);
