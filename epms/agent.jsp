@@ -236,17 +236,30 @@ private String normalizeForIntent(String text) {
 
 private boolean wantsMeterSummary(String userMessage) {
     String m = normalizeForIntent(userMessage);
-    boolean meterWord = m.contains("meter") || m.contains("미터");
+    boolean meterWord = m.contains("meter") || m.contains("미터") || m.contains("계측기");
     boolean meterIntentWord =
         m.contains("최근계측") || m.contains("최신계측")
         || m.contains("최근측정") || m.contains("최신측정")
         || m.contains("계측값") || m.contains("measurement") || m.contains("실시간상태")
+        || m.contains("현재상태")
         || m.contains("전압값") || m.contains("전류값")
         || m.contains("역률") || m.contains("전력값") || m.contains("kw");
+    boolean electricalWord =
+        m.contains("전압") || m.contains("voltage")
+        || m.contains("전류") || m.contains("current")
+        || m.contains("전력") || m.contains("power")
+        || m.contains("역률") || m.contains("pf");
+    boolean recentWord =
+        m.contains("최근") || m.contains("최신") || m.contains("실시간")
+        || m.contains("current") || m.contains("latest");
+    boolean statusWord = m.contains("상태") || m.contains("status");
     boolean sqlLike = m.contains("select") || m.contains("where") || m.contains("join")
         || m.contains("query") || m.contains("sql") || m.contains("테이블") || m.contains("컬럼");
     if (sqlLike) return false;
-    return meterIntentWord || (meterWord && (m.contains("값") || m.contains("value") || m.contains("status")));
+    if (meterWord && statusWord) return true;
+    if (meterWord && electricalWord) return true;
+    if (electricalWord && recentWord && (m.contains("계측기") || meterWord)) return true;
+    return meterIntentWord || (meterWord && (m.contains("값") || m.contains("value") || m.contains("status") || m.contains("상태")));
 }
 
 private boolean wantsAlarmSummary(String userMessage) {
@@ -321,6 +334,16 @@ private boolean wantsAlarmSeveritySummary(String userMessage) {
     return (m.contains("알람") || m.contains("alarm")) &&
         (m.contains("심각도") || m.contains("severity")) &&
         (m.contains("건수") || m.contains("요약") || m.contains("count"));
+}
+
+private boolean wantsAlarmCountSummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasAlarm = m.contains("알람") || m.contains("alarm") || m.contains("경보");
+    boolean hasCount = m.contains("건수") || m.contains("개수") || m.contains("count")
+        || m.contains("몇건") || m.contains("몇개")
+        || m.contains("알람의수") || m.contains("수는") || m.endsWith("수");
+    boolean hasOccurred = m.contains("발생") || m.contains("trigger");
+    return hasAlarm && (hasCount || hasOccurred || m.endsWith("수는?") || m.endsWith("수?"));
 }
 
 private boolean wantsOpenAlarms(String userMessage) {
@@ -619,7 +642,7 @@ private String getRecentMeterContext(Integer meterId, List<String> panelTokens) 
         "SELECT TOP %d m.meter_id, m.name AS meter_name, ms.measured_at, " +
         "m.panel_name, ms.average_voltage, ms.line_voltage_avg, ms.phase_voltage_avg, ms.voltage_ab, ms.average_current, " +
         "COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c) / 3.0) AS power_factor, " +
-        "ms.active_power_total, ms.quality_status " +
+        "ms.active_power_total, ms.reactive_power_total, ms.frequency, ms.quality_status " +
         "FROM dbo.measurements ms " +
         "INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id ";
 
@@ -674,8 +697,10 @@ private String getRecentMeterContext(Integer meterId, List<String> panelTokens) 
                 double c = rs.getDouble("average_current");
                 double pf = rs.getDouble("power_factor");
                 double kw = rs.getDouble("active_power_total");
+                double kvar = rs.getDouble("reactive_power_total");
+                double hz = rs.getDouble("frequency");
                 String q = clip(rs.getString("quality_status"), 20);
-                boolean noSignal = isZeroish(v) && isZeroish(c) && isZeroish(pf) && isZeroish(kw);
+                boolean noSignal = isZeroish(v) && isZeroish(c) && isZeroish(pf) && isZeroish(kw) && isZeroish(kvar);
 
                 sb.append(" ")
                   .append(i).append(")")
@@ -687,7 +712,9 @@ private String getRecentMeterContext(Integer meterId, List<String> panelTokens) 
                   .append(", I=").append(fmtNum(c))
                   .append(", PF=").append(fmtNum(pf))
                   .append(", kW=").append(fmtNum(kw))
-                  .append(", Q=").append(q.isEmpty() ? "-" : q);
+                  .append(", kVAr=").append(fmtNum(kvar))
+                  .append(", Hz=").append(fmtNum(hz))
+                  .append(", QS=").append(q.isEmpty() ? "-" : q);
                 if (noSignal) sb.append(", STATE=NO_SIGNAL");
                 sb
                   .append(";");
@@ -1238,6 +1265,70 @@ private String getAlarmSeveritySummaryContext(Integer days, Timestamp fromTs, Ti
     }
 }
 
+private String getAlarmCountContext(Integer days) {
+    return getAlarmCountContext(days, null, null, null, null);
+}
+
+private String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    return getAlarmCountContext(days, fromTs, toTs, periodLabel, null);
+}
+
+private String getMeterNameById(Integer meterId) {
+    if (meterId == null) return null;
+    String sql = "SELECT TOP 1 name FROM dbo.meters WHERE meter_id = ?";
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, meterId.intValue());
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return trimToNull(rs.getString("name"));
+        }
+    } catch (Exception ignore) {
+    }
+    return null;
+}
+
+private String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId) {
+    int d = days != null ? days.intValue() : 7;
+    boolean byRange = (fromTs != null || toTs != null);
+    String meterName = getMeterNameById(meterId);
+    boolean byMeter = (meterId != null && meterName != null && !meterName.isEmpty());
+    String sql;
+    if (byRange) {
+        StringBuilder sb = new StringBuilder("SELECT COUNT(1) AS cnt FROM dbo.vw_alarm_log WHERE 1=1 ");
+        if (byMeter) sb.append("AND meter_name = ? ");
+        if (fromTs != null) sb.append("AND triggered_at >= ? ");
+        if (toTs != null) sb.append("AND triggered_at < ? ");
+        sql = sb.toString();
+    } else {
+        StringBuilder sb = new StringBuilder("SELECT COUNT(1) AS cnt FROM dbo.vw_alarm_log WHERE 1=1 ");
+        if (byMeter) sb.append("AND meter_name = ? ");
+        sb.append("AND triggered_at >= DATEADD(DAY, -?, GETDATE())");
+        sql = sb.toString();
+    }
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        int pi = 1;
+        if (byMeter) ps.setString(pi++, meterName);
+        if (byRange) {
+            if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+            if (toTs != null) ps.setTimestamp(pi++, toTs);
+        } else {
+            ps.setInt(pi++, d);
+        }
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                long cnt = rs.getLong("cnt");
+                String meterTag = byMeter ? ("; meter_id=" + meterId.intValue() + "; meter_name=" + meterName) : "";
+                if (byRange) return "[Alarm count] period=" + (periodLabel == null ? "-" : periodLabel) + meterTag + "; count=" + cnt;
+                return "[Alarm count] days=" + d + meterTag + "; count=" + cnt;
+            }
+        }
+        return "[Alarm count] no data";
+    } catch (Exception e) {
+        return "[Alarm count] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
 private String getOpenAlarmsContext(Integer topN) {
     return getOpenAlarmsContext(topN, null, null, null);
 }
@@ -1538,6 +1629,133 @@ private String buildDirectDbSummary(String userMessage, String meterCtx, String 
     return sb.toString();
 }
 
+private String buildUserDbContext(String dbContext) {
+    String ctx = dbContext == null ? "" : dbContext.trim();
+    if (ctx.isEmpty()) return "";
+
+    if (ctx.contains("[Latest meter readings")) {
+        if (ctx.contains("unavailable")) return "계측 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("no data")) return "요청한 조건의 계측 데이터가 없습니다.";
+
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+            "meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^@;]+)\\s*@\\s*([0-9\\-:\\s]+)\\s*V=([0-9.\\-]+),\\s*I=([0-9.\\-]+),\\s*PF=([0-9.\\-]+),\\s*kW=([0-9.\\-]+)(?:,\\s*kVAr=([0-9.\\-]+))?(?:,\\s*Hz=([0-9.\\-]+))?",
+            java.util.regex.Pattern.CASE_INSENSITIVE
+        ).matcher(ctx);
+        if (m.find()) {
+            String meterId = m.group(1);
+            String meterName = clip(m.group(2), 40);
+            String panelName = clip(m.group(3), 40);
+            String ts = clip(m.group(4), 19);
+            String v = m.group(5);
+            String i = m.group(6);
+            String pf = m.group(7);
+            String kw = m.group(8);
+            String kvar = m.group(9);
+            String hz = m.group(10);
+            boolean noSignal = ctx.contains("STATE=NO_SIGNAL");
+            StringBuilder out = new StringBuilder();
+            out.append(meterId).append("번 계측기");
+            if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+                out.append("(").append(meterName.trim()).append(")");
+            }
+            out.append("의 현재 상태는 다음과 같습니다:\n\n")
+               .append("- 전압(V): ").append(v).append("V\n")
+               .append("- 전류(I): ").append(i).append("A\n")
+               .append("- 역률(PF): ").append(pf).append("\n");
+            if (hz != null && !hz.trim().isEmpty()) {
+                out.append("- 주파수(Hz): ").append(hz).append("Hz\n");
+            }
+            out.append("- 유효전력(kW): ").append(kw).append("kW\n");
+            if (kvar != null && !kvar.trim().isEmpty()) {
+                out.append("- 무효전력(kVAr): ").append(kvar).append("kVAr\n");
+            }
+            out.append("\n측정 시각: ").append(ts);
+            if (panelName != null && !panelName.trim().isEmpty() && !"-".equals(panelName.trim())) {
+                out.append("\n패널: ").append(panelName.trim());
+            }
+            if (noSignal) {
+                out.append("\n현재 상태는 신호 없음(NO_SIGNAL)으로, 데이터 미수신 가능성이 큽니다.");
+            }
+            return out.toString();
+        }
+    }
+
+    if (ctx.contains("[Latest alarms]")) {
+        if (ctx.contains("unavailable")) return "알람 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("no recent alarm")) return "최근 알람이 없습니다.";
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("unresolved=([0-9]+)").matcher(ctx);
+        if (m.find()) {
+            return "최근 알람 요약입니다. 현재 미해결 알람은 " + m.group(1) + "건입니다.";
+        }
+    }
+    if (ctx.contains("[Alarm count]")) {
+        if (ctx.contains("unavailable")) return "알람 건수를 현재 조회할 수 없습니다.";
+        java.util.regex.Matcher p = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
+        java.util.regex.Matcher d = java.util.regex.Pattern.compile("days=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher c = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(ctx);
+        String period = p.find() ? p.group(1) : null;
+        String days = d.find() ? d.group(1) : null;
+        String meterId = mid.find() ? mid.group(1) : null;
+        String cnt = c.find() ? c.group(1) : "0";
+        String scope = (meterId != null ? (meterId + "번 계측기 ") : "");
+        if (period != null && !period.trim().isEmpty() && !"-".equals(period.trim())) {
+            return scope + period + " 발생 알람은 " + cnt + "건입니다.";
+        }
+        if (days != null) {
+            return scope + "최근 " + days + "일 발생 알람은 " + cnt + "건입니다.";
+        }
+        return scope + "발생 알람은 " + cnt + "건입니다.";
+    }
+
+    String fallback = ctx
+        .replace("STATE=NO_SIGNAL", "신호없음")
+        .replace("meter_id=", "계측기 ")
+        .replace("no data", "데이터 없음")
+        .replace("unavailable", "조회 불가");
+    return clip(fallback, 600);
+}
+
+private boolean isAdminRequest(javax.servlet.http.HttpServletRequest request, javax.servlet.ServletContext app) {
+    if (request == null) return false;
+    try {
+        javax.servlet.http.HttpSession session = request.getSession(false);
+        if (session != null) {
+            Object role = session.getAttribute("role");
+            if (role != null && "ADMIN".equalsIgnoreCase(String.valueOf(role).trim())) {
+                return true;
+            }
+            Object isAdmin = session.getAttribute("isAdmin");
+            if (isAdmin instanceof Boolean && ((Boolean) isAdmin).booleanValue()) {
+                return true;
+            }
+        }
+    } catch (Exception ignore) {}
+
+    String headerToken = trimToNull(request.getHeader("X-EPMS-ADMIN-TOKEN"));
+    if (headerToken == null) return false;
+    Properties p = loadAgentModelConfig(app);
+    String configuredToken = trimToNull(p.getProperty("admin_token"));
+    if (configuredToken == null) return false;
+    return configuredToken.equals(headerToken);
+}
+
+private void writeSuccessJson(javax.servlet.jsp.JspWriter out, javax.servlet.http.HttpServletResponse response, String finalAnswer, String dbContext, boolean isAdmin) throws java.io.IOException {
+    String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
+    String userDbContext = buildUserDbContext(dbContext);
+    String rawDbContext = isAdmin ? dbContext : "";
+    response.setStatus(200);
+    out.print("{\"provider_response\":");
+    out.print(jsonEscape(line));
+    out.print(",\"db_context\":");
+    out.print(jsonEscape(rawDbContext));
+    out.print(",\"db_context_user\":");
+    out.print(jsonEscape(userDbContext));
+    out.print(",\"is_admin\":");
+    out.print(isAdmin ? "true" : "false");
+    out.print("}");
+}
+
 private List<String> panelTokensFromRaw(String panel) {
     ArrayList<String> tokens = new ArrayList<String>();
     if (panel == null) return tokens;
@@ -1739,6 +1957,8 @@ if (!isValidInput(userMessage)) {
     return;
 }
 
+boolean isAdmin = isAdminRequest(request, application);
+
 Integer directMeterId = extractMeterId(userMessage);
 Integer directMonth = extractMonth(userMessage);
 Integer directTopN = extractTopN(userMessage, 10, 50);
@@ -1777,6 +1997,14 @@ if (wantsVoltageAverageSummary(userMessage)) {
     directAnswer = directDbContext.contains("no data")
         ? "패널 최신 상태 데이터가 없습니다."
         : "패널 최신 상태를 조회했습니다.";
+} else if (wantsAlarmCountSummary(userMessage)) {
+    if (directWindow != null) {
+        directDbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId);
+    } else {
+        directDbContext = getAlarmCountContext(directDays, null, null, null, directMeterId);
+    }
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 건수를 조회했습니다." : userCtx;
 } else if (wantsAlarmSeveritySummary(userMessage)) {
     if (directWindow != null) {
         directDbContext = getAlarmSeveritySummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label);
@@ -1840,20 +2068,48 @@ if (wantsVoltageAverageSummary(userMessage)) {
     if (pfNoSignalCount >= 0) {
         directAnswer = directAnswer + " (신호없음 " + pfNoSignalCount + "개 별도)";
     }
+} else if (wantsMeterSummary(userMessage) || wantsAlarmSummary(userMessage)) {
+    boolean needMeterSummary = wantsMeterSummary(userMessage);
+    boolean needAlarmSummary = wantsAlarmSummary(userMessage);
+    String meterCtx = needMeterSummary ? getRecentMeterContext(directMeterId, directPanelTokens) : "";
+    String alarmCtx = needAlarmSummary ? getRecentAlarmContext() : "";
+    StringBuilder dbSb = new StringBuilder();
+    if (meterCtx != null && !meterCtx.trim().isEmpty()) dbSb.append("Meter: ").append(meterCtx);
+    if (alarmCtx != null && !alarmCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("Alarm: ").append(alarmCtx);
+    }
+    directDbContext = dbSb.toString();
+
+    if (directDbContext == null || directDbContext.trim().isEmpty()) {
+        directAnswer = "요청한 조회 결과를 찾지 못했습니다.";
+    } else if (directDbContext.contains("unavailable")) {
+        directAnswer = "현재 계측/알람 조회를 수행할 수 없습니다.";
+    } else if (needMeterSummary && !needAlarmSummary) {
+        if (directDbContext.contains("no data")) {
+            directAnswer = "요청한 계측 데이터가 없습니다.";
+        } else {
+            String userCtx = buildUserDbContext(directDbContext);
+            directAnswer = (userCtx == null || userCtx.trim().isEmpty())
+                ? "최근 계측값을 조회했습니다."
+                : userCtx;
+        }
+    } else if (!needMeterSummary && needAlarmSummary) {
+        directAnswer = directDbContext.contains("no recent alarm")
+            ? "최근 알람이 없습니다."
+            : "최근 알람을 조회했습니다.";
+    } else {
+        directAnswer = "최근 계측값과 알람을 조회했습니다.";
+    }
 }
 
 if (directAnswer != null && directDbContext != null) {
     int meterCount = countDistinctMeterIds(directDbContext);
-    if (meterCount > 0) {
+    boolean skipMeterCountSuffix = directDbContext.startsWith("[Alarm count]");
+    if (!skipMeterCountSuffix && meterCount > 0 && (directAnswer == null || directAnswer.indexOf('\n') < 0)) {
         directAnswer = directAnswer + " (해당 계측기 " + meterCount + "개)";
     }
-    String line = "{\"response\":\"" + escapeJsonString(directAnswer) + "\",\"done\":true}\n";
-    response.setStatus(200);
-    out.print("{\"provider_response\":");
-    out.print(jsonEscape(line));
-    out.print(",\"db_context\":");
-    out.print(jsonEscape(directDbContext));
-    out.print("}");
+    writeSuccessJson(out, response, directAnswer, directDbContext, isAdmin);
     return;
 }
 
@@ -2098,35 +2354,17 @@ try {
 
     if (needsHarmonic && harmonicCtx != null && !harmonicCtx.trim().isEmpty() && !forceCoderFlow) {
         String finalAnswer = buildHarmonicDirectAnswer(harmonicCtx, requestedMeterId);
-        String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
-        response.setStatus(200);
-        out.print("{\"provider_response\":");
-        out.print(jsonEscape(line));
-        out.print(",\"db_context\":");
-        out.print(jsonEscape(dbContext));
-        out.print("}");
+        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
         return;
     }
     if (needsFrequency && frequencyCtx != null && !frequencyCtx.trim().isEmpty() && !forceCoderFlow) {
         String finalAnswer = buildFrequencyDirectAnswer(frequencyCtx, requestedMeterId, requestedMonth);
-        String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
-        response.setStatus(200);
-        out.print("{\"provider_response\":");
-        out.print(jsonEscape(line));
-        out.print(",\"db_context\":");
-        out.print(jsonEscape(dbContext));
-        out.print("}");
+        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
         return;
     }
     if (needsPerMeterPower && powerCtx != null && !powerCtx.trim().isEmpty() && !forceCoderFlow) {
         String finalAnswer = buildPerMeterPowerDirectAnswer(powerCtx);
-        String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
-        response.setStatus(200);
-        out.print("{\"provider_response\":");
-        out.print(jsonEscape(line));
-        out.print(",\"db_context\":");
-        out.print(jsonEscape(dbContext));
-        out.print("}");
+        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
         return;
     }
 
@@ -2144,14 +2382,7 @@ try {
             "Answer in Korean briefly and accurately.\n\nUser: " + userMessage;
     }
     String finalAnswer = callOllamaOnce(ollamaUrl, model, finalPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.4d);
-    String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
-
-    response.setStatus(200);
-    out.print("{\"provider_response\":");
-    out.print(jsonEscape(line));
-    out.print(",\"db_context\":");
-    out.print(jsonEscape(dbContext));
-    out.print("}");
+    writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
 
 } catch (Exception e) {
     response.setStatus(500);

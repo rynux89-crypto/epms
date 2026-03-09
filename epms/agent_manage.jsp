@@ -1,4 +1,4 @@
-<%@ page import="java.io.*,java.net.*,java.util.*"
+﻿<%@ page import="java.io.*,java.net.*,java.util.*"
     contentType="text/html; charset=UTF-8"
     pageEncoding="UTF-8"
     trimDirectiveWhitespaces="true" %>
@@ -58,7 +58,7 @@ private Properties loadModelConfig(javax.servlet.ServletContext app) {
     return p;
 }
 
-private void saveModelConfig(javax.servlet.ServletContext app, String ollamaUrl, String model, String coderModel, int schemaCacheTtlMinutes, int ollamaConnectTimeoutSeconds, int ollamaReadTimeoutSeconds) throws Exception {
+private void saveModelConfig(javax.servlet.ServletContext app, String ollamaUrl, String model, String coderModel, int schemaCacheTtlMinutes, int ollamaConnectTimeoutSeconds, int ollamaReadTimeoutSeconds, int chatWidthPx, int chatMaxHeightVh, int chatFontSizePx) throws Exception {
     File file = getModelConfigFile(app);
     if (file == null) throw new IOException("Config path unavailable");
     Properties p = new Properties();
@@ -68,6 +68,9 @@ private void saveModelConfig(javax.servlet.ServletContext app, String ollamaUrl,
     p.setProperty("schema_cache_ttl_minutes", String.valueOf(schemaCacheTtlMinutes));
     p.setProperty("ollama_connect_timeout_seconds", String.valueOf(ollamaConnectTimeoutSeconds));
     p.setProperty("ollama_read_timeout_seconds", String.valueOf(ollamaReadTimeoutSeconds));
+    p.setProperty("chat_width_px", String.valueOf(chatWidthPx));
+    p.setProperty("chat_max_height_vh", String.valueOf(chatMaxHeightVh));
+    p.setProperty("chat_font_size_px", String.valueOf(chatFontSizePx));
     p.setProperty("updated_at", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
     try (OutputStream out = new FileOutputStream(file);
          Writer writer = new OutputStreamWriter(out, "UTF-8")) {
@@ -126,6 +129,12 @@ Integer selectedConnectTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.
 if (selectedConnectTimeoutSeconds == null) selectedConnectTimeoutSeconds = Integer.valueOf(5);
 Integer selectedReadTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
 if (selectedReadTimeoutSeconds == null) selectedReadTimeoutSeconds = Integer.valueOf(60);
+Integer selectedChatWidthPx = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_width_px")));
+if (selectedChatWidthPx == null) selectedChatWidthPx = Integer.valueOf(360);
+Integer selectedChatMaxHeightVh = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_max_height_vh")));
+if (selectedChatMaxHeightVh == null) selectedChatMaxHeightVh = Integer.valueOf(60);
+Integer selectedChatFontSizePx = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_font_size_px")));
+if (selectedChatFontSizePx == null) selectedChatFontSizePx = Integer.valueOf(13);
 if (selectedModel == null) selectedModel = envModel;
 if (selectedCoderModel == null) selectedCoderModel = envCoderModel;
 
@@ -153,7 +162,10 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                 selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
                 selectedConnectTimeoutSeconds = Integer.valueOf(5);
                 selectedReadTimeoutSeconds = Integer.valueOf(60);
-                successMsg = "모델 설정을 기본값(환경변수)으로 되돌렸습니다. 즉시 반영됩니다.";
+                selectedChatWidthPx = Integer.valueOf(360);
+                selectedChatMaxHeightVh = Integer.valueOf(60);
+                selectedChatFontSizePx = Integer.valueOf(13);
+                successMsg = "모델 설정을 기본값(환경변수)으로 복원했습니다. 즉시 반영됩니다.";
             }
         } else {
             ollamaUrl = envOllamaUrl;
@@ -162,6 +174,9 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
             selectedConnectTimeoutSeconds = Integer.valueOf(5);
             selectedReadTimeoutSeconds = Integer.valueOf(60);
+                selectedChatWidthPx = Integer.valueOf(360);
+                selectedChatMaxHeightVh = Integer.valueOf(60);
+                selectedChatFontSizePx = Integer.valueOf(13);
             successMsg = "이미 기본값(환경변수) 상태입니다.";
         }
     } else {
@@ -171,6 +186,9 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
         Integer nextSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(request.getParameter("schema_cache_ttl_minutes")));
         Integer nextConnectTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_connect_timeout_seconds")));
         Integer nextReadTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_read_timeout_seconds")));
+        Integer nextChatWidthPx = parsePositiveInt(trimToNull(request.getParameter("chat_width_px")));
+        Integer nextChatMaxHeightVh = parsePositiveInt(trimToNull(request.getParameter("chat_max_height_vh")));
+        Integer nextChatFontSizePx = parsePositiveInt(trimToNull(request.getParameter("chat_font_size_px")));
         if (nextOllamaUrl != null && !nextOllamaUrl.equals(ollamaUrl)) {
             try {
                 models = fetchOllamaModels(nextOllamaUrl);
@@ -178,16 +196,22 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                 errorMsg = "Ollama model list fetch failed: " + e.getMessage();
             }
         }
-        if (nextOllamaUrl == null || nextModel == null || nextCoderModel == null || nextSchemaCacheTtlMinutes == null || nextConnectTimeoutSeconds == null || nextReadTimeoutSeconds == null) {
-            errorMsg = "모델, 스키마 캐시 시간, 타임아웃을 모두 입력해 주세요.";
+        if (nextOllamaUrl == null || nextModel == null || nextCoderModel == null || nextSchemaCacheTtlMinutes == null || nextConnectTimeoutSeconds == null || nextReadTimeoutSeconds == null || nextChatWidthPx == null || nextChatMaxHeightVh == null || nextChatFontSizePx == null) {
+            errorMsg = "모델, 스키마 캐시 시간, 타임아웃, 채팅 UI 값을 모두 입력해 주세요.";
         } else if (!nextOllamaUrl.startsWith("http://") && !nextOllamaUrl.startsWith("https://")) {
-            errorMsg = "Ollama URL은 http:// 또는 https://로 시작해야 합니다.";
+            errorMsg = "Ollama URL은 http:// 또는 https:// 로 시작해야 합니다.";
         } else if (nextSchemaCacheTtlMinutes.intValue() < 1 || nextSchemaCacheTtlMinutes.intValue() > 1440) {
             errorMsg = "스키마 캐시 시간은 1~1440분으로 입력해 주세요.";
         } else if (nextConnectTimeoutSeconds.intValue() < 1 || nextConnectTimeoutSeconds.intValue() > 60) {
             errorMsg = "연결 타임아웃은 1~60초로 입력해 주세요.";
         } else if (nextReadTimeoutSeconds.intValue() < 3 || nextReadTimeoutSeconds.intValue() > 600) {
             errorMsg = "응답 타임아웃은 3~600초로 입력해 주세요.";
+        } else if (nextChatWidthPx.intValue() < 300 || nextChatWidthPx.intValue() > 560) {
+            errorMsg = "챗창 폭은 300~560px 범위로 입력해 주세요.";
+        } else if (nextChatMaxHeightVh.intValue() < 40 || nextChatMaxHeightVh.intValue() > 90) {
+            errorMsg = "챗창 최대 높이는 40~90vh 범위로 입력해 주세요.";
+        } else if (nextChatFontSizePx.intValue() < 12 || nextChatFontSizePx.intValue() > 20) {
+            errorMsg = "챗 글자 크기는 12~20px 범위로 입력해 주세요.";
         } else if (!models.isEmpty() && (!models.contains(nextModel) || !models.contains(nextCoderModel))) {
             errorMsg = "선택한 모델이 현재 Ollama 목록에 없습니다.";
         } else {
@@ -199,13 +223,19 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                     nextCoderModel,
                     nextSchemaCacheTtlMinutes.intValue(),
                     nextConnectTimeoutSeconds.intValue(),
-                    nextReadTimeoutSeconds.intValue()
+                    nextReadTimeoutSeconds.intValue(),
+                    nextChatWidthPx.intValue(),
+                    nextChatMaxHeightVh.intValue(),
+                    nextChatFontSizePx.intValue()
                 );
                 selectedModel = nextModel;
                 selectedCoderModel = nextCoderModel;
                 selectedSchemaCacheTtlMinutes = nextSchemaCacheTtlMinutes;
                 selectedConnectTimeoutSeconds = nextConnectTimeoutSeconds;
                 selectedReadTimeoutSeconds = nextReadTimeoutSeconds;
+                selectedChatWidthPx = nextChatWidthPx;
+                selectedChatMaxHeightVh = nextChatMaxHeightVh;
+                selectedChatFontSizePx = nextChatFontSizePx;
                 ollamaUrl = nextOllamaUrl;
                 successMsg = "저장 완료: agent.jsp에 즉시 적용됩니다.";
             } catch (Exception e) {
@@ -348,6 +378,15 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
 
             <div class="label">응답 타임아웃(초)</div>
             <div><code><%= selectedReadTimeoutSeconds %></code></div>
+
+            <div class="label">Chat width (px)</div>
+            <div><code><%= selectedChatWidthPx %></code></div>
+
+            <div class="label">Chat max height (vh)</div>
+            <div><code><%= selectedChatMaxHeightVh %></code></div>
+
+            <div class="label">Chat font size (px)</div>
+            <div><code><%= selectedChatFontSizePx %></code></div>
         </div>
 
         <form method="post">
@@ -402,6 +441,36 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                        value="<%= selectedReadTimeoutSeconds %>"
                        required
                        style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+
+                <label class="label" for="chat_width_px">Chat width (px)</label>
+                <input id="chat_width_px"
+                       name="chat_width_px"
+                       type="number"
+                       min="300"
+                       max="560"
+                       value="<%= selectedChatWidthPx %>"
+                       required
+                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+
+                <label class="label" for="chat_max_height_vh">Chat max height (vh)</label>
+                <input id="chat_max_height_vh"
+                       name="chat_max_height_vh"
+                       type="number"
+                       min="40"
+                       max="90"
+                       value="<%= selectedChatMaxHeightVh %>"
+                       required
+                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+
+                <label class="label" for="chat_font_size_px">Chat font size (px)</label>
+                <input id="chat_font_size_px"
+                       name="chat_font_size_px"
+                       type="number"
+                       min="12"
+                       max="20"
+                       value="<%= selectedChatFontSizePx %>"
+                       required
+                       style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
             </div>
             <div class="row">
                 <button class="primary" type="submit">저장하고 즉시 적용</button>
@@ -418,3 +487,4 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
 </div>
 </body>
 </html>
+

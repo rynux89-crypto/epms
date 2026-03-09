@@ -88,3 +88,51 @@ updated_at=2026-03-08 20\:23\:55
 
 - 일부 JSP 파일명에 과거 오타 파일(`event_detaul.jsp`)이 남아 있을 수 있습니다.
 - 메인에서 실제 사용하는 상세 화면은 `event_detail.jsp`입니다.
+
+## 9. 배포 절차 (백업 -> 반영 -> 검증)
+
+### 9.1 백업
+
+1. 현재 운영 소스 백업
+   - 예: `ROOT` 또는 `epms` 디렉터리를 날짜 기준으로 복사
+2. DB 백업
+   - SQL Server 백업 작업 수행(전체 백업 또는 최소 차등 백업)
+3. 설정 파일 백업
+   - `epms/agent_model.properties` 별도 보관
+
+### 9.2 반영
+
+1. 원격 최신 코드 동기화
+   - `git pull origin master`
+2. 배포 대상 반영
+   - Tomcat `webapps/ROOT` 기준 파일 업데이트
+3. 권한/경로 확인
+   - Tomcat 계정이 파일 읽기/쓰기 가능한지 확인
+4. 필요 시 Tomcat 재기동
+   - JSP 재컴파일/캐시 이슈가 있으면 재시작 수행
+
+### 9.3 검증
+
+1. 기본 접근 확인
+   - `/epms/epms_main.jsp` 정상 로딩
+2. 핵심 화면 스모크 테스트
+   - `meter_status.jsp`, `alarm_view.jsp`, `event_view.jsp`, `agent_manage.jsp`
+3. Agent 연동 확인
+   - `agent_manage.jsp`에서 Ollama URL/모델 저장
+   - `agent.jsp` 호출 시 정상 응답/오류 코드 확인
+4. DB 연동 확인
+   - 최근 데이터 조회, 필터 조회, 저장/수정 기능 점검
+5. 로그 확인
+   - Tomcat 로그(catalina), 앱 오류 로그, SQL 에러 여부 확인
+
+### 9.4 롤백 기준
+
+- 아래 조건 중 하나라도 발생하면 즉시 롤백
+  - 메인/핵심 화면 접속 불가
+  - Agent 응답 불가(지속적 5xx)
+  - 주요 조회/저장 기능 실패
+
+롤백 방법:
+1. 백업해둔 소스 복원
+2. 필요 시 DB 백업본 복구
+3. Tomcat 재기동 후 재검증
