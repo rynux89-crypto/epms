@@ -156,7 +156,7 @@
     </div>
 
     <div class="info-box">
-        기준 파일은 고정값이 아니며, 최근 <span class="mono">plc_excel_import.jsp</span>에서 적용한 엑셀 기준으로 표시됩니다.<br/>
+        기준 파일은 고정값이 아니며, 최근 <span class="mono">plc/plc_excel_import.jsp</span>에서 적용한 엑셀 기준으로 표시됩니다.<br/>
         AI 매핑 주소는 import 시 엑셀 기준주소 +1로 저장됩니다 (예: Excel 40000 → DB 40001).<br/>
         본 화면은 현재 활성(enabled=1) 매핑만 표시합니다.
     </div>

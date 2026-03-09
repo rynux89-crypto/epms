@@ -5,7 +5,7 @@
 <%@ page import="java.util.concurrent.atomic.*" %>
 <%@ page import="java.net.*" %>
 <%@ page import="java.io.*" %>
-<%@ include file="../includes/dbconfig.jspf" %>
+<%@ include file="../../includes/dbconfig.jspf" %>
 <%!
 private static final ScheduledExecutorService WRITE_EXEC = Executors.newScheduledThreadPool(4);
 private static final ConcurrentHashMap<Integer, ScheduledFuture<?>> WRITE_TASKS = new ConcurrentHashMap<>();

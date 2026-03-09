@@ -5,7 +5,7 @@
 <%@ page import="java.nio.charset.StandardCharsets" %>
 <%@ page import="java.nio.file.*" %>
 <%@ page import="java.util.Base64" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../../includes/dbconn.jsp" %>
 <%!
     private static String h(Object value) {
         if (value == null) return "";

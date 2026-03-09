@@ -14,12 +14,16 @@ private static final int RATE_LIMIT_MAX_REQUESTS = 10;
 private static final String DB_JNDI_NAME = "java:comp/env/jdbc/epms";
 private static final Object SCHEMA_CACHE_LOCK = new Object();
 private static final long DEFAULT_SCHEMA_CACHE_TTL_MS = 5L * 60L * 1000L;
+private static final Object METER_SCOPE_CACHE_LOCK = new Object();
+private static final long DEFAULT_METER_SCOPE_CACHE_TTL_MS = 5L * 60L * 1000L;
 private static final int SCHEMA_MAX_TABLES = 60;
 private static final int SCHEMA_MAX_COLUMNS_PER_TABLE = 40;
 private static final int SCHEMA_MAX_CHARS = 16000;
 private static volatile String schemaContextCache = "";
 private static volatile long schemaContextCacheAt = 0L;
 private static volatile long schemaCacheTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
+private static volatile List<String> meterScopeValueCache = new ArrayList<String>();
+private static volatile long meterScopeCacheAt = 0L;
 
 private boolean checkRateLimit(String clientIp) {
     long now = System.currentTimeMillis();
@@ -234,6 +238,84 @@ private String normalizeForIntent(String text) {
     return text.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
 }
 
+private String normalizeScopeKey(String s) {
+    if (s == null) return "";
+    return s.toLowerCase(java.util.Locale.ROOT).replaceAll("[\\s_\\-]+", "");
+}
+
+private List<String> buildMeterScopeValuesFromDb() {
+    LinkedHashSet<String> set = new LinkedHashSet<String>();
+    String sql =
+        "SELECT DISTINCT LTRIM(RTRIM(v)) AS v " +
+        "FROM (" +
+        "  SELECT building_name AS v FROM dbo.meters WHERE building_name IS NOT NULL " +
+        "  UNION ALL " +
+        "  SELECT usage_type AS v FROM dbo.meters WHERE usage_type IS NOT NULL " +
+        ") t " +
+        "WHERE LTRIM(RTRIM(v)) <> ''";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String v = trimToNull(rs.getString("v"));
+                if (v == null) continue;
+                if (normalizeScopeKey(v).length() < 2) continue;
+                set.add(v);
+            }
+        }
+    } catch (Exception ignore) {
+    }
+    ArrayList<String> out = new ArrayList<String>(set);
+    java.util.Collections.sort(out, new java.util.Comparator<String>() {
+        public int compare(String a, String b) {
+            int la = normalizeScopeKey(a).length();
+            int lb = normalizeScopeKey(b).length();
+            if (la != lb) return lb - la;
+            return a.compareToIgnoreCase(b);
+        }
+    });
+    return out;
+}
+
+private List<String> getMeterScopeValuesCached() {
+    long now = System.currentTimeMillis();
+    List<String> cached = meterScopeValueCache;
+    if (cached != null && !cached.isEmpty() && (now - meterScopeCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+        return cached;
+    }
+    synchronized (METER_SCOPE_CACHE_LOCK) {
+        long now2 = System.currentTimeMillis();
+        if (meterScopeValueCache != null && !meterScopeValueCache.isEmpty() && (now2 - meterScopeCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+            return meterScopeValueCache;
+        }
+        List<String> fresh = buildMeterScopeValuesFromDb();
+        meterScopeValueCache = fresh == null ? new ArrayList<String>() : fresh;
+        meterScopeCacheAt = now2;
+        return meterScopeValueCache;
+    }
+}
+
+private List<String> findScopeTokensFromMeterMaster(String userMessage, int maxTokens) {
+    ArrayList<String> out = new ArrayList<String>();
+    String msg = normalizeScopeKey(userMessage);
+    if (msg.isEmpty()) return out;
+    List<String> master = getMeterScopeValuesCached();
+    if (master == null || master.isEmpty()) return out;
+    LinkedHashSet<String> uniq = new LinkedHashSet<String>();
+    for (int i = 0; i < master.size(); i++) {
+        String v = master.get(i);
+        String nk = normalizeScopeKey(v);
+        if (nk.length() < 2) continue;
+        if (msg.contains(nk)) {
+            uniq.add(v);
+            if (uniq.size() >= maxTokens) break;
+        }
+    }
+    out.addAll(uniq);
+    return out;
+}
+
 private boolean wantsMeterSummary(String userMessage) {
     String m = normalizeForIntent(userMessage);
     boolean meterWord = m.contains("meter") || m.contains("미터") || m.contains("계측기");
@@ -253,9 +335,12 @@ private boolean wantsMeterSummary(String userMessage) {
         m.contains("최근") || m.contains("최신") || m.contains("실시간")
         || m.contains("current") || m.contains("latest");
     boolean statusWord = m.contains("상태") || m.contains("status");
+    boolean hasMeterCode = m.matches(".*[a-z]{2,}_[a-z0-9_\\-]{2,}.*");
+    boolean askForm = m.endsWith("?") || m.endsWith("는?") || m.endsWith("은?");
     boolean sqlLike = m.contains("select") || m.contains("where") || m.contains("join")
         || m.contains("query") || m.contains("sql") || m.contains("테이블") || m.contains("컬럼");
     if (sqlLike) return false;
+    if (hasMeterCode && (statusWord || askForm)) return true;
     if (meterWord && statusWord) return true;
     if (meterWord && electricalWord) return true;
     if (electricalWord && recentWord && (m.contains("계측기") || meterWord)) return true;
@@ -303,6 +388,49 @@ private boolean wantsCurrentPhaseAngle(String userMessage) {
     boolean hasCurrent = m.contains("전류") || m.contains("current");
     boolean hasPhase = m.contains("위상각") || m.contains("phaseangle") || m.contains("phase");
     return hasCurrent && hasPhase;
+}
+
+private boolean wantsPhaseCurrentValue(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasCurrent = m.contains("전류") || m.contains("current");
+    boolean hasPhase = m.contains("a상") || m.contains("b상") || m.contains("c상")
+        || m.contains("r상") || m.contains("s상") || m.contains("t상");
+    return hasCurrent && hasPhase;
+}
+
+private boolean wantsPhaseVoltageValue(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasVoltage = m.contains("전압") || m.contains("voltage");
+    boolean hasPhase = m.contains("a상") || m.contains("b상") || m.contains("c상")
+        || m.contains("r상") || m.contains("s상") || m.contains("t상");
+    return hasVoltage && hasPhase;
+}
+
+private boolean wantsLineVoltageValue(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasVoltage = m.contains("전압") || m.contains("voltage");
+    boolean hasLine = m.contains("선간") || m.contains("linevoltage")
+        || m.contains("vab") || m.contains("vbc") || m.contains("vca")
+        || m.contains("ab상") || m.contains("bc상") || m.contains("ca상");
+    return hasVoltage && hasLine;
+}
+
+private String extractPhaseLabel(String userMessage) {
+    if (userMessage == null) return null;
+    String m = normalizeForIntent(userMessage);
+    if (m.contains("a상") || m.contains("r상")) return "A";
+    if (m.contains("b상") || m.contains("s상")) return "B";
+    if (m.contains("c상") || m.contains("t상")) return "C";
+    return null;
+}
+
+private String extractLinePairLabel(String userMessage) {
+    if (userMessage == null) return null;
+    String m = normalizeForIntent(userMessage);
+    if (m.contains("vab") || m.contains("ab상") || m.contains("a-b") || m.contains("rs") || m.contains("r-s")) return "AB";
+    if (m.contains("vbc") || m.contains("bc상") || m.contains("b-c") || m.contains("st") || m.contains("s-t")) return "BC";
+    if (m.contains("vca") || m.contains("ca상") || m.contains("c-a") || m.contains("tr") || m.contains("t-r")) return "CA";
+    return null;
 }
 
 private boolean wantsPerMeterPowerSummary(String userMessage) {
@@ -469,7 +597,11 @@ private boolean wantsMeterListSummary(String userMessage) {
     boolean hasList = m.contains("리스트") || m.contains("목록") || m.contains("list");
     boolean hasMeter = m.contains("계측기") || m.contains("미터") || m.contains("meter") || m.contains("게츠기");
     boolean hasScoped = m.contains("관련된") || m.contains("의");
-    return hasList && (hasMeter || hasScoped);
+    boolean askMeter =
+        (hasMeter && (m.endsWith("는?") || m.endsWith("은?") || m.endsWith("?"))) ||
+        m.contains("계측기는") || m.contains("계측기?") ||
+        m.contains("미터는") || m.contains("meter?");
+    return (hasList && (hasMeter || hasScoped)) || (hasMeter && hasScoped && askMeter);
 }
 
 private String extractMeterScopeToken(String userMessage) {
@@ -496,16 +628,21 @@ private String getMeterListContext(String scopeToken, Integer topN) {
     if (n < 1) n = 20;
     if (n > 100) n = 100;
     StringBuilder sql = new StringBuilder(
-        "SELECT TOP " + n + " meter_id, name, panel_name FROM dbo.meters WHERE 1=1 "
+        "SELECT TOP " + n + " meter_id, name, panel_name, building_name, usage_type FROM dbo.meters WHERE 1=1 "
     );
     for (int i = 0; i < tokens.size(); i++) {
-        sql.append("AND (UPPER(ISNULL(name,'')) LIKE ? OR UPPER(ISNULL(panel_name,'')) LIKE ?) ");
+        sql.append("AND (UPPER(ISNULL(name,'')) LIKE ? ");
+        sql.append("OR UPPER(ISNULL(panel_name,'')) LIKE ? ");
+        sql.append("OR UPPER(ISNULL(building_name,'')) LIKE ? ");
+        sql.append("OR UPPER(ISNULL(usage_type,'')) LIKE ?) ");
     }
     sql.append("ORDER BY meter_id ASC");
     try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql.toString())) {
         int pi = 1;
         for (int i = 0; i < tokens.size(); i++) {
             String t = "%" + tokens.get(i).toUpperCase(java.util.Locale.ROOT) + "%";
+            ps.setString(pi++, t);
+            ps.setString(pi++, t);
             ps.setString(pi++, t);
             ps.setString(pi++, t);
         }
@@ -521,6 +658,8 @@ private String getMeterListContext(String scopeToken, Integer topN) {
                   .append("meter_id=").append(rs.getInt("meter_id"))
                   .append(", ").append(clip(rs.getString("name"), 40))
                   .append(", panel=").append(clip(rs.getString("panel_name"), 40))
+                  .append(", building=").append(clip(rs.getString("building_name"), 30))
+                  .append(", usage=").append(clip(rs.getString("usage_type"), 30))
                   .append(";");
             }
             if (i == 0) return "[Meter list] no data";
@@ -767,10 +906,18 @@ private Integer extractMeterId(String userMessage) {
 private String extractMeterNameToken(String userMessage) {
     if (userMessage == null) return null;
     String src = userMessage.trim();
+    java.util.regex.Matcher m0 = java.util.regex.Pattern
+        .compile("^(?:/llm|/rule)?\\s*([A-Za-z][A-Za-z0-9_\\-]{2,})\\s*의")
+        .matcher(src);
+    if (m0.find()) return trimToNull(m0.group(1));
     java.util.regex.Matcher m1 = java.util.regex.Pattern
         .compile("(?:계측기|meter)\\s*([A-Za-z][A-Za-z0-9_\\-]{2,})", java.util.regex.Pattern.CASE_INSENSITIVE)
         .matcher(src);
     if (m1.find()) return trimToNull(m1.group(1));
+    java.util.regex.Matcher m2 = java.util.regex.Pattern
+        .compile("([A-Za-z]{2,}[A-Za-z0-9]*_[A-Za-z0-9_\\-]{2,})")
+        .matcher(src);
+    if (m2.find()) return trimToNull(m2.group(1));
     return null;
 }
 
@@ -2017,6 +2164,119 @@ private String getCurrentPhaseAngleContext(Integer meterId) {
     }
 }
 
+private String getPhaseCurrentContext(Integer meterId, String phase) {
+    String p = trimToNull(phase);
+    if (meterId == null) return "[Phase current] meter_id required";
+    if (p == null) return "[Phase current] phase required";
+    p = p.toUpperCase(java.util.Locale.ROOT);
+    String col = "A".equals(p) ? "current_a" : ("B".equals(p) ? "current_b" : ("C".equals(p) ? "current_c" : null));
+    if (col == null) return "[Phase current] invalid phase";
+    String sql =
+        "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " + col + " AS phase_current " +
+        "FROM dbo.measurements ms " +
+        "INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id " +
+        "WHERE m.meter_id = ? " +
+        "ORDER BY ms.measurement_id DESC";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, meterId.intValue());
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) return "[Phase current] meter_id=" + meterId + ", phase=" + p + ", no data";
+            String meterName = clip(rs.getString("meter_name"), 40);
+            String panelName = clip(rs.getString("panel_name"), 40);
+            String ts = fmtTs(rs.getTimestamp("measured_at"));
+            double i = rs.getDouble("phase_current");
+            if (rs.wasNull()) i = Double.NaN;
+            return "[Phase current] meter_id=" + meterId
+                + ", meter=" + (meterName.isEmpty() ? "-" : meterName)
+                + ", panel=" + (panelName.isEmpty() ? "-" : panelName)
+                + ", t=" + ts
+                + ", phase=" + p
+                + ", I=" + fmtNum(i);
+        }
+    } catch (Exception e) {
+        return "[Phase current] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
+private String getPhaseVoltageContext(Integer meterId, String phase) {
+    String p = trimToNull(phase);
+    if (meterId == null) return "[Phase voltage] meter_id required";
+    if (p == null) return "[Phase voltage] phase required";
+    p = p.toUpperCase(java.util.Locale.ROOT);
+    String col = "A".equals(p) ? "voltage_phase_a" : ("B".equals(p) ? "voltage_phase_b" : ("C".equals(p) ? "voltage_phase_c" : null));
+    if (col == null) return "[Phase voltage] invalid phase";
+    String sql =
+        "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " + col + " AS phase_voltage " +
+        "FROM dbo.measurements ms " +
+        "INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id " +
+        "WHERE m.meter_id = ? " +
+        "ORDER BY ms.measurement_id DESC";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, meterId.intValue());
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) return "[Phase voltage] meter_id=" + meterId + ", phase=" + p + ", no data";
+            String meterName = clip(rs.getString("meter_name"), 40);
+            String panelName = clip(rs.getString("panel_name"), 40);
+            String ts = fmtTs(rs.getTimestamp("measured_at"));
+            double v = rs.getDouble("phase_voltage");
+            if (rs.wasNull()) v = Double.NaN;
+            return "[Phase voltage] meter_id=" + meterId
+                + ", meter=" + (meterName.isEmpty() ? "-" : meterName)
+                + ", panel=" + (panelName.isEmpty() ? "-" : panelName)
+                + ", t=" + ts
+                + ", phase=" + p
+                + ", V=" + fmtNum(v);
+        }
+    } catch (Exception e) {
+        return "[Phase voltage] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
+private String getLineVoltageContext(Integer meterId, String pair) {
+    if (meterId == null) return "[Line voltage] meter_id required";
+    String p = trimToNull(pair);
+    if (p != null) p = p.toUpperCase(java.util.Locale.ROOT);
+    if (p != null && !("AB".equals(p) || "BC".equals(p) || "CA".equals(p))) p = null;
+    String sql =
+        "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " +
+        "ms.voltage_ab, ms.voltage_bc, ms.voltage_ca " +
+        "FROM dbo.measurements ms " +
+        "INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id " +
+        "WHERE m.meter_id = ? " +
+        "ORDER BY ms.measurement_id DESC";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, meterId.intValue());
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) return "[Line voltage] meter_id=" + meterId + ", pair=" + (p == null ? "ALL" : p) + ", no data";
+            String meterName = clip(rs.getString("meter_name"), 40);
+            String panelName = clip(rs.getString("panel_name"), 40);
+            String ts = fmtTs(rs.getTimestamp("measured_at"));
+            double vab = rs.getDouble("voltage_ab");
+            if (rs.wasNull()) vab = Double.NaN;
+            double vbc = rs.getDouble("voltage_bc");
+            if (rs.wasNull()) vbc = Double.NaN;
+            double vca = rs.getDouble("voltage_ca");
+            if (rs.wasNull()) vca = Double.NaN;
+            return "[Line voltage] meter_id=" + meterId
+                + ", meter=" + (meterName.isEmpty() ? "-" : meterName)
+                + ", panel=" + (panelName.isEmpty() ? "-" : panelName)
+                + ", t=" + ts
+                + ", pair=" + (p == null ? "ALL" : p)
+                + ", Vab=" + fmtNum(vab)
+                + ", Vbc=" + fmtNum(vbc)
+                + ", Vca=" + fmtNum(vca);
+        }
+    } catch (Exception e) {
+        return "[Line voltage] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
 private String buildFrequencyDirectAnswer(String frequencyCtx, Integer meterId, Integer month) {
     if (frequencyCtx == null || frequencyCtx.trim().isEmpty()) {
         return "월 평균 주파수 정보를 찾지 못했습니다.";
@@ -2175,7 +2435,9 @@ private String buildUserDbContext(String dbContext) {
         if (ctx.contains("unavailable")) return "계측기 목록을 현재 조회할 수 없습니다.";
         if (ctx.contains("no data")) return "조건에 맞는 계측기 목록이 없습니다.";
         java.util.regex.Matcher sc = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(ctx);
-        java.util.regex.Matcher row = java.util.regex.Pattern.compile("\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^;]+);").matcher(ctx);
+        java.util.regex.Matcher row = java.util.regex.Pattern.compile(
+            "\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^,;]*)(?:,\\s*building=([^,;]*))?(?:,\\s*usage=([^;]*))?;"
+        ).matcher(ctx);
         String scope = sc.find() ? sc.group(1) : null;
         StringBuilder out = new StringBuilder();
         if (scope != null && !scope.trim().isEmpty()) {
@@ -2186,7 +2448,14 @@ private String buildUserDbContext(String dbContext) {
         int i = 0;
         while (row.find() && i < 20) {
             i++;
-            out.append("- ").append(row.group(1)).append("번(").append(row.group(2).trim()).append("), 패널 ").append(row.group(3).trim()).append("\n");
+            String panel = row.group(3) == null ? "-" : row.group(3).trim();
+            String building = row.group(4) == null ? "-" : row.group(4).trim();
+            String usage = row.group(5) == null ? "-" : row.group(5).trim();
+            out.append("- ").append(row.group(1)).append("번(").append(row.group(2).trim()).append("), 패널 ").append(panel);
+            if (!"-".equals(building) || !"-".equals(usage)) {
+                out.append(" [").append(building).append(" / ").append(usage).append("]");
+            }
+            out.append("\n");
         }
         if (i == 0) return "조건에 맞는 계측기 목록을 찾지 못했습니다.";
         return out.toString().trim();
@@ -2299,6 +2568,107 @@ private String buildUserDbContext(String dbContext) {
            .append("- Ib: ").append(b).append("°\n")
            .append("- Ic: ").append(c).append("°\n\n")
            .append("측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) {
+            out.append("\n패널: ").append(panel.trim());
+        }
+        return out.toString();
+    }
+    if (ctx.contains("[Phase current]")) {
+        if (ctx.contains("unavailable")) return "상전류 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("phase required") || ctx.contains("invalid phase")) return "A/B/C 상을 지정해 주세요.";
+        if (ctx.contains("no data")) return "요청한 계측기의 상전류 데이터가 없습니다.";
+        java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher pn = java.util.regex.Pattern.compile("panel=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher ts = java.util.regex.Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        java.util.regex.Matcher ph = java.util.regex.Pattern.compile("phase=([ABC])").matcher(ctx);
+        java.util.regex.Matcher iv = java.util.regex.Pattern.compile("I=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String phase = ph.find() ? ph.group(1) : "-";
+        String curr = iv.find() ? iv.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+            out.append("(").append(meterName.trim()).append(")");
+        }
+        out.append("의 ").append(phase).append("상 전류는 ").append(curr).append("A 입니다.\n")
+           .append("측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) {
+            out.append("\n패널: ").append(panel.trim());
+        }
+        return out.toString();
+    }
+    if (ctx.contains("[Phase voltage]")) {
+        if (ctx.contains("unavailable")) return "상전압 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("phase required") || ctx.contains("invalid phase")) return "A/B/C 상을 지정해 주세요.";
+        if (ctx.contains("no data")) return "요청한 계측기의 상전압 데이터가 없습니다.";
+        java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher pn = java.util.regex.Pattern.compile("panel=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher ts = java.util.regex.Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        java.util.regex.Matcher ph = java.util.regex.Pattern.compile("phase=([ABC])").matcher(ctx);
+        java.util.regex.Matcher vv = java.util.regex.Pattern.compile("V=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String phase = ph.find() ? ph.group(1) : "-";
+        String volt = vv.find() ? vv.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+            out.append("(").append(meterName.trim()).append(")");
+        }
+        out.append("의 ").append(phase).append("상 전압은 ").append(volt).append("V 입니다.\n")
+           .append("측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) {
+            out.append("\n패널: ").append(panel.trim());
+        }
+        return out.toString();
+    }
+    if (ctx.contains("[Line voltage]")) {
+        if (ctx.contains("unavailable")) return "선간전압 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("no data")) return "요청한 계측기의 선간전압 데이터가 없습니다.";
+        java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher pn = java.util.regex.Pattern.compile("panel=([^,]+)").matcher(ctx);
+        java.util.regex.Matcher ts = java.util.regex.Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        java.util.regex.Matcher pr = java.util.regex.Pattern.compile("pair=([A-Z]+)").matcher(ctx);
+        java.util.regex.Matcher vabm = java.util.regex.Pattern.compile("Vab=([0-9.\\-]+)").matcher(ctx);
+        java.util.regex.Matcher vbcm = java.util.regex.Pattern.compile("Vbc=([0-9.\\-]+)").matcher(ctx);
+        java.util.regex.Matcher vcam = java.util.regex.Pattern.compile("Vca=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String pair = pr.find() ? pr.group(1) : "ALL";
+        String vab = vabm.find() ? vabm.group(1) : "-";
+        String vbc = vbcm.find() ? vbcm.group(1) : "-";
+        String vca = vcam.find() ? vcam.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+            out.append("(").append(meterName.trim()).append(")");
+        }
+        if ("AB".equals(pair)) {
+            out.append("의 AB 선간전압은 ").append(vab).append("V 입니다.\n");
+        } else if ("BC".equals(pair)) {
+            out.append("의 BC 선간전압은 ").append(vbc).append("V 입니다.\n");
+        } else if ("CA".equals(pair)) {
+            out.append("의 CA 선간전압은 ").append(vca).append("V 입니다.\n");
+        } else {
+            out.append("의 선간전압은 다음과 같습니다:\n")
+               .append("- AB: ").append(vab).append("V\n")
+               .append("- BC: ").append(vbc).append("V\n")
+               .append("- CA: ").append(vca).append("V\n");
+        }
+        out.append("측정 시각: ").append(time);
         if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) {
             out.append("\n패널: ").append(panel.trim());
         }
@@ -2489,6 +2859,57 @@ private String jsonEscape(String s) {
     return sb.toString();
 }
 
+private String sanitizeUngroundedJudgement(String answer, String dbContext) {
+    String a = answer == null ? "" : answer;
+    if (a.trim().isEmpty()) return a;
+    String ctx = dbContext == null ? "" : dbContext;
+    String low = a.toLowerCase(java.util.Locale.ROOT);
+    boolean hasJudgement =
+        low.contains("이상 징후") ||
+        low.contains("이상징후") ||
+        low.contains("발견되지 않았") ||
+        low.contains("정상입니다") ||
+        low.contains("문제 없습니다") ||
+        low.contains("abnormal") ||
+        low.contains("no anomaly");
+    if (!hasJudgement) return a;
+
+    // 근거 컨텍스트(명시적 이상치/경보 컨텍스트)가 없으면 판단 문구를 중립화
+    String c = ctx.toLowerCase(java.util.Locale.ROOT);
+    boolean grounded =
+        c.contains("[frequency outlier]") ||
+        c.contains("[power factor outlier]") ||
+        c.contains("[harmonic exceed]") ||
+        c.contains("[voltage unbalance top") ||
+        c.contains("[latest alarms]") ||
+        c.contains("[open alarms]") ||
+        c.contains("[alarm count]");
+    if (grounded) return a;
+
+    String[] lines = a.split("\\r?\\n");
+    StringBuilder out = new StringBuilder();
+    for (int i = 0; i < lines.length; i++) {
+        String line = lines[i];
+        String l = line.toLowerCase(java.util.Locale.ROOT);
+        boolean isJudgementLine =
+            l.contains("이상 징후") ||
+            l.contains("이상징후") ||
+            l.contains("발견되지 않았") ||
+            l.contains("정상입니다") ||
+            l.contains("문제 없습니다") ||
+            l.contains("abnormal") ||
+            l.contains("no anomaly");
+        if (isJudgementLine) continue;
+        if (out.length() > 0) out.append('\n');
+        out.append(line);
+    }
+    if (out.length() == 0) return "현재 제공된 값만으로는 이상 여부를 단정할 수 없습니다.";
+    if (!out.toString().contains("이상 여부를 단정")) {
+        out.append("\n\n현재 제공된 값만으로는 이상 여부를 단정할 수 없습니다.");
+    }
+    return out.toString();
+}
+
 private boolean isValidInput(String input) {
     return input != null && !input.isEmpty() && input.length() <= 2000;
 }
@@ -2557,6 +2978,20 @@ if (!isValidInput(userMessage)) {
     return;
 }
 
+boolean forceLlmOnly = false;
+boolean forceRuleOnly = false;
+try {
+    String um = userMessage == null ? "" : userMessage.trim();
+    if (um.toLowerCase(java.util.Locale.ROOT).startsWith("/llm ")) {
+        forceLlmOnly = true;
+        userMessage = um.substring(5).trim();
+    } else if (um.toLowerCase(java.util.Locale.ROOT).startsWith("/rule ")) {
+        forceRuleOnly = true;
+        userMessage = um.substring(6).trim();
+    }
+} catch (Exception ignore) {
+}
+
 boolean isAdmin = isAdminRequest(request, application);
 
 Integer directMeterId = extractMeterId(userMessage);
@@ -2576,7 +3011,17 @@ if (directTripOnly && (directAlarmTypeToken == null || directAlarmTypeToken.trim
     directAlarmTypeToken = "TRIP";
 }
 String directAlarmAreaToken = extractAlarmAreaToken(userMessage);
+if (directAlarmAreaToken == null || directAlarmAreaToken.trim().isEmpty()) {
+    List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+    if (scopeHints != null && !scopeHints.isEmpty()) {
+        directAlarmAreaToken = String.join(",", scopeHints);
+    }
+}
 String directMeterScopeToken = extractMeterScopeToken(userMessage);
+if ((directMeterScopeToken == null || directMeterScopeToken.trim().isEmpty()) &&
+    directAlarmAreaToken != null && !directAlarmAreaToken.trim().isEmpty()) {
+    directMeterScopeToken = directAlarmAreaToken;
+}
 List<String> directPanelTokens = extractPanelTokens(userMessage);
 if (wantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
     directPanelTokens = extractPanelTokensLoose(userMessage);
@@ -2585,40 +3030,52 @@ if (wantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directP
 String directDbContext = null;
 String directAnswer = null;
 
-if (wantsVoltageAverageSummary(userMessage)) {
+if (!forceLlmOnly && wantsVoltageAverageSummary(userMessage)) {
     Timestamp fromTs = directWindow != null ? directWindow.fromTs : null;
     Timestamp toTs = directWindow != null ? directWindow.toTs : null;
     String periodLabel = directWindow != null ? directWindow.label : null;
     Integer daysFallback = (directWindow == null ? directExplicitDays : null);
     directDbContext = getVoltageAverageContext(directMeterId, directPanelTokens, fromTs, toTs, periodLabel, daysFallback);
     directAnswer = buildVoltageAverageDirectAnswer(directDbContext, directMeterId);
-} else if (wantsMonthlyPowerStats(userMessage)) {
+} else if (!forceLlmOnly && wantsMonthlyPowerStats(userMessage)) {
     directDbContext = getMonthlyPowerStatsContext(directMeterId, directMonth);
     directAnswer = directDbContext.contains("no data")
         ? "요청한 월 전력 통계 데이터가 없습니다."
         : "월 평균/최대 전력 통계를 조회했습니다.";
-} else if (wantsBuildingPowerTopN(userMessage)) {
+} else if (!forceLlmOnly && wantsBuildingPowerTopN(userMessage)) {
     directDbContext = getBuildingPowerTopNContext(directMonth, directTopN);
     directAnswer = directDbContext.contains("no data")
         ? "건물별 전력 TOP 데이터가 없습니다."
         : "건물별 전력 TOP 조회 결과입니다.";
-} else if (wantsVoltagePhaseAngle(userMessage)) {
+} else if (!forceLlmOnly && wantsVoltagePhaseAngle(userMessage)) {
     directDbContext = getVoltagePhaseAngleContext(directMeterId);
     String userCtx = buildUserDbContext(directDbContext);
     directAnswer = (userCtx == null || userCtx.trim().isEmpty())
         ? "전압 위상각을 조회했습니다."
         : userCtx;
-} else if (wantsCurrentPhaseAngle(userMessage)) {
+} else if (!forceLlmOnly && wantsCurrentPhaseAngle(userMessage)) {
     directDbContext = getCurrentPhaseAngleContext(directMeterId);
     String userCtx = buildUserDbContext(directDbContext);
     directAnswer = (userCtx == null || userCtx.trim().isEmpty())
         ? "전류 위상각을 조회했습니다."
         : userCtx;
-} else if (wantsMeterListSummary(userMessage)) {
+} else if (!forceLlmOnly && wantsPhaseCurrentValue(userMessage)) {
+    directDbContext = getPhaseCurrentContext(directMeterId, extractPhaseLabel(userMessage));
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전류를 조회했습니다." : userCtx;
+} else if (!forceLlmOnly && wantsPhaseVoltageValue(userMessage)) {
+    directDbContext = getPhaseVoltageContext(directMeterId, extractPhaseLabel(userMessage));
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전압을 조회했습니다." : userCtx;
+} else if (!forceLlmOnly && wantsLineVoltageValue(userMessage)) {
+    directDbContext = getLineVoltageContext(directMeterId, extractLinePairLabel(userMessage));
+    String userCtx = buildUserDbContext(directDbContext);
+    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "선간전압을 조회했습니다." : userCtx;
+} else if (!forceLlmOnly && wantsMeterListSummary(userMessage)) {
     directDbContext = getMeterListContext(directMeterScopeToken, directTopN);
     String userCtx = buildUserDbContext(directDbContext);
     directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "계측기 목록을 조회했습니다." : userCtx;
-} else if (wantsPanelLatestStatus(userMessage)) {
+} else if (!forceLlmOnly && wantsPanelLatestStatus(userMessage)) {
     directDbContext = getPanelLatestStatusContext(directPanelTokens, directTopN);
     if (directDbContext.contains("no data")) {
         directAnswer = "패널 최신 상태 데이터가 없습니다.";
@@ -2628,7 +3085,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
             ? "패널 최신 상태를 조회했습니다."
             : userCtx;
     }
-} else if (wantsAlarmTypeSummary(userMessage)) {
+} else if (!forceLlmOnly && wantsAlarmTypeSummary(userMessage)) {
     if (directWindow != null) {
         directDbContext = getAlarmTypeSummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directTripOnly, directTopN);
     } else {
@@ -2636,7 +3093,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
     }
     String userCtx = buildUserDbContext(directDbContext);
     directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 종류를 조회했습니다." : userCtx;
-} else if (wantsAlarmCountSummary(userMessage)) {
+} else if (!forceLlmOnly && wantsAlarmCountSummary(userMessage)) {
     if (directWindow != null) {
         directDbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
     } else {
@@ -2644,7 +3101,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
     }
     String userCtx = buildUserDbContext(directDbContext);
     directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 건수를 조회했습니다." : userCtx;
-} else if (wantsAlarmSeveritySummary(userMessage)) {
+} else if (!forceLlmOnly && wantsAlarmSeveritySummary(userMessage)) {
     if (directWindow != null) {
         directDbContext = getAlarmSeveritySummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label);
     } else {
@@ -2653,7 +3110,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
     directAnswer = directDbContext.contains("no data")
         ? "심각도별 알람 집계 데이터가 없습니다."
         : "알람 심각도별 건수 요약입니다.";
-} else if (wantsOpenAlarms(userMessage)) {
+} else if (!forceLlmOnly && wantsOpenAlarms(userMessage)) {
     if (directWindow != null) {
         directDbContext = getOpenAlarmsContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
     } else {
@@ -2662,7 +3119,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
     directAnswer = directDbContext.contains("none")
         ? "현재 미해결 알람이 없습니다."
         : "현재 미해결 알람 목록입니다.";
-} else if (wantsHarmonicExceed(userMessage)) {
+} else if (!forceLlmOnly && wantsHarmonicExceed(userMessage)) {
     if (directWindow != null) {
         directDbContext = getHarmonicExceedListContext(null, null, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
         directAnswer = directDbContext.contains("none")
@@ -2674,7 +3131,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
             ? "고조파 이상 계측기가 없습니다."
             : "고조파 이상 계측기 목록입니다.";
     }
-} else if (wantsFrequencyOutlier(userMessage)) {
+} else if (!forceLlmOnly && wantsFrequencyOutlier(userMessage)) {
     if (directWindow != null) {
         directDbContext = getFrequencyOutlierListContext(directHz, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
     } else {
@@ -2683,7 +3140,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
     directAnswer = directDbContext.contains("none")
         ? "주파수 이상치가 없습니다."
         : "주파수 이상치 목록입니다.";
-} else if (wantsVoltageUnbalanceTopN(userMessage)) {
+} else if (!forceLlmOnly && wantsVoltageUnbalanceTopN(userMessage)) {
     if (directWindow != null) {
         directDbContext = getVoltageUnbalanceTopNContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
     } else {
@@ -2692,7 +3149,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
     directAnswer = directDbContext.contains("no data")
         ? "전압 불평형 데이터가 없습니다."
         : "전압 불평형 상위 목록입니다.";
-} else if (wantsPowerFactorOutlier(userMessage)) {
+} else if (!forceLlmOnly && wantsPowerFactorOutlier(userMessage)) {
     if (directWindow != null) {
         directDbContext = getPowerFactorOutlierListContext(directPf, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
     } else {
@@ -2707,7 +3164,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
     if (pfNoSignalCount >= 0) {
         directAnswer = directAnswer + " (신호없음 " + pfNoSignalCount + "개 별도)";
     }
-} else if (wantsMeterSummary(userMessage) || wantsAlarmSummary(userMessage)) {
+} else if (!forceLlmOnly && (wantsMeterSummary(userMessage) || wantsAlarmSummary(userMessage))) {
     boolean needMeterSummary = wantsMeterSummary(userMessage);
     boolean needAlarmSummary = wantsAlarmSummary(userMessage);
     String meterCtx = needMeterSummary ? getRecentMeterContext(directMeterId, directPanelTokens) : "";
@@ -2749,6 +3206,17 @@ if (directAnswer != null && directDbContext != null) {
         directAnswer = directAnswer + " (해당 계측기 " + meterCount + "개)";
     }
     writeSuccessJson(out, response, directAnswer, directDbContext, isAdmin);
+    return;
+}
+
+if (forceRuleOnly) {
+    writeSuccessJson(
+        out,
+        response,
+        "RULE 모드: 직접 규칙에 매칭된 결과가 없습니다. 같은 질문을 /llm 으로 시도해 주세요.",
+        "[Rule mode] no direct match",
+        isAdmin
+    );
     return;
 }
 
@@ -2850,8 +3318,22 @@ try {
     if (requestedMeterId == null) {
         requestedMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
     }
+    String requestedMeterScope = extractMeterScopeToken(userMessage);
+    if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
+        requestedMeterScope = extractAlarmAreaToken(userMessage);
+    }
+    if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        if (scopeHints != null && !scopeHints.isEmpty()) {
+            requestedMeterScope = String.join(",", scopeHints);
+        }
+    }
     Integer requestedMonth = extractMonth(userMessage);
     boolean needsPerMeterPower = wantsPerMeterPowerSummary(userMessage);
+    boolean needsMeterList = wantsMeterListSummary(userMessage);
+    boolean needsPhaseCurrent = wantsPhaseCurrentValue(userMessage);
+    boolean needsPhaseVoltage = wantsPhaseVoltageValue(userMessage);
+    boolean needsLineVoltage = wantsLineVoltageValue(userMessage);
     boolean needsHarmonic = wantsHarmonicSummary(userMessage);
     List<String> panelTokens = needsPerMeterPower ? new ArrayList<String>() : extractPanelTokens(userMessage);
     String schemaContext = getSchemaContextCached();
@@ -2859,7 +3341,7 @@ try {
     // Stage 1: qwen2.5:14b classifies whether DB lookup is required.
     String classifierPrompt =
         "Classify if EPMS DB lookup is needed. " +
-        "Return only one JSON object with keys: needs_db(boolean), needs_meter(boolean), needs_alarm(boolean), needs_frequency(boolean), needs_power_by_meter(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null). " +
+        "Return only one JSON object with keys: needs_db(boolean), needs_meter(boolean), needs_alarm(boolean), needs_frequency(boolean), needs_power_by_meter(boolean), needs_meter_list(boolean), needs_phase_current(boolean), needs_phase_voltage(boolean), needs_line_voltage(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null), meter_scope(string|null), phase(string|null), line_pair(string|null). " +
         "No markdown. No explanation.\n\nUser: " + userMessage;
     String classifierRaw = callOllamaOnce(ollamaUrl, model, classifierPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
 
@@ -2867,34 +3349,67 @@ try {
     boolean needsAlarm = wantsAlarmSummary(userMessage);
     boolean needsFrequency = wantsMonthlyFrequencySummary(userMessage);
     boolean forceCoderFlow = coderModel.equals(routeModel(userMessage, model, coderModel));
-    boolean needsDb = needsMeter || needsAlarm || needsFrequency || needsPerMeterPower || needsHarmonic;
+    boolean needsDb = needsMeter || needsAlarm || needsFrequency || needsPerMeterPower || needsMeterList || needsPhaseCurrent || needsPhaseVoltage || needsLineVoltage || needsHarmonic;
     Boolean cNeedsDb = extractJsonBoolField(classifierRaw, "needs_db");
     Boolean cNeedsMeter = extractJsonBoolField(classifierRaw, "needs_meter");
     Boolean cNeedsAlarm = extractJsonBoolField(classifierRaw, "needs_alarm");
     Boolean cNeedsFrequency = extractJsonBoolField(classifierRaw, "needs_frequency");
     Boolean cNeedsPower = extractJsonBoolField(classifierRaw, "needs_power_by_meter");
+    Boolean cNeedsMeterList = extractJsonBoolField(classifierRaw, "needs_meter_list");
+    Boolean cNeedsPhaseCurrent = extractJsonBoolField(classifierRaw, "needs_phase_current");
+    Boolean cNeedsPhaseVoltage = extractJsonBoolField(classifierRaw, "needs_phase_voltage");
+    Boolean cNeedsLineVoltage = extractJsonBoolField(classifierRaw, "needs_line_voltage");
     Boolean cNeedsHarmonic = extractJsonBoolField(classifierRaw, "needs_harmonic");
     Integer cMeterId = extractJsonIntField(classifierRaw, "meter_id");
     Integer cMonth = extractJsonIntField(classifierRaw, "month");
     String cPanel = extractJsonStringField(classifierRaw, "panel");
+    String cMeterScope = extractJsonStringField(classifierRaw, "meter_scope");
+    String cPhase = extractJsonStringField(classifierRaw, "phase");
+    String cLinePair = extractJsonStringField(classifierRaw, "line_pair");
     if (cNeedsDb != null) needsDb = needsDb || cNeedsDb.booleanValue();
     needsDb = needsDb || forceCoderFlow;
     if (cNeedsMeter != null) needsMeter = needsMeter || cNeedsMeter.booleanValue();
     if (cNeedsAlarm != null) needsAlarm = needsAlarm || cNeedsAlarm.booleanValue();
     if (cNeedsFrequency != null) needsFrequency = needsFrequency || cNeedsFrequency.booleanValue();
     if (cNeedsPower != null) needsPerMeterPower = needsPerMeterPower || cNeedsPower.booleanValue();
+    if (cNeedsMeterList != null) needsMeterList = needsMeterList || cNeedsMeterList.booleanValue();
+    if (cNeedsPhaseCurrent != null) needsPhaseCurrent = needsPhaseCurrent || cNeedsPhaseCurrent.booleanValue();
+    if (cNeedsPhaseVoltage != null) needsPhaseVoltage = needsPhaseVoltage || cNeedsPhaseVoltage.booleanValue();
+    if (cNeedsLineVoltage != null) needsLineVoltage = needsLineVoltage || cNeedsLineVoltage.booleanValue();
     if (cNeedsHarmonic != null) needsHarmonic = needsHarmonic || cNeedsHarmonic.booleanValue();
+    if (needsMeterList && !wantsPerMeterPowerSummary(userMessage)) needsPerMeterPower = false;
     if (needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) needsFrequency = false;
     if (cMeterId != null) requestedMeterId = cMeterId;
     if (cMonth != null && cMonth.intValue() >= 1 && cMonth.intValue() <= 12) requestedMonth = cMonth;
     if ((panelTokens == null || panelTokens.isEmpty()) && cPanel != null && !cPanel.trim().isEmpty()) {
         panelTokens = panelTokensFromRaw(cPanel);
     }
+    if ((requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) && cMeterScope != null && !cMeterScope.trim().isEmpty()) {
+        requestedMeterScope = cMeterScope;
+    }
+    String requestedPhase = extractPhaseLabel(userMessage);
+    if ((requestedPhase == null || requestedPhase.trim().isEmpty()) && cPhase != null && !cPhase.trim().isEmpty()) {
+        requestedPhase = cPhase;
+    }
+    String requestedLinePair = extractLinePairLabel(userMessage);
+    if ((requestedLinePair == null || requestedLinePair.trim().isEmpty()) && cLinePair != null && !cLinePair.trim().isEmpty()) {
+        requestedLinePair = cLinePair;
+    }
+    if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        if (scopeHints != null && !scopeHints.isEmpty()) {
+            requestedMeterScope = String.join(",", scopeHints);
+        }
+    }
 
     String meterCtx = "";
     String alarmCtx = "";
     String frequencyCtx = "";
     String powerCtx = "";
+    String meterListCtx = "";
+    String phaseCurrentCtx = "";
+    String phaseVoltageCtx = "";
+    String lineVoltageCtx = "";
     String harmonicCtx = "";
     String dbContext = "";
     String coderDraft = "";
@@ -2903,7 +3418,7 @@ try {
     if (needsDb) {
         String coderPrompt =
             "You are DB task planner. Return only one JSON object with keys: " +
-            "task(\"meter\"|\"alarm\"|\"both\"|\"none\"), needs_frequency(boolean), needs_power_by_meter(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null). " +
+            "task(\"meter\"|\"alarm\"|\"both\"|\"none\"), needs_frequency(boolean), needs_power_by_meter(boolean), needs_meter_list(boolean), needs_phase_current(boolean), needs_phase_voltage(boolean), needs_line_voltage(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null), meter_scope(string|null), phase(string|null), line_pair(string|null). " +
             "No markdown. No explanation.\n\n" +
             "User: " + userMessage + "\n" +
             "Classifier JSON: " + classifierRaw + "\n\n" +
@@ -2913,14 +3428,25 @@ try {
         String task = extractJsonStringField(coderRaw, "task");
         Boolean planNeedsFrequency = extractJsonBoolField(coderRaw, "needs_frequency");
         Boolean planNeedsPower = extractJsonBoolField(coderRaw, "needs_power_by_meter");
+        Boolean planNeedsMeterList = extractJsonBoolField(coderRaw, "needs_meter_list");
+        Boolean planNeedsPhaseCurrent = extractJsonBoolField(coderRaw, "needs_phase_current");
+        Boolean planNeedsPhaseVoltage = extractJsonBoolField(coderRaw, "needs_phase_voltage");
+        Boolean planNeedsLineVoltage = extractJsonBoolField(coderRaw, "needs_line_voltage");
         Boolean planNeedsHarmonic = extractJsonBoolField(coderRaw, "needs_harmonic");
         Integer planMeterId = extractJsonIntField(coderRaw, "meter_id");
         Integer planMonth = extractJsonIntField(coderRaw, "month");
         String planPanel = extractJsonStringField(coderRaw, "panel");
+        String planMeterScope = extractJsonStringField(coderRaw, "meter_scope");
+        String planPhase = extractJsonStringField(coderRaw, "phase");
+        String planLinePair = extractJsonStringField(coderRaw, "line_pair");
         boolean runMeter = needsMeter;
         boolean runAlarm = needsAlarm;
         boolean runFrequency = needsFrequency;
         boolean runPower = needsPerMeterPower;
+        boolean runMeterList = needsMeterList;
+        boolean runPhaseCurrent = needsPhaseCurrent;
+        boolean runPhaseVoltage = needsPhaseVoltage;
+        boolean runLineVoltage = needsLineVoltage;
         boolean runHarmonic = needsHarmonic;
 
         if (task != null) {
@@ -2941,18 +3467,42 @@ try {
         if (planMonth != null && planMonth.intValue() >= 1 && planMonth.intValue() <= 12) requestedMonth = planMonth;
         if (planNeedsFrequency != null) runFrequency = runFrequency || planNeedsFrequency.booleanValue();
         if (planNeedsPower != null) runPower = runPower || planNeedsPower.booleanValue();
+        if (planNeedsMeterList != null) runMeterList = runMeterList || planNeedsMeterList.booleanValue();
+        if (planNeedsPhaseCurrent != null) runPhaseCurrent = runPhaseCurrent || planNeedsPhaseCurrent.booleanValue();
+        if (planNeedsPhaseVoltage != null) runPhaseVoltage = runPhaseVoltage || planNeedsPhaseVoltage.booleanValue();
+        if (planNeedsLineVoltage != null) runLineVoltage = runLineVoltage || planNeedsLineVoltage.booleanValue();
         if (planNeedsHarmonic != null) runHarmonic = runHarmonic || planNeedsHarmonic.booleanValue();
+        if (runMeterList && !wantsPerMeterPowerSummary(userMessage)) runPower = false;
         if (needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
         if ((panelTokens == null || panelTokens.isEmpty()) && planPanel != null && !planPanel.trim().isEmpty()) {
             panelTokens = panelTokensFromRaw(planPanel);
+        }
+        if ((requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) && planMeterScope != null && !planMeterScope.trim().isEmpty()) {
+            requestedMeterScope = planMeterScope;
+        }
+        if ((requestedPhase == null || requestedPhase.trim().isEmpty()) && planPhase != null && !planPhase.trim().isEmpty()) {
+            requestedPhase = planPhase;
+        }
+        if ((requestedLinePair == null || requestedLinePair.trim().isEmpty()) && planLinePair != null && !planLinePair.trim().isEmpty()) {
+            requestedLinePair = planLinePair;
+        }
+        if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
+            List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+            if (scopeHints != null && !scopeHints.isEmpty()) {
+                requestedMeterScope = String.join(",", scopeHints);
+            }
         }
 
         if (runMeter) meterCtx = getRecentMeterContext(requestedMeterId, panelTokens);
         if (runAlarm) alarmCtx = getRecentAlarmContext();
         if (runFrequency) frequencyCtx = getMonthlyAvgFrequencyContext(requestedMeterId, requestedMonth);
         if (runPower) powerCtx = getPerMeterPowerContext();
+        if (runMeterList) meterListCtx = getMeterListContext(requestedMeterScope, directTopN);
+        if (runPhaseCurrent) phaseCurrentCtx = getPhaseCurrentContext(requestedMeterId, requestedPhase);
+        if (runPhaseVoltage) phaseVoltageCtx = getPhaseVoltageContext(requestedMeterId, requestedPhase);
+        if (runLineVoltage) lineVoltageCtx = getLineVoltageContext(requestedMeterId, requestedLinePair);
         if (runHarmonic) harmonicCtx = getHarmonicContext(requestedMeterId, panelTokens);
-        if (!runMeter && !runAlarm && !runFrequency && !runPower && !runHarmonic && forceCoderFlow) {
+        if (!runMeter && !runAlarm && !runFrequency && !runPower && !runMeterList && !runPhaseCurrent && !runPhaseVoltage && !runLineVoltage && !runHarmonic && forceCoderFlow) {
             String coderAnswerPrompt =
                 "Answer the user's DB/SQL request directly. " +
                 "Use SQL Server syntax if SQL is requested. " +
@@ -2960,7 +3510,7 @@ try {
                 "User: " + userMessage + "\n\n" +
                 "Schema Context:\n" + schemaContext;
             coderDraft = callOllamaOnce(ollamaUrl, coderModel, coderAnswerPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.2d);
-        } else if (!runMeter && !runAlarm && !runFrequency && !runPower && !runHarmonic) {
+        } else if (!runMeter && !runAlarm && !runFrequency && !runPower && !runMeterList && !runPhaseCurrent && !runPhaseVoltage && !runLineVoltage && !runHarmonic) {
             needsDb = false;
         }
     }
@@ -2982,6 +3532,22 @@ try {
         if (powerCtx != null && !powerCtx.trim().isEmpty()) {
             if (dbSb.length() > 0) dbSb.append("\n");
             dbSb.append("PowerByMeter: ").append(powerCtx);
+        }
+        if (meterListCtx != null && !meterListCtx.trim().isEmpty()) {
+            if (dbSb.length() > 0) dbSb.append("\n");
+            dbSb.append("MeterList: ").append(meterListCtx);
+        }
+        if (phaseCurrentCtx != null && !phaseCurrentCtx.trim().isEmpty()) {
+            if (dbSb.length() > 0) dbSb.append("\n");
+            dbSb.append("PhaseCurrent: ").append(phaseCurrentCtx);
+        }
+        if (phaseVoltageCtx != null && !phaseVoltageCtx.trim().isEmpty()) {
+            if (dbSb.length() > 0) dbSb.append("\n");
+            dbSb.append("PhaseVoltage: ").append(phaseVoltageCtx);
+        }
+        if (lineVoltageCtx != null && !lineVoltageCtx.trim().isEmpty()) {
+            if (dbSb.length() > 0) dbSb.append("\n");
+            dbSb.append("LineVoltage: ").append(lineVoltageCtx);
         }
         if (harmonicCtx != null && !harmonicCtx.trim().isEmpty()) {
             if (dbSb.length() > 0) dbSb.append("\n");
@@ -3009,6 +3575,30 @@ try {
         writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
         return;
     }
+    if (needsMeterList && meterListCtx != null && !meterListCtx.trim().isEmpty() && !forceCoderFlow) {
+        String finalAnswer = buildUserDbContext(meterListCtx);
+        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "계측기 목록을 조회했습니다.";
+        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
+        return;
+    }
+    if (needsPhaseCurrent && phaseCurrentCtx != null && !phaseCurrentCtx.trim().isEmpty() && !forceCoderFlow) {
+        String finalAnswer = buildUserDbContext(phaseCurrentCtx);
+        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "상전류를 조회했습니다.";
+        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
+        return;
+    }
+    if (needsPhaseVoltage && phaseVoltageCtx != null && !phaseVoltageCtx.trim().isEmpty() && !forceCoderFlow) {
+        String finalAnswer = buildUserDbContext(phaseVoltageCtx);
+        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "상전압을 조회했습니다.";
+        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
+        return;
+    }
+    if (needsLineVoltage && lineVoltageCtx != null && !lineVoltageCtx.trim().isEmpty() && !forceCoderFlow) {
+        String finalAnswer = buildUserDbContext(lineVoltageCtx);
+        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "선간전압을 조회했습니다.";
+        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
+        return;
+    }
 
     // Stage 3: qwen2.5:14b creates final user-facing answer.
     String finalPrompt;
@@ -3024,6 +3614,7 @@ try {
             "Answer in Korean briefly and accurately.\n\nUser: " + userMessage;
     }
     String finalAnswer = callOllamaOnce(ollamaUrl, model, finalPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.4d);
+    finalAnswer = sanitizeUngroundedJudgement(finalAnswer, dbContext);
     writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
 
 } catch (Exception e) {

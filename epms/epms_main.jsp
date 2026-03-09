@@ -151,12 +151,12 @@
         <h2>🛠 PLC 등록 관리</h2>
         <p>Modbus TCP PLC의 IP/Port를 등록하고 활성 상태를 관리.</p>
         <div class="button-group right">
-            <a href="plc_register.jsp" class="link-button right">PLC 등록 화면</a>
-            <a href="plc_status.jsp" class="link-button right">PLC 상태/읽기</a>
-            <a href="plc_write.jsp" class="link-button right">PLC 샘플 쓰기</a>
+            <a href="plc/plc_register.jsp" class="link-button right">PLC 등록 화면</a>
+            <a href="plc/plc_status.jsp" class="link-button right">PLC 상태/읽기</a>
+            <a href="plc/plc_write.jsp" class="link-button right">PLC 샘플 쓰기</a>
             <a href="ai_mapping.jsp" class="link-button right">AI 매핑 화면</a>
             <a href="di_mapping.jsp" class="link-button right">DI 매핑 화면</a>
-            <a href="plc_excel_import.jsp" class="link-button right">엑셀 자동 매핑</a>
+            <a href="plc/plc_excel_import.jsp" class="link-button right">엑셀 자동 매핑</a>
             <a href="ai_measurements_match.jsp" class="link-button right">AI-Measurements 매칭</a>
             <a href="ai_measurements_match_manage.jsp" class="link-button right">AI-Measurements 매칭 관리</a>
             <a href="harmonic_sync.jsp" class="link-button right">고조파 동기화</a>

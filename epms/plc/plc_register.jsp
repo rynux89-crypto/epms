@@ -2,7 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../../includes/dbconn.jsp" %>
 <%!
     private static boolean isValidIpv4(String ip) {
         if (ip == null) return false;

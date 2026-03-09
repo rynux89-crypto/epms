@@ -1,7 +1,7 @@
 ﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../../includes/dbconn.jsp" %>
 <%
     List<Map<String, Object>> plcList = new ArrayList<>();
     Map<Integer, String> meterNameMap = new HashMap<>();
@@ -185,7 +185,7 @@
 
 <script>
 (function(){
-  const API = 'modbus_api.jsp';
+const API = 'modbus_api.jsp';
   const meterNameMap = {
     <% boolean firstMeter = true; for (Map.Entry<Integer, String> e : meterNameMap.entrySet()) { %>
       <% if (!firstMeter) { %>,<% } %>"<%= e.getKey() %>":"<%= (e.getValue() == null ? "" : e.getValue().replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")) %>"<% firstMeter = false; %>

@@ -7,7 +7,7 @@
 <%@ page import="java.io.*" %>
 <%@ page import="java.lang.reflect.*" %>
 <%@ page import="javax.servlet.ServletContext" %>
-<%@ include file="../includes/dbconfig.jspf" %>
+<%@ include file="../../includes/dbconfig.jspf" %>
 <%!
     private static final int DI_POLLING_MS = 1000;
     private static final String POLL_RUNTIME_ATTR = "EPMS_MODBUS_POLL_RUNTIME";
