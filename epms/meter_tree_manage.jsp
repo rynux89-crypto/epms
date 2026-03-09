@@ -3,7 +3,7 @@
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
-<%!
+<%! 
     private static String h(Object value) {
         if (value == null) return "";
         String s = String.valueOf(value);
@@ -26,6 +26,34 @@
         String t = v.trim().toLowerCase(java.util.Locale.ROOT);
         return "1".equals(t) || "true".equals(t) || "y".equals(t) || "yes".equals(t) || "on".equals(t);
     }
+
+    private static String j(Object value) {
+        if (value == null) return "";
+        String s = String.valueOf(value);
+        StringBuilder out = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\': out.append("\\\\"); break;
+                case '"': out.append("\\\""); break;
+                case '\b': out.append("\\b"); break;
+                case '\f': out.append("\\f"); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        String hex = Integer.toHexString(c);
+                        out.append("\\u");
+                        for (int k = hex.length(); k < 4; k++) out.append('0');
+                        out.append(hex);
+                    } else {
+                        out.append(c);
+                    }
+            }
+        }
+        return out.toString();
+    }
 %>
 <%
     request.setCharacterEncoding("UTF-8");
@@ -34,15 +62,69 @@
     String err = null;
     Integer editId = toInt(request.getParameter("edit_id"));
     Integer parentFilterId = toInt(request.getParameter("parent_filter"));
+    String childPanelQ = request.getParameter("child_panel_q");
+    if (childPanelQ == null) childPanelQ = "";
+    childPanelQ = childPanelQ.trim();
     Integer addParentId = toInt(request.getParameter("add_parent_id"));
     if (addParentId == null) addParentId = toInt(request.getParameter("parent_meter_id"));
     String parentFilterQs = (parentFilterId == null) ? "" : ("&parent_filter=" + parentFilterId);
+    String childPanelQEncoded = "";
+    try { childPanelQEncoded = URLEncoder.encode(childPanelQ, "UTF-8"); } catch (Exception ignore) {}
+    String childPanelFilterQs = "";
+    if (!childPanelQ.isEmpty()) {
+        childPanelFilterQs = "&child_panel_q=" + childPanelQEncoded;
+    }
 
     List<Map<String, Object>> meters = new ArrayList<>();
     List<Map<String, Object>> rows = new ArrayList<>();
+    LinkedHashSet<String> childPanelOptions = new LinkedHashSet<>();
     Map<String, Object> editRow = null;
     Map<Integer, Integer> nodeDepth = new HashMap<>();
     Map<Integer, Integer> nextSortByParent = new HashMap<>();
+
+    String ajax = request.getParameter("ajax");
+    if ("child_panels".equalsIgnoreCase(ajax)) {
+        response.setContentType("application/json;charset=UTF-8");
+        Integer ajaxParentFilterId = toInt(request.getParameter("parent_filter"));
+        try {
+            StringBuilder ajaxSql = new StringBuilder();
+            ajaxSql.append("SELECT DISTINCT LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) AS panel_name ")
+                  .append("FROM dbo.meter_tree t ")
+                  .append("LEFT JOIN dbo.meters cm ON cm.meter_id = t.child_meter_id ")
+                  .append("WHERE LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) <> '' ");
+            List<Object> ajaxParams = new ArrayList<>();
+            if (ajaxParentFilterId != null) {
+                ajaxSql.append("AND t.parent_meter_id = ? ");
+                ajaxParams.add(ajaxParentFilterId);
+            }
+            ajaxSql.append("ORDER BY panel_name");
+
+            StringBuilder json = new StringBuilder();
+            json.append("{\"ok\":true,\"panels\":[");
+            boolean first = true;
+            try (PreparedStatement ps = conn.prepareStatement(ajaxSql.toString())) {
+                for (int i = 0; i < ajaxParams.size(); i++) ps.setObject(i + 1, ajaxParams.get(i));
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String p = rs.getString("panel_name");
+                        if (p == null) continue;
+                        p = p.trim();
+                        if (p.isEmpty()) continue;
+                        if (!first) json.append(',');
+                        json.append('"').append(j(p)).append('"');
+                        first = false;
+                    }
+                }
+            }
+            json.append("]}");
+            out.print(json.toString());
+        } catch (Exception ex) {
+            out.print("{\"ok\":false,\"error\":\"" + j(ex.getMessage()) + "\"}");
+        } finally {
+            try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
+        }
+        return;
+    }
 
     try {
         try (Statement st = conn.createStatement()) {
@@ -141,7 +223,7 @@
                                 if (note == null) ps.setNull(5, Types.NVARCHAR); else ps.setString(5, note);
                                 ps.executeUpdate();
                             }
-                            response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("등록 완료", "UTF-8") + parentFilterQs + "&add_parent_id=" + parentId);
+                            response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("등록 완료", "UTF-8") + parentFilterQs + childPanelFilterQs + "&add_parent_id=" + parentId);
                             return;
                         } else {
                             Integer relationId = toInt(request.getParameter("relation_id"));
@@ -163,7 +245,7 @@
                                     if (changed == 0) err = "수정 대상이 없습니다.";
                                 }
                                 if (err == null) {
-                                    response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8") + parentFilterQs);
+                                    response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8") + parentFilterQs + childPanelFilterQs);
                                     return;
                                 }
                             }
@@ -179,7 +261,7 @@
                             ps.setInt(1, relationId.intValue());
                             ps.executeUpdate();
                         }
-                        response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("삭제 완료", "UTF-8") + parentFilterQs);
+                        response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("삭제 완료", "UTF-8") + parentFilterQs + childPanelFilterQs);
                         return;
                     }
                 }
@@ -215,6 +297,27 @@
             }
         }
 
+        StringBuilder childPanelOptSql = new StringBuilder();
+        childPanelOptSql.append("SELECT DISTINCT LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) AS panel_name ")
+                        .append("FROM dbo.meter_tree t ")
+                        .append("LEFT JOIN dbo.meters cm ON cm.meter_id = t.child_meter_id ")
+                        .append("WHERE LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) <> '' ");
+        if (parentFilterId != null) {
+            childPanelOptSql.append("AND t.parent_meter_id = ? ");
+        }
+        childPanelOptSql.append("ORDER BY panel_name");
+        try (PreparedStatement ps = conn.prepareStatement(childPanelOptSql.toString())) {
+            if (parentFilterId != null) ps.setInt(1, parentFilterId.intValue());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String cp = rs.getString("panel_name");
+                    if (cp == null) continue;
+                    cp = cp.trim();
+                    if (!cp.isEmpty()) childPanelOptions.add(cp);
+                }
+            }
+        }
+
         StringBuilder listSql = new StringBuilder();
         listSql.append("SELECT t.relation_id, t.parent_meter_id, t.child_meter_id, t.is_active, t.sort_order, t.note, ")
                .append("       pm.name AS parent_name, pm.panel_name AS parent_panel, ")
@@ -223,15 +326,19 @@
                .append("LEFT JOIN dbo.meters pm ON pm.meter_id = t.parent_meter_id ")
                .append("LEFT JOIN dbo.meters cm ON cm.meter_id = t.child_meter_id ")
                .append("WHERE 1=1 ");
-        List<Object> listParams = new ArrayList<>();
         if (parentFilterId != null) {
             listSql.append("AND t.parent_meter_id = ? ");
-            listParams.add(parentFilterId);
+        }
+        if (!childPanelQ.isEmpty()) {
+            listSql.append("AND REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(cm.panel_name, ''))), CHAR(9), ''), CHAR(10), ''), CHAR(13), '') ")
+                   .append("= REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(?)), CHAR(9), ''), CHAR(10), ''), CHAR(13), '') ");
         }
         listSql.append("ORDER BY t.is_active DESC, t.parent_meter_id, ISNULL(t.sort_order, 999999), t.child_meter_id");
 
         try (PreparedStatement ps = conn.prepareStatement(listSql.toString())) {
-            for (int i = 0; i < listParams.size(); i++) ps.setObject(i + 1, listParams.get(i));
+            int idx = 1;
+            if (parentFilterId != null) ps.setInt(idx++, parentFilterId.intValue());
+            if (!childPanelQ.isEmpty()) ps.setNString(idx++, childPanelQ);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     Map<String, Object> r = new HashMap<>();
@@ -357,6 +464,7 @@
         <form method="post" class="toolbar">
             <input type="hidden" name="action" value="add" />
             <input type="hidden" name="parent_filter" value="<%= parentFilterId == null ? "" : parentFilterId %>" />
+            <input type="hidden" name="child_panel_q" value="<%= h(childPanelQ) %>" />
             부모:
             <select id="add_parent_meter_id" name="parent_meter_id" class="mid-input" required>
                 <option value="">선택</option>
@@ -389,6 +497,7 @@
         <form method="post" class="toolbar">
             <input type="hidden" name="action" value="update" />
             <input type="hidden" name="parent_filter" value="<%= parentFilterId == null ? "" : parentFilterId %>" />
+            <input type="hidden" name="child_panel_q" value="<%= h(childPanelQ) %>" />
             <input type="hidden" name="relation_id" value="<%= h(editRow.get("relation_id")) %>" />
             부모:
             <select name="parent_meter_id" class="mid-input" required>
@@ -411,16 +520,16 @@
             <label>활성 <input type="checkbox" name="is_active" value="1" <%= ((Boolean)editRow.get("is_active")) ? "checked" : "" %> /></label>
             <input type="text" name="note" class="wide-input" value="<%= h(editRow.get("note")) %>" />
             <button type="submit" class="btn-mini">수정 저장</button>
-            <button type="button" class="btn-mini" onclick="location.href='meter_tree_manage.jsp<%= (parentFilterId != null ? ("?parent_filter=" + parentFilterId) : "") %>'">취소</button>
+            <button type="button" class="btn-mini" onclick="location.href='meter_tree_manage.jsp?<%= (parentFilterId != null ? ("parent_filter=" + parentFilterId + "&") : "") %>child_panel_q=<%= childPanelQEncoded %>'">취소</button>
         </form>
     </div>
     <% } %>
 
     <div class="section-card">
         <div class="section-title">목록</div>
-        <form method="get" class="toolbar" style="margin-bottom:8px;">
+        <form id="list_filter_form" method="get" class="toolbar" style="margin-bottom:8px;">
             <label>부모 계측기:</label>
-            <select name="parent_filter" class="mid-input">
+            <select id="list_parent_filter" name="parent_filter" class="mid-input">
                 <option value="">전체</option>
                 <% for (Map<String, Object> m : meters) { %>
                 <option value="<%= h(m.get("meter_id")) %>" <%= String.valueOf(m.get("meter_id")).equals(String.valueOf(parentFilterId)) ? "selected" : "" %>>
@@ -428,7 +537,14 @@
                 </option>
                 <% } %>
             </select>
-            <button type="submit" class="btn-mini">검색</button>
+            <label>child 판넬명:</label>
+            <select id="list_child_panel_q" name="child_panel_q" class="mid-input">
+                <option value="">전체</option>
+                <% for (String cp : childPanelOptions) { %>
+                <option value="<%= h(cp) %>" <%= cp.equals(childPanelQ) ? "selected" : "" %>><%= h(cp) %></option>
+                <% } %>
+            </select>
+            <button id="list_filter_submit" type="submit" class="btn-mini">검색</button>
             <button type="button" class="btn-mini" onclick="location.href='meter_tree_manage.jsp'">초기화</button>
         </form>
 
@@ -473,10 +589,11 @@
                     <td><%= h(r.get("sort_order")) %></td>
                     <td><%= h(r.get("note")) %></td>
                     <td>
-                        <button type="button" class="btn-mini" onclick="location.href='meter_tree_manage.jsp?edit_id=<%= h(r.get("relation_id")) %><%= (parentFilterId != null ? ("&parent_filter=" + parentFilterId) : "") %>'">편집</button>
+                        <button type="button" class="btn-mini" onclick="location.href='meter_tree_manage.jsp?edit_id=<%= h(r.get("relation_id")) %><%= (parentFilterId != null ? ("&parent_filter=" + parentFilterId) : "") %>&child_panel_q=<%= childPanelQEncoded %>'">편집</button>
                         <form method="post" style="display:inline;" onsubmit="return confirm('정말 삭제하시겠습니까?');">
                             <input type="hidden" name="action" value="delete" />
                             <input type="hidden" name="parent_filter" value="<%= parentFilterId == null ? "" : parentFilterId %>" />
+                            <input type="hidden" name="child_panel_q" value="<%= h(childPanelQ) %>" />
                             <input type="hidden" name="relation_id" value="<%= h(r.get("relation_id")) %>" />
                             <button type="submit" class="btn-mini">삭제</button>
                         </form>
@@ -516,6 +633,74 @@ if (addParentSel) {
     addParentSel.addEventListener('change', function() { applyNextSortFromParent(true); });
 }
 applyNextSortFromParent(false);
+
+(function(){
+    const parentSel = document.getElementById('list_parent_filter');
+    const childPanelSel = document.getElementById('list_child_panel_q');
+    const listFilterForm = document.getElementById('list_filter_form');
+    const listFilterSubmit = document.getElementById('list_filter_submit');
+    if (!parentSel || !childPanelSel || !listFilterForm) return;
+    let lastParentFilter = parentSel.value || '';
+
+    function buildApiUrl(parentFilter) {
+        const u = new URL(window.location.href);
+        u.searchParams.set('ajax', 'child_panels');
+        if (parentFilter) u.searchParams.set('parent_filter', parentFilter);
+        else u.searchParams.delete('parent_filter');
+        u.searchParams.delete('child_panel_q');
+        u.searchParams.delete('edit_id');
+        u.searchParams.delete('msg');
+        return u.toString();
+    }
+
+    async function reloadChildPanelOptions() {
+        const currentParent = parentSel.value || '';
+        if (currentParent === lastParentFilter) return;
+        lastParentFilter = currentParent;
+
+        const prev = childPanelSel.value || '';
+        try {
+            const res = await fetch(buildApiUrl(currentParent), { headers: { 'Accept': 'application/json' } });
+            const data = await res.json();
+            if (!data || !data.ok || !Array.isArray(data.panels)) return;
+
+            childPanelSel.innerHTML = '';
+            const allOpt = document.createElement('option');
+            allOpt.value = '';
+            allOpt.textContent = '전체';
+            childPanelSel.appendChild(allOpt);
+
+            let matched = false;
+            data.panels.forEach(function(panel){
+                const v = String(panel || '');
+                if (!v) return;
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                if (v === prev) {
+                    opt.selected = true;
+                    matched = true;
+                }
+                childPanelSel.appendChild(opt);
+            });
+
+            if (!matched) childPanelSel.value = '';
+        } catch (e) {
+            console.warn('child panel options reload failed', e);
+        }
+    }
+
+    parentSel.addEventListener('change', reloadChildPanelOptions);
+    childPanelSel.addEventListener('change', function(){
+        if (listFilterSubmit && typeof listFilterSubmit.click === 'function') {
+            listFilterSubmit.click();
+        } else if (typeof listFilterForm.requestSubmit === 'function') {
+            listFilterForm.requestSubmit();
+        } else {
+            listFilterForm.submit();
+        }
+    });
+})();
 </script>
 </body>
 </html>
