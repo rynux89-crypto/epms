@@ -127,7 +127,7 @@
   modal.style.display = "none";
   modal.innerHTML = `
     <div class="epms-chat-header">
-      <span>EPMS 도우미</span>
+      <span>EPMS 비서</span>
       <div class="epms-chat-tools">
         <button type="button" class="epms-chat-tool" id="epms-font-down" title="글자 작게">A-</button>
         <button type="button" class="epms-chat-tool" id="epms-font-up" title="글자 크게">A+</button>
