@@ -252,8 +252,6 @@
       let contextText = null;
       if (isAdmin) {
         contextText = dbContext ? "DB Context: " + dbContext : (dbContextUser ? "DB Summary: " + dbContextUser : null);
-      } else {
-        contextText = dbContextUser ? "DB Summary: " + dbContextUser : null;
       }
       appendMsg(cleanedText, "bot", contextText);
     } catch (e) {

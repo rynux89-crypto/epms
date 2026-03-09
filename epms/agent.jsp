@@ -324,9 +324,10 @@ private boolean wantsBuildingPowerTopN(String userMessage) {
 
 private boolean wantsPanelLatestStatus(String userMessage) {
     String m = normalizeForIntent(userMessage);
-    return (m.contains("패널") || m.contains("panel") || m.contains("계열")) &&
-        (m.contains("최신") || m.contains("최근")) &&
-        (m.contains("상태") || m.contains("status"));
+    boolean hasPanel = m.contains("패널") || m.contains("panel") || m.contains("계열");
+    boolean hasStatus = m.contains("상태") || m.contains("status");
+    boolean hasPanelCode = m.matches(".*(mdb|vcb|acb)[a-z0-9_\\-]*.*");
+    return (hasPanel || hasPanelCode) && hasStatus;
 }
 
 private boolean wantsAlarmSeveritySummary(String userMessage) {
@@ -609,8 +610,12 @@ private List<String> extractPanelTokens(String userMessage) {
         String p = parts[i];
         if (p == null) continue;
         p = p.trim();
+        p = p.replaceAll("(?i)panel", "");
+        p = p.replace("패널", "").replace("판넬", "");
+        p = p.trim();
         if (p.length() < 2) continue;
         if ("meter".equalsIgnoreCase(p) || "미터".equals(p)) continue;
+        if ("panel".equalsIgnoreCase(p) || "패널".equals(p)) continue;
         if ("계측기".equals(p) || "각".equals(p) || "모든".equals(p) || "전체".equals(p)) continue;
         tokens.add(p.toUpperCase(java.util.Locale.ROOT));
     }
@@ -1178,13 +1183,38 @@ private String getBuildingPowerTopNContext(Integer month, Integer topN) {
 
 private String getPanelLatestStatusContext(List<String> panelTokens, Integer topN) {
     if (panelTokens == null || panelTokens.isEmpty()) return "[Panel latest status] panel token required";
-    int n = topN != null ? topN.intValue() : 5;
     StringBuilder where = new StringBuilder("WHERE 1=1 ");
     for (int i = 0; i < panelTokens.size(); i++) where.append("AND UPPER(REPLACE(REPLACE(m.panel_name,'_',''),' ','')) LIKE ? ");
     String sql =
-        "SELECT TOP " + n + " m.meter_id, m.name, m.panel_name, ms.measured_at, ms.active_power_total, ms.frequency, ms.voltage_unbalance_rate, ms.quality_status " +
-        "FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " + where.toString() +
-        "ORDER BY ms.measured_at DESC";
+        "WITH latest AS ( " +
+        " SELECT m.meter_id, m.name, m.panel_name, ms.measured_at, " +
+        " ms.average_voltage, ms.line_voltage_avg, ms.phase_voltage_avg, ms.voltage_ab, " +
+        " ms.average_current, " +
+        " COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c)/3.0) AS power_factor, " +
+        " ms.frequency, ms.active_power_total, ms.reactive_power_total, " +
+        " ROW_NUMBER() OVER (PARTITION BY m.meter_id ORDER BY ms.measured_at DESC) AS rn " +
+        " FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " +
+        where.toString() +
+        "), tree_edges AS ( " +
+        " SELECT t.parent_meter_id, t.child_meter_id, ISNULL(t.sort_order, 999999) AS sort_order " +
+        " FROM dbo.meter_tree t " +
+        " WHERE t.is_active = 1 " +
+        " AND EXISTS (SELECT 1 FROM latest l1 WHERE l1.rn=1 AND l1.meter_id = t.parent_meter_id) " +
+        " AND EXISTS (SELECT 1 FROM latest l2 WHERE l2.rn=1 AND l2.meter_id = t.child_meter_id) " +
+        "), ranked AS ( " +
+        " SELECT *, " +
+        " CASE " +
+        "   WHEN EXISTS (SELECT 1 FROM tree_edges te WHERE te.parent_meter_id = latest.meter_id) " +
+        "        AND NOT EXISTS (SELECT 1 FROM tree_edges te WHERE te.child_meter_id = latest.meter_id) THEN 0 " +
+        "   WHEN NOT EXISTS (SELECT 1 FROM tree_edges te WHERE te.child_meter_id = latest.meter_id) THEN 1 " +
+        "   WHEN EXISTS (SELECT 1 FROM tree_edges te WHERE te.parent_meter_id = latest.meter_id) THEN 2 " +
+        "   ELSE 3 END AS main_rank, " +
+        " COUNT(*) OVER() AS panel_meter_count " +
+        " FROM latest WHERE rn=1 " +
+        ") " +
+        "SELECT TOP 1 meter_id, name, panel_name, measured_at, average_voltage, line_voltage_avg, phase_voltage_avg, voltage_ab, " +
+        "average_current, power_factor, frequency, active_power_total, reactive_power_total, panel_meter_count " +
+        "FROM ranked ORDER BY main_rank ASC, measured_at DESC, meter_id ASC";
     try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
         int pi = 1;
         for (int i = 0; i < panelTokens.size(); i++) {
@@ -1192,23 +1222,31 @@ private String getPanelLatestStatusContext(List<String> panelTokens, Integer top
         }
         ps.setQueryTimeout(8);
         try (ResultSet rs = ps.executeQuery()) {
-            StringBuilder sb = new StringBuilder("[Panel latest status] panel=" + panelTokens + ";");
-            int i = 0;
-            while (rs.next()) {
-                i++;
-                sb.append(" ").append(i).append(")")
-                  .append("meter_id=").append(rs.getInt("meter_id"))
-                  .append(", ").append(clip(rs.getString("name"), 30))
-                  .append(", panel=").append(clip(rs.getString("panel_name"), 30))
-                  .append(", t=").append(fmtTs(rs.getTimestamp("measured_at")))
-                  .append(", kW=").append(fmtNum(rs.getDouble("active_power_total")))
-                  .append(", Hz=").append(fmtNum(rs.getDouble("frequency")))
-                  .append(", unb=").append(fmtNum(rs.getDouble("voltage_unbalance_rate")))
-                  .append(", q=").append(clip(rs.getString("quality_status"), 16))
-                  .append(";");
-            }
-            if (i == 0) return "[Panel latest status] no data";
-            return sb.toString();
+            if (!rs.next()) return "[Panel latest status] no data";
+            int meterId = rs.getInt("meter_id");
+            String meterName = clip(rs.getString("name"), 30);
+            String panelName = clip(rs.getString("panel_name"), 30);
+            Timestamp ts = rs.getTimestamp("measured_at");
+            double v = chooseVoltage(rs.getDouble("average_voltage"), rs.getDouble("line_voltage_avg"), rs.getDouble("phase_voltage_avg"), rs.getDouble("voltage_ab"));
+            double c = rs.getDouble("average_current");
+            double pf = rs.getDouble("power_factor");
+            double hz = rs.getDouble("frequency");
+            double kw = rs.getDouble("active_power_total");
+            double kvar = rs.getDouble("reactive_power_total");
+            int meterCount = rs.getInt("panel_meter_count");
+            return "[Panel latest status] panel=" + panelTokens
+                + "; meter_count=" + meterCount
+                + "; main_meter_id=" + meterId
+                + ", " + (meterName.isEmpty() ? "-" : meterName)
+                + ", panel=" + (panelName.isEmpty() ? "-" : panelName)
+                + ", t=" + fmtTs(ts)
+                + ", V=" + fmtNum(v)
+                + ", I=" + fmtNum(c)
+                + ", PF=" + fmtNum(pf)
+                + ", Hz=" + fmtNum(hz)
+                + ", kW=" + fmtNum(kw)
+                + ", kVAr=" + fmtNum(kvar)
+                + ";";
         }
     } catch (Exception e) {
         return "[Panel latest status] unavailable: " + clip(e.getClass().getSimpleName(), 24);
@@ -1707,6 +1745,35 @@ private String buildUserDbContext(String dbContext) {
         }
         return scope + "발생 알람은 " + cnt + "건입니다.";
     }
+    if (ctx.contains("[Panel latest status]")) {
+        if (ctx.contains("unavailable")) return "패널 상태를 현재 조회할 수 없습니다.";
+        if (ctx.contains("no data")) return "요청한 패널 상태 데이터가 없습니다.";
+        java.util.regex.Matcher panel = java.util.regex.Pattern.compile("panel=\\[([^\\]]+)\\]").matcher(ctx);
+        java.util.regex.Matcher mc = java.util.regex.Pattern.compile("meter_count=([0-9]+)").matcher(ctx);
+        java.util.regex.Matcher row = java.util.regex.Pattern.compile(
+            "main_meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^,;]+),\\s*t=([0-9\\-:\\s]+),\\s*V=([0-9.\\-]+),\\s*I=([0-9.\\-]+),\\s*PF=([0-9.\\-]+),\\s*Hz=([0-9.\\-]+),\\s*kW=([0-9.\\-]+),\\s*kVAr=([0-9.\\-]+)",
+            java.util.regex.Pattern.CASE_INSENSITIVE
+        ).matcher(ctx);
+        String panelName = panel.find() ? panel.group(1) : "-";
+        int meterCount = mc.find() ? Integer.parseInt(mc.group(1)) : countDistinctMeterIds(ctx);
+        if (row.find()) {
+            String meterId = row.group(1);
+            String meterName = clip(row.group(2), 30);
+            String panelLabel = clip(row.group(3), 30);
+            String ts = clip(row.group(4), 19);
+            String v = row.group(5);
+            String i = row.group(6);
+            String pf = row.group(7);
+            String hz = row.group(8);
+            String kw = row.group(9);
+            String kvar = row.group(10);
+            String scope = meterCount > 0 ? (" (계측기 " + meterCount + "개)") : "";
+            String viewPanel = (panelLabel == null || panelLabel.isEmpty() || "-".equals(panelLabel)) ? panelName : panelLabel;
+            return viewPanel + " 패널 최신 상태입니다" + scope + ". 메인 계측기 " + meterId + "(" + meterName + "), 시각 " + ts
+                + ", 전압 " + v + "V, 전류 " + i + "A, 역률 " + pf + ", 주파수 " + hz + "Hz, 유효전력 " + kw + "kW, 무효전력 " + kvar + "kVAr입니다.";
+        }
+        return panelName + " 패널 상태를 조회했습니다.";
+    }
 
     String fallback = ctx
         .replace("STATE=NO_SIGNAL", "신호없음")
@@ -1765,6 +1832,9 @@ private List<String> panelTokensFromRaw(String panel) {
     for (int i = 0; i < parts.length; i++) {
         String p = parts[i];
         if (p == null) continue;
+        p = p.trim();
+        p = p.replaceAll("(?i)panel", "");
+        p = p.replace("패널", "").replace("판넬", "");
         p = p.trim();
         if (p.length() < 2) continue;
         if ("meter".equalsIgnoreCase(p) || "미터".equals(p)) continue;
@@ -1994,9 +2064,14 @@ if (wantsVoltageAverageSummary(userMessage)) {
         : "건물별 전력 TOP 조회 결과입니다.";
 } else if (wantsPanelLatestStatus(userMessage)) {
     directDbContext = getPanelLatestStatusContext(directPanelTokens, directTopN);
-    directAnswer = directDbContext.contains("no data")
-        ? "패널 최신 상태 데이터가 없습니다."
-        : "패널 최신 상태를 조회했습니다.";
+    if (directDbContext.contains("no data")) {
+        directAnswer = "패널 최신 상태 데이터가 없습니다.";
+    } else {
+        String userCtx = buildUserDbContext(directDbContext);
+        directAnswer = (userCtx == null || userCtx.trim().isEmpty())
+            ? "패널 최신 상태를 조회했습니다."
+            : userCtx;
+    }
 } else if (wantsAlarmCountSummary(userMessage)) {
     if (directWindow != null) {
         directDbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId);
@@ -2105,7 +2180,7 @@ if (wantsVoltageAverageSummary(userMessage)) {
 
 if (directAnswer != null && directDbContext != null) {
     int meterCount = countDistinctMeterIds(directDbContext);
-    boolean skipMeterCountSuffix = directDbContext.startsWith("[Alarm count]");
+    boolean skipMeterCountSuffix = directDbContext.startsWith("[Alarm count]") || directDbContext.startsWith("[Panel latest status]");
     if (!skipMeterCountSuffix && meterCount > 0 && (directAnswer == null || directAnswer.indexOf('\n') < 0)) {
         directAnswer = directAnswer + " (해당 계측기 " + meterCount + "개)";
     }

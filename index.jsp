@@ -62,6 +62,6 @@ try {
       fontSizePx: <%= chatFontSizePx %>
     };
   </script>
-  <script src="<%= request.getContextPath() %>/js/epms_agent.js?v=20260309-4"></script>
+  <script src="<%= request.getContextPath() %>/js/epms_agent.js?v=20260309-5"></script>
 </body>
 </html>
