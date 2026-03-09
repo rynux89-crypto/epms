@@ -236,6 +236,7 @@
     StringBuilder linkJson = new StringBuilder("[");
     boolean firstLink = true;
     double totalUsageKwh = 0.0;
+    final double epsilonFlow = 0.0001;
     List<String> totalBreakdown = new ArrayList<>();
     for (Integer r : roots) {
         double rv = subtree.apply(r);
@@ -264,25 +265,50 @@
         }
     }
 
-    // 트리 링크가 하나도 없는 경우(필터로 계층이 끊긴 경우), TOTAL -> meter fallback
+    // 트리 링크가 하나도 없는 경우(측정 데이터 0/없음 포함), 하이어라키가 보이도록 구조 링크 fallback
     if (firstLink) {
-        List<Integer> flat = new ArrayList<>(scopeMeters);
-        Collections.sort(flat);
-        for (Integer id : flat) {
-            double v = meterTotalKwh.getOrDefault(id, 0.0);
-            if (v <= 0.0) continue;
-            String name = (meterNames.get(id) == null ? "Meter " + id : meterNames.get(id)) + " (#" + id + ")";
+        boolean hasTreeEdge = false;
+
+        for (Integer r : roots) {
+            if (!scopeMeters.contains(r)) continue;
+            String rName = (meterNames.get(r) == null ? "Meter " + r : meterNames.get(r)) + " (#" + r + ")";
             if (!firstLink) linkJson.append(',');
-            linkJson.append("{\"source\":\"TOTAL\",\"target\":\"").append(jsq(name)).append("\",\"value\":")
-                    .append(String.format(java.util.Locale.US, "%.6f", v)).append("}");
+            linkJson.append("{\"source\":\"TOTAL\",\"target\":\"").append(jsq(rName)).append("\",\"value\":")
+                    .append(String.format(java.util.Locale.US, "%.6f", epsilonFlow)).append("}");
             firstLink = false;
-            totalUsageKwh += v;
-            totalBreakdown.add(name + "\t" + String.format(java.util.Locale.US, "%,.1f", v));
+            hasTreeEdge = true;
+        }
+
+        for (Integer p : childrenByParent.keySet()) {
+            if (!scopeMeters.contains(p)) continue;
+            String pName = (meterNames.get(p) == null ? "Meter " + p : meterNames.get(p)) + " (#" + p + ")";
+            for (Integer c : childrenByParent.get(p)) {
+                if (!scopeMeters.contains(c)) continue;
+                String cName = (meterNames.get(c) == null ? "Meter " + c : meterNames.get(c)) + " (#" + c + ")";
+                if (!firstLink) linkJson.append(',');
+                linkJson.append("{\"source\":\"").append(jsq(pName)).append("\",\"target\":\"").append(jsq(cName)).append("\",\"value\":")
+                        .append(String.format(java.util.Locale.US, "%.6f", epsilonFlow)).append("}");
+                firstLink = false;
+                hasTreeEdge = true;
+            }
+        }
+
+        // 트리 자체가 없을 때는 TOTAL -> meter 최소 링크
+        if (!hasTreeEdge) {
+            List<Integer> flat = new ArrayList<>(scopeMeters);
+            Collections.sort(flat);
+            for (Integer id : flat) {
+                String name = (meterNames.get(id) == null ? "Meter " + id : meterNames.get(id)) + " (#" + id + ")";
+                if (!firstLink) linkJson.append(',');
+                linkJson.append("{\"source\":\"TOTAL\",\"target\":\"").append(jsq(name)).append("\",\"value\":")
+                        .append(String.format(java.util.Locale.US, "%.6f", epsilonFlow)).append("}");
+                firstLink = false;
+            }
         }
     }
 
     linkJson.append("]");
-    boolean noData = firstLink;
+    boolean noData = (totalUsageKwh <= 0.0);
 %>
 <!doctype html>
 <html>
@@ -385,78 +411,55 @@
 </div>
 
 <script>
-const sankeyNoData = <%= noData ? "true" : "false" %>;
-const sankeyNodes = sankeyNoData ? [] : <%= nodeJson.toString() %>;
-const sankeyLinks = sankeyNoData ? [] : <%= linkJson.toString() %>;
+const sankeyNodes = <%= nodeJson.toString() %>;
+const sankeyLinks = <%= linkJson.toString() %>;
 
 const chart = echarts.init(document.getElementById('sankeyChart'));
-if (sankeyNoData) {
-  chart.setOption({
-    tooltip: { show: false },
-    graphic: {
-      type: 'text',
-      left: 'center',
-      top: 'middle',
-      style: {
-        text: '조회된 Sankey 데이터가 없습니다',
-        fill: '#64748b',
-        fontSize: 14,
-        fontWeight: 600
+chart.setOption({
+  tooltip: {
+    trigger: 'item',
+    formatter: function(p) {
+      if (p.dataType === 'edge') {
+        return p.data.source + ' → ' + p.data.target + '<br/>' + Number(p.data.value || 0).toLocaleString('en-US', {maximumFractionDigits:1}) + ' kWh';
       }
-    },
-    series: [{
-      type: 'sankey',
-      data: [],
-      links: []
-    }]
-  });
-} else {
-  chart.setOption({
-    tooltip: {
-      trigger: 'item',
+      return p.name;
+    }
+  },
+  series: [{
+    type: 'sankey',
+    data: sankeyNodes,
+    links: sankeyLinks,
+    left: 20,
+    right: 140,
+    top: 24,
+    bottom: 10,
+    edgeLabel: {
+      show: true,
+      position: 'inside',
+      align: 'center',
+      verticalAlign: 'middle',
+      color: '#334155',
+      fontSize: 11,
+      backgroundColor: 'rgba(255,255,255,0.7)',
+      padding: [1, 3],
       formatter: function(p) {
-        if (p.dataType === 'edge') {
-          return p.data.source + ' → ' + p.data.target + '<br/>' + Number(p.data.value || 0).toLocaleString('en-US', {maximumFractionDigits:1}) + ' kWh';
-        }
-        return p.name;
+        return Number(p.data.value || 0).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' kWh';
       }
     },
-    series: [{
-      type: 'sankey',
-      data: sankeyNodes,
-      links: sankeyLinks,
-      left: 20,
-      right: 140,
-      top: 24,
-      bottom: 10,
-      edgeLabel: {
-        show: true,
-        position: 'inside',
-        align: 'center',
-        verticalAlign: 'middle',
-        color: '#334155',
-        fontSize: 11,
-        backgroundColor: 'rgba(255,255,255,0.7)',
-        padding: [1, 3],
-        formatter: function(p) {
-          return Number(p.data.value || 0).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' kWh';
-        }
-      },
-      label: {
-        position: 'right',
-        align: 'left',
-        verticalAlign: 'middle',
-        width: 160,
-        overflow: 'break'
-      },
-      nodeAlign: 'justify',
-      layoutIterations: 0,
-      draggable: true,
-      emphasis: { focus: 'adjacency' },
-      lineStyle: { color: 'gradient', curveness: 0.5 }
-    }]
-  });
-}
+    label: {
+      position: 'right',
+      align: 'left',
+      verticalAlign: 'middle',
+      width: 160,
+      overflow: 'break'
+    },
+    nodeAlign: 'justify',
+    layoutIterations: 0,
+    draggable: true,
+    emphasis: { focus: 'adjacency' },
+    lineStyle: { color: 'gradient', curveness: 0.5 }
+  }]
+});
 window.addEventListener('resize', function(){ chart.resize(); });
 </script>
 
