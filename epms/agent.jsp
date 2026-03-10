@@ -25,20 +25,6 @@ private static volatile long schemaCacheTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
 private static volatile List<String> meterScopeValueCache = new ArrayList<String>();
 private static volatile long meterScopeCacheAt = 0L;
 
-private static class AgentRuntimeConfig {
-    String ollamaUrl;
-    String model;
-    String coderModel;
-    int ollamaConnectTimeoutMs;
-    int ollamaReadTimeoutMs;
-    long schemaCacheTtlMs;
-}
-
-private static class OllamaHttpResponse {
-    int statusCode;
-    String body;
-}
-
 private static class AgentRequestContext {
     Integer requestedMeterId;
     String requestedMeterScope;
@@ -124,60 +110,23 @@ private Connection openDbConnection() throws Exception {
 }
 
 private String trimToNull(String s) {
-    if (s == null) return null;
-    String t = s.trim();
-    return t.isEmpty() ? null : t;
+    return epms.util.AgentSupport.trimToNull(s);
 }
 
 private String normalizeOllamaUrl(String s) {
-    String t = trimToNull(s);
-    if (t == null) return null;
-    while (t.endsWith("/")) t = t.substring(0, t.length() - 1);
-    return t;
+    return epms.util.AgentSupport.normalizeOllamaUrl(s);
 }
 
 private Integer parsePositiveInt(String s) {
-    if (s == null) return null;
-    try {
-        int n = Integer.parseInt(s.trim());
-        if (n <= 0) return null;
-        return Integer.valueOf(n);
-    } catch (Exception ignore) {
-        return null;
-    }
+    return epms.util.AgentSupport.parsePositiveInt(s);
 }
 
 private Properties loadAgentModelConfig(javax.servlet.ServletContext app) {
-    Properties p = new Properties();
-    if (app == null) return p;
-    String epmsPath = app.getRealPath("/epms");
-    if (epmsPath == null || epmsPath.isEmpty()) return p;
-    File file = new File(epmsPath, "agent_model.properties");
-    if (!file.exists() || !file.isFile()) return p;
-    try (InputStream in = new FileInputStream(file);
-         Reader reader = new InputStreamReader(in, "UTF-8")) {
-        p.load(reader);
-    } catch (Exception ignore) {
-    }
-    return p;
-}
-
-private int clampSeconds(Integer value, int min, int max, int fallback) {
-    if (value == null) return fallback;
-    int s = value.intValue();
-    if (s < min) s = min;
-    if (s > max) s = max;
-    return s;
+    return epms.util.AgentSupport.loadAgentModelConfig(app);
 }
 
 private long resolveSchemaCacheTtlMs(Properties modelConfig) {
-    String ttlMinutesRaw = trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes"));
-    Integer ttlMin = parsePositiveInt(ttlMinutesRaw);
-    if (ttlMin == null) return DEFAULT_SCHEMA_CACHE_TTL_MS;
-    int m = ttlMin.intValue();
-    if (m < 1) m = 1;
-    if (m > 1440) m = 1440;
-    return m * 60L * 1000L;
+    return epms.util.AgentSupport.resolveSchemaCacheTtlMs(modelConfig, DEFAULT_SCHEMA_CACHE_TTL_MS);
 }
 
 private void applySchemaCacheTtl(long nextTtlMs) {
@@ -188,85 +137,16 @@ private void applySchemaCacheTtl(long nextTtlMs) {
     }
 }
 
-private AgentRuntimeConfig loadAgentRuntimeConfig(javax.servlet.ServletContext app) {
-    AgentRuntimeConfig cfg = new AgentRuntimeConfig();
-
-    String ollamaUrl = System.getenv("OLLAMA_URL");
-    if (ollamaUrl == null || ollamaUrl.isEmpty()) {
-        ollamaUrl = "http://localhost:11434";
-    }
-    ollamaUrl = normalizeOllamaUrl(ollamaUrl);
-
-    String model = System.getenv("OLLAMA_MODEL");
-    if (model == null || model.isEmpty()) {
-        model = "qwen2.5:14b";
-    }
-
-    String coderModel = System.getenv("OLLAMA_MODEL_CODER");
-    if (coderModel == null || coderModel.isEmpty()) {
-        coderModel = "qwen2.5-coder:7b";
-    }
-
-    Properties modelConfig = loadAgentModelConfig(app);
-    String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
-    String configuredModel = trimToNull(modelConfig.getProperty("model"));
-    String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
-    if (configuredOllamaUrl != null) ollamaUrl = configuredOllamaUrl;
-    if (configuredModel != null) model = configuredModel;
-    if (configuredCoderModel != null) coderModel = configuredCoderModel;
-
-    Integer connectSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
-    Integer readSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
-
-    cfg.ollamaUrl = ollamaUrl;
-    cfg.model = model;
-    cfg.coderModel = coderModel;
-    cfg.ollamaConnectTimeoutMs = clampSeconds(connectSec, 1, 60, 5) * 1000;
-    cfg.ollamaReadTimeoutMs = clampSeconds(readSec, 3, 600, 60) * 1000;
-    cfg.schemaCacheTtlMs = resolveSchemaCacheTtlMs(modelConfig);
-    return cfg;
+private epms.util.AgentSupport.RuntimeConfig loadAgentRuntimeConfig(javax.servlet.ServletContext app) {
+    return epms.util.AgentSupport.loadAgentRuntimeConfig(app, DEFAULT_SCHEMA_CACHE_TTL_MS);
 }
 
-private String readHttpBody(InputStream is) throws Exception {
-    if (is == null) return "";
-    StringBuilder body = new StringBuilder();
-    try (BufferedReader br = new BufferedReader(new InputStreamReader(is, "utf-8"))) {
-        String l;
-        while ((l = br.readLine()) != null) {
-            body.append(l);
-        }
-    }
-    return body.toString();
-}
-
-private OllamaHttpResponse callOllamaEndpoint(String url, String method, String payload, int connectTimeoutMs, int readTimeoutMs) throws Exception {
-    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-    conn.setRequestMethod(method);
-    conn.setConnectTimeout(connectTimeoutMs);
-    conn.setReadTimeout(readTimeoutMs);
-
-    if (payload != null) {
-        conn.setDoOutput(true);
-        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-        try (OutputStream os = conn.getOutputStream()) {
-            byte[] input = payload.getBytes("utf-8");
-            os.write(input, 0, input.length);
-        }
-    }
-
-    OllamaHttpResponse resp = new OllamaHttpResponse();
-    resp.statusCode = conn.getResponseCode();
-    InputStream is = (resp.statusCode >= 200 && resp.statusCode < 400) ? conn.getInputStream() : conn.getErrorStream();
-    resp.body = readHttpBody(is);
-    return resp;
+private epms.util.AgentSupport.HttpResponse callOllamaEndpoint(String url, String method, String payload, int connectTimeoutMs, int readTimeoutMs) throws Exception {
+    return epms.util.AgentSupport.callOllamaEndpoint(url, method, payload, connectTimeoutMs, readTimeoutMs);
 }
 
 private String fetchOllamaTagList(String ollamaUrl, int connectTimeoutMs, int readTimeoutMs) throws Exception {
-    OllamaHttpResponse resp = callOllamaEndpoint(ollamaUrl + "/api/tags", "GET", null, connectTimeoutMs, readTimeoutMs);
-    if (resp.statusCode != 200) {
-        throw new IOException("Ollama unavailable");
-    }
-    return resp.body == null ? "" : resp.body;
+    return epms.util.AgentSupport.fetchOllamaTagList(ollamaUrl, connectTimeoutMs, readTimeoutMs);
 }
 
 private AgentRequestContext buildAgentRequestContext(String userMessage) {
@@ -3474,7 +3354,7 @@ private boolean modelExistsInTagList(String tagJson, String modelName) {
 
 private String callOllamaOnce(String ollamaUrl, String model, String prompt, int connectTimeoutMs, int readTimeoutMs, double temperature) throws Exception {
     String payload = "{\"model\":\"" + model + "\",\"prompt\":" + jsonEscape(prompt) + ",\"stream\":false,\"temperature\":" + temperature + "}";
-    OllamaHttpResponse resp = callOllamaEndpoint(
+    epms.util.AgentSupport.HttpResponse resp = callOllamaEndpoint(
         ollamaUrl + "/api/generate",
         "POST",
         payload,
@@ -3686,7 +3566,7 @@ if (forceRuleOnly) {
     return;
 }
 
-AgentRuntimeConfig runtimeConfig = loadAgentRuntimeConfig(application);
+epms.util.AgentSupport.RuntimeConfig runtimeConfig = loadAgentRuntimeConfig(application);
 String ollamaUrl = runtimeConfig.ollamaUrl;
 String model = runtimeConfig.model;
 String coderModel = runtimeConfig.coderModel;

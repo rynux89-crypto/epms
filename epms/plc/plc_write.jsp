@@ -5,6 +5,7 @@
 <%@ page import="java.util.concurrent.atomic.*" %>
 <%@ page import="java.net.*" %>
 <%@ page import="java.io.*" %>
+<%@ page import="epms.util.PlcWriteSupport" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_json.jspf" %>
 <%!
@@ -73,7 +74,7 @@ private static class ModbusTcpClient implements AutoCloseable {
 
 private static Connection createConn() throws Exception { return openDbConnection(); }
 private static WriteState getWriteState(int plcId){ return WRITE_STATES.computeIfAbsent(plcId, k -> new WriteState()); }
-private static int toU16(byte hi, byte lo){ return ((hi & 0xFF) << 8) | (lo & 0xFF); }
+private static int toU16(byte hi, byte lo){ return PlcWriteSupport.toU16(hi, lo); }
 private static boolean isCacheValid(CacheEntry<?> ce, long ttlMs){
     return ce != null && (ttlMs <= 0L || (System.currentTimeMillis() - ce.loadedAtMs) < ttlMs);
 }
@@ -105,24 +106,11 @@ private static void invalidateRuntimeValueCache(Integer plcId){
         if (k != null && k.startsWith(plcPrefixA)) DI_LAST_VALUE_MAP.remove(k);
     }
 }
-private static int toHoldingOffset(int addr){
-    if (addr>=40001 && addr<=49999) return addr-40001;
-    if (addr>=400001 && addr<=499999) return addr-400001; // e.g. 410001 -> 10000
-    return addr;
-}
-private static int toCoilOffset(int addr){
-    // Common Modbus reference styles:
-    // 00001~09999 (coil), 10001~19999 (discrete input), 100001~199999 (6-digit), 4xxxxx-prefixed styles.
-    if (addr>=1 && addr<=9999) return addr-1;
-    if (addr>=10001 && addr<=19999) return addr-10001;
-    if (addr>=100001 && addr<=199999) return addr-100001;
-    // Keep 0-based addressing consistent: 400001 -> 0, 410001 -> 10000
-    if (addr>=400001 && addr<=499999) return addr-400001;
-    return addr;
-}
+private static int toHoldingOffset(int addr){ return PlcWriteSupport.toHoldingOffset(addr); }
+private static int toCoilOffset(int addr){ return PlcWriteSupport.toCoilOffset(addr); }
 
 private static byte[] readExactly(InputStream in, int len) throws IOException {
-    byte[] b = new byte[len]; int off=0; while(off<len){ int n=in.read(b,off,len-off); if(n<0) throw new EOFException("PLC response ended unexpectedly."); off+=n; } return b;
+    return PlcWriteSupport.readExactly(in, len);
 }
 
 private static void writeRegs(ModbusTcpClient c, int unitId, int startOffset, int[] regs) throws IOException {
@@ -446,22 +434,8 @@ private static void setRange(String token, double min, double max){
     TAG_RANGE_OVERRIDES.put(token.trim().toUpperCase(Locale.ROOT), new TagRange(round2(Math.min(min,max)), round2(Math.max(min,max))));
 }
 
-private static int[] floatToRegs(float f, String byteOrder){
-    int bits=Float.floatToIntBits(f); byte a=(byte)((bits>>24)&0xFF), b=(byte)((bits>>16)&0xFF), c=(byte)((bits>>8)&0xFF), d=(byte)(bits&0xFF);
-    byte x0,x1,x2,x3; String bo = byteOrder == null ? "ABCD" : byteOrder.trim().toUpperCase(Locale.ROOT);
-    if ("BADC".equals(bo)) { x0=b; x1=a; x2=d; x3=c; } else if ("CDAB".equals(bo)) { x0=c; x1=d; x2=a; x3=b; } else if ("DCBA".equals(bo)) { x0=d; x1=c; x2=b; x3=a; } else { x0=a; x1=b; x2=c; x3=d; }
-    return new int[]{((x0&0xFF)<<8)|(x1&0xFF), ((x2&0xFF)<<8)|(x3&0xFF)};
-}
-private static float regsToFloat(int reg1, int reg2, String byteOrder){
-    byte x0 = (byte)((reg1 >> 8) & 0xFF), x1 = (byte)(reg1 & 0xFF), x2 = (byte)((reg2 >> 8) & 0xFF), x3 = (byte)(reg2 & 0xFF);
-    byte a,b,c,d; String bo = byteOrder == null ? "ABCD" : byteOrder.trim().toUpperCase(Locale.ROOT);
-    if ("BADC".equals(bo)) { a=x1; b=x0; c=x3; d=x2; }
-    else if ("CDAB".equals(bo)) { a=x2; b=x3; c=x0; d=x1; }
-    else if ("DCBA".equals(bo)) { a=x3; b=x2; c=x1; d=x0; }
-    else { a=x0; b=x1; c=x2; d=x3; }
-    int bits=((a&0xFF)<<24)|((b&0xFF)<<16)|((c&0xFF)<<8)|(d&0xFF);
-    return Float.intBitsToFloat(bits);
-}
+private static int[] floatToRegs(float f, String byteOrder){ return PlcWriteSupport.floatToRegs(f, byteOrder); }
+private static float regsToFloat(int reg1, int reg2, String byteOrder){ return PlcWriteSupport.regsToFloat(reg1, reg2, byteOrder); }
 
 private static double nextValue(String plcKey, String token, TagRange r){
     double min=r.min,max=r.max; if (max<=min) return min; double span=max-min; ThreadLocalRandom rnd=ThreadLocalRandom.current(); String tn = token == null ? "" : token.toLowerCase(Locale.ROOT);
@@ -472,12 +446,7 @@ private static double nextValue(String plcKey, String token, TagRange r){
     double center = min + (span * 0.5), v = center + rnd.nextGaussian() * span * 0.12; if (v < min) v = min; if (v > max) v = max; return round2(v);
 }
 
-private static int extractModbusExceptionCode(String msg){
-    if (msg == null) return -1;
-    int idx = msg.lastIndexOf(':');
-    if (idx < 0 || idx + 1 >= msg.length()) return -1;
-    try { return Integer.parseInt(msg.substring(idx + 1).trim()); } catch (Exception ignore) { return -1; }
-}
+private static int extractModbusExceptionCode(String msg){ return PlcWriteSupport.extractModbusExceptionCode(msg); }
 
 private static AiWriteData writeAiRandom(int plcId, PlcConfig cfg) throws Exception {
     long t0=System.currentTimeMillis();

@@ -1,0 +1,193 @@
+package epms.util;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.Reader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Properties;
+import javax.servlet.ServletContext;
+
+public final class AgentSupport {
+    private AgentSupport() {
+    }
+
+    public static final class RuntimeConfig {
+        public String ollamaUrl;
+        public String model;
+        public String coderModel;
+        public int ollamaConnectTimeoutMs;
+        public int ollamaReadTimeoutMs;
+        public long schemaCacheTtlMs;
+    }
+
+    public static final class HttpResponse {
+        public int statusCode;
+        public String body;
+    }
+
+    public static String trimToNull(String s) {
+        return EpmsWebUtil.trimToNull(s);
+    }
+
+    public static String normalizeOllamaUrl(String s) {
+        String t = trimToNull(s);
+        if (t == null) {
+            return null;
+        }
+        while (t.endsWith("/")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        return t;
+    }
+
+    public static Integer parsePositiveInt(String s) {
+        return EpmsWebUtil.parsePositiveInt(s);
+    }
+
+    public static Properties loadAgentModelConfig(ServletContext app) {
+        Properties p = new Properties();
+        if (app == null) {
+            return p;
+        }
+        String epmsPath = app.getRealPath("/epms");
+        if (epmsPath == null || epmsPath.isEmpty()) {
+            return p;
+        }
+        File file = new File(epmsPath, "agent_model.properties");
+        if (!file.exists() || !file.isFile()) {
+            return p;
+        }
+        try (InputStream in = new FileInputStream(file);
+             Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+            p.load(reader);
+        } catch (Exception ignore) {
+        }
+        return p;
+    }
+
+    public static long resolveSchemaCacheTtlMs(Properties modelConfig, long defaultSchemaCacheTtlMs) {
+        String ttlMinutesRaw = trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes"));
+        Integer ttlMin = parsePositiveInt(ttlMinutesRaw);
+        if (ttlMin == null) {
+            return defaultSchemaCacheTtlMs;
+        }
+        int m = ttlMin.intValue();
+        if (m < 1) {
+            m = 1;
+        }
+        if (m > 1440) {
+            m = 1440;
+        }
+        return m * 60L * 1000L;
+    }
+
+    public static RuntimeConfig loadAgentRuntimeConfig(ServletContext app, long defaultSchemaCacheTtlMs) {
+        RuntimeConfig cfg = new RuntimeConfig();
+
+        String ollamaUrl = System.getenv("OLLAMA_URL");
+        if (ollamaUrl == null || ollamaUrl.isEmpty()) {
+            ollamaUrl = "http://localhost:11434";
+        }
+        ollamaUrl = normalizeOllamaUrl(ollamaUrl);
+
+        String model = System.getenv("OLLAMA_MODEL");
+        if (model == null || model.isEmpty()) {
+            model = "qwen2.5:14b";
+        }
+
+        String coderModel = System.getenv("OLLAMA_MODEL_CODER");
+        if (coderModel == null || coderModel.isEmpty()) {
+            coderModel = "qwen2.5-coder:7b";
+        }
+
+        Properties modelConfig = loadAgentModelConfig(app);
+        String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
+        String configuredModel = trimToNull(modelConfig.getProperty("model"));
+        String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
+        if (configuredOllamaUrl != null) {
+            ollamaUrl = configuredOllamaUrl;
+        }
+        if (configuredModel != null) {
+            model = configuredModel;
+        }
+        if (configuredCoderModel != null) {
+            coderModel = configuredCoderModel;
+        }
+
+        Integer connectSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
+        Integer readSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
+
+        cfg.ollamaUrl = ollamaUrl;
+        cfg.model = model;
+        cfg.coderModel = coderModel;
+        cfg.ollamaConnectTimeoutMs = clampSeconds(connectSec, 1, 60, 5) * 1000;
+        cfg.ollamaReadTimeoutMs = clampSeconds(readSec, 3, 600, 60) * 1000;
+        cfg.schemaCacheTtlMs = resolveSchemaCacheTtlMs(modelConfig, defaultSchemaCacheTtlMs);
+        return cfg;
+    }
+
+    public static HttpResponse callOllamaEndpoint(String url, String method, String payload, int connectTimeoutMs, int readTimeoutMs) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod(method);
+        conn.setConnectTimeout(connectTimeoutMs);
+        conn.setReadTimeout(readTimeoutMs);
+
+        if (payload != null) {
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = payload.getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+        }
+
+        HttpResponse resp = new HttpResponse();
+        resp.statusCode = conn.getResponseCode();
+        InputStream is = (resp.statusCode >= 200 && resp.statusCode < 400) ? conn.getInputStream() : conn.getErrorStream();
+        resp.body = readHttpBody(is);
+        return resp;
+    }
+
+    public static String fetchOllamaTagList(String ollamaUrl, int connectTimeoutMs, int readTimeoutMs) throws Exception {
+        HttpResponse resp = callOllamaEndpoint(ollamaUrl + "/api/tags", "GET", null, connectTimeoutMs, readTimeoutMs);
+        if (resp.statusCode != 200) {
+            throw new IOException("Ollama unavailable");
+        }
+        return resp.body == null ? "" : resp.body;
+    }
+
+    private static int clampSeconds(Integer value, int min, int max, int fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        int s = value.intValue();
+        if (s < min) {
+            s = min;
+        }
+        if (s > max) {
+            s = max;
+        }
+        return s;
+    }
+
+    private static String readHttpBody(InputStream is) throws Exception {
+        if (is == null) {
+            return "";
+        }
+        StringBuilder body = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+            String l;
+            while ((l = br.readLine()) != null) {
+                body.append(l);
+            }
+        }
+        return body.toString();
+    }
+}

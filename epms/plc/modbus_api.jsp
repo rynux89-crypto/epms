@@ -7,6 +7,7 @@
 <%@ page import="java.io.*" %>
 <%@ page import="java.lang.reflect.*" %>
 <%@ page import="javax.servlet.ServletContext" %>
+<%@ page import="epms.util.ModbusSupport" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_parse.jspf" %>
 <%@ include file="../../includes/epms_json.jspf" %>
@@ -227,22 +228,7 @@
     }
 
     private static String resolveAlarmApiUrl(javax.servlet.http.HttpServletRequest req) {
-        String env = trimToNull(System.getenv("EPMS_ALARM_API_URL"));
-        if (env != null) return env;
-
-        if (req == null) return "http://127.0.0.1:8080/epms/alarm_api.jsp";
-
-        String scheme = trimToNull(req.getScheme());
-        String host = trimToNull(req.getServerName());
-        String ctx = trimToNull(req.getContextPath());
-        int port = req.getServerPort();
-        if (scheme == null) scheme = "http";
-        if (host == null) host = "127.0.0.1";
-        if (ctx == null) ctx = "";
-        boolean defaultPort = ("http".equalsIgnoreCase(scheme) && port == 80)
-                || ("https".equalsIgnoreCase(scheme) && port == 443);
-        String portPart = defaultPort ? "" : (":" + port);
-        return scheme + "://" + host + portPart + ctx + "/epms/alarm_api.jsp";
+        return ModbusSupport.resolveAlarmApiUrl(req);
     }
 
     private static PollState getPollState(PollRuntime rt, int plcId) {
@@ -504,68 +490,23 @@
     }
 
     private static String clipForLog(String s, int maxLen) {
-        if (s == null) return "-";
-        String cleaned = s.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ');
-        if (cleaned.length() <= maxLen) return cleaned;
-        return cleaned.substring(0, Math.max(0, maxLen)) + "...";
+        return ModbusSupport.clipForLog(s, maxLen);
     }
 
     private static String b64url(String s) {
-        if (s == null) s = "";
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return ModbusSupport.b64url(s);
     }
 
     private static int parseJsonIntField(String json, String key, int def) {
-        if (json == null) return def;
-        String pat = "\"" + key + "\"\\s*:\\s*(-?\\d+)";
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile(pat).matcher(json);
-        if (m.find()) {
-            try { return Integer.parseInt(m.group(1)); } catch (Exception ignore) {}
-        }
-        return def;
+        return ModbusSupport.parseJsonIntField(json, key, def);
     }
 
     private static boolean parseJsonBoolField(String json, String key, boolean def) {
-        if (json == null) return def;
-        String pat = "\"" + key + "\"\\s*:\\s*(true|false)";
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile(pat).matcher(json);
-        if (m.find()) return "true".equalsIgnoreCase(m.group(1));
-        return def;
+        return ModbusSupport.parseJsonBoolField(json, key, def);
     }
 
     private static int[] invokeAlarmApiPersist(String actionName, String body) throws Exception {
-        HttpURLConnection con = null;
-        try {
-            URL u = new URL(resolveAlarmApiUrl(null));
-            con = (HttpURLConnection)u.openConnection();
-            con.setRequestMethod("POST");
-            con.setConnectTimeout(3000);
-            con.setReadTimeout(6000);
-            con.setDoOutput(true);
-            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-            byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            try (OutputStream os = con.getOutputStream()) {
-                os.write(bytes);
-            }
-
-            int code = con.getResponseCode();
-            InputStream is = (code >= 200 && code < 300) ? con.getInputStream() : con.getErrorStream();
-            StringBuilder sb = new StringBuilder();
-            if (is != null) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = br.readLine()) != null) sb.append(line);
-                }
-            }
-            String json = sb.toString();
-            boolean ok = parseJsonBoolField(json, "ok", false);
-            if (!ok) throw new Exception("alarm_api " + actionName + " failed: " + json);
-            int opened = parseJsonIntField(json, "opened", 0);
-            int closed = parseJsonIntField(json, "closed", 0);
-            return new int[]{opened, closed};
-        } finally {
-            if (con != null) con.disconnect();
-        }
+        return ModbusSupport.invokeAlarmApiPersist(resolveAlarmApiUrl(null), actionName, body);
     }
 
     private static int[] persistDiRowsViaAlarmApi(int plcId, List<Map<String, Object>> diRows, Timestamp measuredAt) throws Exception {

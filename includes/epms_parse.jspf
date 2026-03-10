@@ -1,57 +1,33 @@
 <%!
     private static String trimToNull(String s) {
-        if (s == null) return null;
-        String t = s.trim();
-        return t.isEmpty() ? null : t;
+        return epms.util.EpmsWebUtil.trimToNull(s);
     }
 
     private static Integer parsePositiveInt(String s) {
-        String t = trimToNull(s);
-        if (t == null) return null;
-        try {
-            int v = Integer.parseInt(t);
-            return v > 0 ? Integer.valueOf(v) : null;
-        } catch (Exception ignore) {
-            return null;
-        }
+        return epms.util.EpmsWebUtil.parsePositiveInt(s);
     }
 
     private static Integer parseNullableInt(String s) {
-        String t = trimToNull(s);
-        if (t == null) return null;
-        try {
-            return Integer.valueOf(Integer.parseInt(t));
-        } catch (Exception ignore) {
-            return null;
-        }
+        return epms.util.EpmsWebUtil.parseNullableInt(s);
     }
 
     private static Double parseNullableDouble(String s) {
-        String t = trimToNull(s);
-        if (t == null) return null;
-        try {
-            return Double.valueOf(Double.parseDouble(t));
-        } catch (Exception ignore) {
-            return null;
-        }
+        return epms.util.EpmsWebUtil.parseNullableDouble(s);
     }
 
     private static boolean parseBoolSafe(String s) {
-        String t = trimToNull(s);
-        if (t == null) return false;
-        String n = t.toLowerCase(java.util.Locale.ROOT);
-        return "1".equals(n) || "true".equals(n) || "y".equals(n) || "yes".equals(n) || "on".equals(n);
+        return epms.util.EpmsWebUtil.parseBoolSafe(s);
     }
 
     private static int parseIntSafe(String s, int def) {
-        try { return Integer.parseInt(s); } catch (Exception e) { return def; }
+        return epms.util.EpmsWebUtil.parseIntSafe(s, def);
     }
 
     private static long parseLongSafe(String s, long def) {
-        try { return Long.parseLong(s); } catch (Exception e) { return def; }
+        return epms.util.EpmsWebUtil.parseLongSafe(s, def);
     }
 
     private static Double parseDoubleSafe(String s) {
-        try { return Double.valueOf(s); } catch (Exception e) { return null; }
+        return epms.util.EpmsWebUtil.parseDoubleSafe(s);
     }
 %>

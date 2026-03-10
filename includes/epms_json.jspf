@@ -1,30 +1,9 @@
 <%!
     private static String jsq(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\r", " ")
-                .replace("\n", " ");
+        return epms.util.EpmsWebUtil.jsq(s);
     }
 
     private static String escJson(String s) {
-        if (s == null) return "";
-        StringBuilder b = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"': b.append("\\\""); break;
-                case '\\': b.append("\\\\"); break;
-                case '\b': b.append("\\b"); break;
-                case '\f': b.append("\\f"); break;
-                case '\n': b.append("\\n"); break;
-                case '\r': b.append("\\r"); break;
-                case '\t': b.append("\\t"); break;
-                default:
-                    if (c < 0x20) b.append(String.format("\\u%04x", (int)c));
-                    else b.append(c);
-            }
-        }
-        return b.toString();
+        return epms.util.EpmsWebUtil.escJson(s);
     }
 %>
