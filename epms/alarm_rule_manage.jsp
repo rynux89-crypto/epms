@@ -3,35 +3,9 @@
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
 <%!
-    private static String h(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '&': out.append("&amp;"); break;
-                case '<': out.append("&lt;"); break;
-                case '>': out.append("&gt;"); break;
-                case '"': out.append("&quot;"); break;
-                case '\'': out.append("&#39;"); break;
-                default: out.append(c);
-            }
-        }
-        return out.toString();
-    }
-
-    private static Integer toInt(String v) {
-        if (v == null || v.trim().isEmpty()) return null;
-        try { return Integer.parseInt(v.trim()); } catch (Exception e) { return null; }
-    }
-
-    private static Double toDouble(String v) {
-        if (v == null || v.trim().isEmpty()) return null;
-        try { return Double.parseDouble(v.trim()); } catch (Exception e) { return null; }
-    }
-
     private static String normKey(String v) {
         if (v == null) return "";
         return v.trim().toUpperCase(Locale.ROOT);
@@ -112,17 +86,17 @@
     private static AlarmRuleRequest buildAlarmRuleRequest(javax.servlet.http.HttpServletRequest request) {
         AlarmRuleRequest req = new AlarmRuleRequest();
         req.action = request.getParameter("action");
-        req.ruleId = toInt(request.getParameter("rule_id"));
+        req.ruleId = parseNullableInt(request.getParameter("rule_id"));
         req.ruleCode = request.getParameter("rule_code");
         req.ruleName = request.getParameter("rule_name");
         req.category = request.getParameter("category");
         req.targetScope = request.getParameter("target_scope");
         req.metricKey = request.getParameter("metric_key");
         req.operator = request.getParameter("operator");
-        req.threshold1 = toDouble(request.getParameter("threshold1"));
-        req.threshold2 = toDouble(request.getParameter("threshold2"));
-        req.durationSec = toInt(request.getParameter("duration_sec"));
-        req.hysteresis = toDouble(request.getParameter("hysteresis"));
+        req.threshold1 = parseNullableDouble(request.getParameter("threshold1"));
+        req.threshold2 = parseNullableDouble(request.getParameter("threshold2"));
+        req.durationSec = parseNullableInt(request.getParameter("duration_sec"));
+        req.hysteresis = parseNullableDouble(request.getParameter("hysteresis"));
         req.severity = request.getParameter("severity");
         req.sourceToken = request.getParameter("source_token");
         req.messageTemplate = request.getParameter("message_template");

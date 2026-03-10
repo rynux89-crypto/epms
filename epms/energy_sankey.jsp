@@ -3,16 +3,8 @@
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%@ include file="../includes/epms_html.jspf" %>
-<%!
-    private static String jsq(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", " ").replace("\n", " ");
-    }
-    private static Integer toInt(String v) {
-        if (v == null) return null;
-        try { return Integer.valueOf(Integer.parseInt(v.trim())); } catch (Exception e) { return null; }
-    }
-%>
+<%@ include file="../includes/epms_json.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
 <%
     LocalDate today = LocalDate.now();
 
@@ -100,7 +92,7 @@
     } catch (Exception ignore) {
     }
 
-    Integer selectedMeterId = toInt(meter);
+    Integer selectedMeterId = parseNullableInt(meter);
     Set<Integer> scopeMeters = new LinkedHashSet<>();
     if (selectedMeterId != null && candidateMeters.contains(selectedMeterId)) {
         Deque<Integer> dq = new ArrayDeque<>();

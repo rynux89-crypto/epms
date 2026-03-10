@@ -3,28 +3,12 @@
     pageEncoding="UTF-8"
     trimDirectiveWhitespaces="true" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
 <%
 request.setCharacterEncoding("UTF-8");
 response.setCharacterEncoding("UTF-8");
 %>
 <%!
-private String trimToNull(String s) {
-    if (s == null) return null;
-    String t = s.trim();
-    return t.isEmpty() ? null : t;
-}
-
-private Integer parsePositiveInt(String s) {
-    if (s == null) return null;
-    try {
-        int v = Integer.parseInt(s.trim());
-        if (v <= 0) return null;
-        return Integer.valueOf(v);
-    } catch (Exception ignore) {
-        return null;
-    }
-}
-
 private static class AgentManageState {
     String ollamaUrl;
     String selectedModel;

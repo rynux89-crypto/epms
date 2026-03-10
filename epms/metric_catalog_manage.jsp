@@ -4,6 +4,7 @@
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
 <%!
     private static class MetricCatalogRequest {
         String action;
@@ -11,12 +12,6 @@
         String displayName;
         String sourceType;
         String newMetricKey;
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) return null;
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static String normalizeMetricKey(String value) {

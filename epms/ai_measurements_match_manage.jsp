@@ -4,6 +4,7 @@
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
 <%!
     private static class AiMeasurementMatchRequest {
         String action;
@@ -15,25 +16,6 @@
         String targetTable;
         boolean supported;
         String note;
-    }
-
-    private static Integer toInt(String v) {
-        if (v == null) return null;
-        String t = v.trim();
-        if (t.isEmpty()) return null;
-        try { return Integer.valueOf(Integer.parseInt(t)); } catch (Exception e) { return null; }
-    }
-
-    private static boolean toBool(String v) {
-        if (v == null) return false;
-        String t = v.trim().toLowerCase(java.util.Locale.ROOT);
-        return "1".equals(t) || "true".equals(t) || "y".equals(t) || "yes".equals(t) || "on".equals(t);
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) return null;
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static String normalizeToken(String value) {
@@ -51,11 +33,11 @@
         req.action = trimToNull(request.getParameter("action"));
         req.token = normalizeToken(request.getParameter("token"));
         req.originalToken = normalizeToken(request.getParameter("original_token"));
-        req.floatIndex = toInt(request.getParameter("float_index"));
-        req.floatRegisters = toInt(request.getParameter("float_registers"));
+        req.floatIndex = parseNullableInt(request.getParameter("float_index"));
+        req.floatRegisters = parseNullableInt(request.getParameter("float_registers"));
         req.measurementColumn = trimToNull(request.getParameter("measurement_column"));
         req.targetTable = normalizeTargetTable(request.getParameter("target_table"));
-        req.supported = toBool(request.getParameter("is_supported"));
+        req.supported = parseBoolSafe(request.getParameter("is_supported"));
         req.note = trimToNull(request.getParameter("note"));
         return req;
     }

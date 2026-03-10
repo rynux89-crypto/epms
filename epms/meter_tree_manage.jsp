@@ -3,58 +3,10 @@
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_json.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
 <%! 
-    private static String h(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
-    }
-
-    private static Integer toInt(String v) {
-        if (v == null) return null;
-        String t = v.trim();
-        if (t.isEmpty()) return null;
-        try { return Integer.valueOf(Integer.parseInt(t)); } catch (Exception e) { return null; }
-    }
-
-    private static boolean toBool(String v) {
-        if (v == null) return false;
-        String t = v.trim().toLowerCase(java.util.Locale.ROOT);
-        return "1".equals(t) || "true".equals(t) || "y".equals(t) || "yes".equals(t) || "on".equals(t);
-    }
-
-    private static String j(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '\\': out.append("\\\\"); break;
-                case '"': out.append("\\\""); break;
-                case '\b': out.append("\\b"); break;
-                case '\f': out.append("\\f"); break;
-                case '\n': out.append("\\n"); break;
-                case '\r': out.append("\\r"); break;
-                case '\t': out.append("\\t"); break;
-                default:
-                    if (c < 0x20) {
-                        String hex = Integer.toHexString(c);
-                        out.append("\\u");
-                        for (int k = hex.length(); k < 4; k++) out.append('0');
-                        out.append(hex);
-                    } else {
-                        out.append(c);
-                    }
-            }
-        }
-        return out.toString();
-    }
-
     private static class MeterTreeRequest {
         String action;
         Integer relationId;
@@ -77,13 +29,13 @@
 
     private static MeterTreePageContext buildMeterTreePageContext(javax.servlet.http.HttpServletRequest request) {
         MeterTreePageContext ctx = new MeterTreePageContext();
-        ctx.editId = toInt(request.getParameter("edit_id"));
-        ctx.parentFilterId = toInt(request.getParameter("parent_filter"));
+        ctx.editId = parseNullableInt(request.getParameter("edit_id"));
+        ctx.parentFilterId = parseNullableInt(request.getParameter("parent_filter"));
         ctx.childPanelQ = request.getParameter("child_panel_q");
         if (ctx.childPanelQ == null) ctx.childPanelQ = "";
         ctx.childPanelQ = ctx.childPanelQ.trim();
-        ctx.addParentId = toInt(request.getParameter("add_parent_id"));
-        if (ctx.addParentId == null) ctx.addParentId = toInt(request.getParameter("parent_meter_id"));
+        ctx.addParentId = parseNullableInt(request.getParameter("add_parent_id"));
+        if (ctx.addParentId == null) ctx.addParentId = parseNullableInt(request.getParameter("parent_meter_id"));
         ctx.parentFilterQs = (ctx.parentFilterId == null) ? "" : ("&parent_filter=" + ctx.parentFilterId);
         ctx.childPanelQEncoded = "";
         try { ctx.childPanelQEncoded = URLEncoder.encode(ctx.childPanelQ, "UTF-8"); } catch (Exception ignore) {}
@@ -94,11 +46,11 @@
     private static MeterTreeRequest buildMeterTreeRequest(javax.servlet.http.HttpServletRequest request) {
         MeterTreeRequest req = new MeterTreeRequest();
         req.action = request.getParameter("action");
-        req.relationId = toInt(request.getParameter("relation_id"));
-        req.parentId = toInt(request.getParameter("parent_meter_id"));
-        req.childId = toInt(request.getParameter("child_meter_id"));
-        req.sortOrder = toInt(request.getParameter("sort_order"));
-        req.isActive = toBool(request.getParameter("is_active"));
+        req.relationId = parseNullableInt(request.getParameter("relation_id"));
+        req.parentId = parseNullableInt(request.getParameter("parent_meter_id"));
+        req.childId = parseNullableInt(request.getParameter("child_meter_id"));
+        req.sortOrder = parseNullableInt(request.getParameter("sort_order"));
+        req.isActive = parseBoolSafe(request.getParameter("is_active"));
         req.note = request.getParameter("note");
         if (req.note != null) {
             req.note = req.note.trim();
@@ -132,7 +84,7 @@
                     p = p.trim();
                     if (p.isEmpty()) continue;
                     if (!first) json.append(',');
-                    json.append('"').append(j(p)).append('"');
+                    json.append('"').append(escJson(p)).append('"');
                     first = false;
                 }
             }
@@ -251,11 +203,11 @@
     String ajax = request.getParameter("ajax");
     if ("child_panels".equalsIgnoreCase(ajax)) {
         response.setContentType("application/json;charset=UTF-8");
-        Integer ajaxParentFilterId = toInt(request.getParameter("parent_filter"));
+        Integer ajaxParentFilterId = parseNullableInt(request.getParameter("parent_filter"));
         try {
             out.print(buildChildPanelsAjaxJson(conn, ajaxParentFilterId));
         } catch (Exception ex) {
-            out.print("{\"ok\":false,\"error\":\"" + j(ex.getMessage()) + "\"}");
+            out.print("{\"ok\":false,\"error\":\"" + escJson(ex.getMessage()) + "\"}");
         } finally {
             try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
         }

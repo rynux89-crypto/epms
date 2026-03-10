@@ -3,11 +3,8 @@
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_json.jspf" %>
 <%!
-    private static String jsq(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
 %>
 <%
     TreeSet<String> aiTokenSet = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);

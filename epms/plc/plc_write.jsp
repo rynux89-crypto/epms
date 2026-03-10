@@ -6,6 +6,7 @@
 <%@ page import="java.net.*" %>
 <%@ page import="java.io.*" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
+<%@ include file="../../includes/epms_json.jspf" %>
 <%!
 private static final ScheduledExecutorService WRITE_EXEC = Executors.newScheduledThreadPool(4);
 private static final ConcurrentHashMap<Integer, ScheduledFuture<?>> WRITE_TASKS = new ConcurrentHashMap<>();
@@ -202,13 +203,6 @@ private static void writeCoils(ModbusTcpClient c, int unitId, int startOffset, b
         }
         i += chunk;
     }
-}
-
-private static String escJson(String s){
-    if (s == null) return "";
-    StringBuilder b = new StringBuilder();
-    for(int i=0;i<s.length();i++){ char c=s.charAt(i); if(c=='"'||c=='\\') b.append('\\').append(c); else if(c=='\n') b.append("\\n"); else if(c=='\r') b.append("\\r"); else if(c=='\t') b.append("\\t"); else b.append(c); }
-    return b.toString();
 }
 
 private static PlcConfig loadPlcConfig(Connection conn, int plcId) throws Exception {

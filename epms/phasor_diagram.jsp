@@ -3,45 +3,15 @@
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
+<%@ include file="../includes/epms_json.jspf" %>
 <%! 
-
-  private static String escJson(String s) {
-    if (s == null) return "";
-    StringBuilder b = new StringBuilder();
-    for (int i = 0; i < s.length(); i++) {
-      char c = s.charAt(i);
-      switch (c) {
-        case '"': b.append("\\\""); break;
-        case '\\': b.append("\\\\"); break;
-        case '\b': b.append("\\b"); break;
-        case '\f': b.append("\\f"); break;
-        case '\n': b.append("\\n"); break;
-        case '\r': b.append("\\r"); break;
-        case '\t': b.append("\\t"); break;
-        default:
-          if (c < 0x20) b.append(String.format("\\u%04x", (int)c));
-          else b.append(c);
-      }
-    }
-    return b.toString();
-  }
 
   private static String numJson(double v) {
     if (Double.isNaN(v) || Double.isInfinite(v)) return "0";
     return String.format(java.util.Locale.US, "%.6f", v);
   }
 
-  private static Integer parsePositiveInt(String s) {
-    if (s == null) return null;
-    String v = s.trim();
-    if (v.isEmpty()) return null;
-    try {
-      int n = Integer.parseInt(v);
-      return n > 0 ? n : null;
-    } catch (Exception ignore) {
-      return null;
-    }
-  }
 %>
 <%
   String meterParam = request.getParameter("meter");

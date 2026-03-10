@@ -3,11 +3,8 @@
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_json.jspf" %>
 <%!
-    private static String jsq(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", " ").replace("\n", " ");
-    }
     private static double nz(Double v) { return v == null ? 0.0 : v; }
 
     private static String meterLabel(int meterId, Map<Integer, String> names) {

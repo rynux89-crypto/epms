@@ -3,17 +3,9 @@
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
 <%!
-    private static Integer parseIntStrict(String value) {
-        if (value == null) return null;
-        try {
-            int n = Integer.parseInt(value.trim());
-            return n > 0 ? n : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     private static Double parseDoubleNullable(String value) {
         if (value == null) return null;
         String s = value.trim();
@@ -23,22 +15,6 @@
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private static String trimOrNull(String value) {
-        if (value == null) return null;
-        String s = value.trim();
-        return s.isEmpty() ? null : s;
-    }
-
-    private static String escHtml(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
     }
 
     private static class MeterRegisterRequest {
@@ -55,11 +31,11 @@
     private static MeterRegisterRequest buildMeterRegisterRequest(javax.servlet.http.HttpServletRequest request) {
         MeterRegisterRequest req = new MeterRegisterRequest();
         req.action = request.getParameter("action");
-        req.meterId = parseIntStrict(request.getParameter("meter_id"));
-        req.name = trimOrNull(request.getParameter("name"));
-        req.buildingName = trimOrNull(request.getParameter("building_name"));
-        req.panelName = trimOrNull(request.getParameter("panel_name"));
-        req.usageType = trimOrNull(request.getParameter("usage_type"));
+        req.meterId = parsePositiveInt(request.getParameter("meter_id"));
+        req.name = trimToNull(request.getParameter("name"));
+        req.buildingName = trimToNull(request.getParameter("building_name"));
+        req.panelName = trimToNull(request.getParameter("panel_name"));
+        req.usageType = trimToNull(request.getParameter("usage_type"));
         req.ratedVoltage = parseDoubleNullable(request.getParameter("rated_voltage"));
         req.ratedCurrent = parseDoubleNullable(request.getParameter("rated_current"));
         return req;
@@ -364,21 +340,21 @@
         <div class="search-grid">
             <div class="search-item">
                 <label for="building_q">건물명 검색</label>
-                <input id="building_q" type="text" name="building_q" value="<%= escHtml(buildingQ) %>" placeholder="예: 공학관">
+                <input id="building_q" type="text" name="building_q" value="<%= h(buildingQ) %>" placeholder="예: 공학관">
                 <select id="building_q_select" class="quick-select">
                     <option value="">건물 전체 목록에서 선택</option>
                     <% for (String b : buildingOptions) { %>
-                    <option value="<%= escHtml(b) %>"><%= escHtml(b) %></option>
+                    <option value="<%= h(b) %>"><%= h(b) %></option>
                     <% } %>
                 </select>
             </div>
             <div class="search-item">
                 <label for="panel_q">패널명 검색</label>
-                <input id="panel_q" type="text" name="panel_q" value="<%= escHtml(panelQ) %>" placeholder="예: MDB">
+                <input id="panel_q" type="text" name="panel_q" value="<%= h(panelQ) %>" placeholder="예: MDB">
                 <select id="panel_q_select" class="quick-select">
                     <option value="">패널 전체 목록에서 선택</option>
                     <% for (String p : panelOptions) { %>
-                    <option value="<%= escHtml(p) %>"><%= escHtml(p) %></option>
+                    <option value="<%= h(p) %>"><%= h(p) %></option>
                     <% } %>
                 </select>
             </div>
@@ -389,8 +365,8 @@
 
     <form method="POST">
         <input type="hidden" name="action" value="add">
-        <input type="hidden" name="building_q" value="<%= escHtml(buildingQ) %>">
-        <input type="hidden" name="panel_q" value="<%= escHtml(panelQ) %>">
+        <input type="hidden" name="building_q" value="<%= h(buildingQ) %>">
+        <input type="hidden" name="panel_q" value="<%= h(panelQ) %>">
         <div class="form-grid">
             <div class="input-group">
                 <label for="name">계측기 이름</label>
@@ -441,26 +417,26 @@
             <% String formId = "upd_" + r.get("meter_id"); %>
             <tr>
                 <td><%= r.get("meter_id") %></td>
-                <td><input class="in-cell" type="text" name="name" maxlength="100" value="<%= escHtml(r.get("name")) %>" form="<%= formId %>" required></td>
-                <td><input class="in-cell" type="text" name="building_name" maxlength="100" value="<%= escHtml(r.get("building_name")) %>" form="<%= formId %>"></td>
-                <td><input class="in-cell" type="text" name="panel_name" maxlength="100" value="<%= escHtml(r.get("panel_name")) %>" form="<%= formId %>"></td>
-                <td><input class="in-cell" type="text" name="usage_type" maxlength="50" value="<%= escHtml(r.get("usage_type")) %>" form="<%= formId %>"></td>
-                <td><input class="in-cell" type="number" step="any" name="rated_voltage" value="<%= escHtml(r.get("rated_voltage")) %>" form="<%= formId %>"></td>
-                <td><input class="in-cell" type="number" step="any" name="rated_current" value="<%= escHtml(r.get("rated_current")) %>" form="<%= formId %>"></td>
+                <td><input class="in-cell" type="text" name="name" maxlength="100" value="<%= h(r.get("name")) %>" form="<%= formId %>" required></td>
+                <td><input class="in-cell" type="text" name="building_name" maxlength="100" value="<%= h(r.get("building_name")) %>" form="<%= formId %>"></td>
+                <td><input class="in-cell" type="text" name="panel_name" maxlength="100" value="<%= h(r.get("panel_name")) %>" form="<%= formId %>"></td>
+                <td><input class="in-cell" type="text" name="usage_type" maxlength="50" value="<%= h(r.get("usage_type")) %>" form="<%= formId %>"></td>
+                <td><input class="in-cell" type="number" step="any" name="rated_voltage" value="<%= h(r.get("rated_voltage")) %>" form="<%= formId %>"></td>
+                <td><input class="in-cell" type="number" step="any" name="rated_current" value="<%= h(r.get("rated_current")) %>" form="<%= formId %>"></td>
                 <td>
                     <div class="actions-wrap">
                         <form id="<%= formId %>" class="row-form" method="POST">
                             <input type="hidden" name="action" value="update">
                             <input type="hidden" name="meter_id" value="<%= r.get("meter_id") %>">
-                            <input type="hidden" name="building_q" value="<%= escHtml(buildingQ) %>">
-                            <input type="hidden" name="panel_q" value="<%= escHtml(panelQ) %>">
+                            <input type="hidden" name="building_q" value="<%= h(buildingQ) %>">
+                            <input type="hidden" name="panel_q" value="<%= h(panelQ) %>">
                             <button type="submit" class="action-btn btn-update">수정</button>
                         </form>
                         <form class="row-form" method="POST" onsubmit="return confirm('해당 계측기를 삭제하시겠습니까?');">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="meter_id" value="<%= r.get("meter_id") %>">
-                            <input type="hidden" name="building_q" value="<%= escHtml(buildingQ) %>">
-                            <input type="hidden" name="panel_q" value="<%= escHtml(panelQ) %>">
+                            <input type="hidden" name="building_q" value="<%= h(buildingQ) %>">
+                            <input type="hidden" name="panel_q" value="<%= h(panelQ) %>">
                             <button type="submit" class="action-btn btn-delete">삭제</button>
                         </form>
                     </div>

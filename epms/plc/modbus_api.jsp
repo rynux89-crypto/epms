@@ -8,7 +8,9 @@
 <%@ page import="java.lang.reflect.*" %>
 <%@ page import="javax.servlet.ServletContext" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
-<%!
+<%@ include file="../../includes/epms_parse.jspf" %>
+<%@ include file="../../includes/epms_json.jspf" %>
+<%! 
     private static final int DI_POLLING_MS = 1000;
     private static final String POLL_RUNTIME_ATTR = "EPMS_MODBUS_POLL_RUNTIME";
     private static final ConcurrentHashMap<Integer, CacheEntry<PlcConfig>> PLC_CONFIG_CACHE = new ConcurrentHashMap<>();
@@ -186,12 +188,6 @@
 
     private static Connection createConn() throws Exception {
         return openDbConnection();
-    }
-
-    private static String trimToNull(String s) {
-        if (s == null) return null;
-        String t = s.trim();
-        return t.isEmpty() ? null : t;
     }
 
     private static ApiRequestContext buildApiRequestContext(javax.servlet.http.HttpServletRequest req) {
@@ -505,20 +501,6 @@
             readBits += chunk;
         }
         return result;
-    }
-
-    private static String escJson(String s) {
-        if (s == null) return "";
-        StringBuilder b = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '"' || c == '\\') b.append('\\').append(c);
-            else if (c == '\n') b.append("\\n");
-            else if (c == '\r') b.append("\\r");
-            else if (c == '\t') b.append("\\t");
-            else b.append(c);
-        }
-        return b.toString();
     }
 
     private static String clipForLog(String s, int maxLen) {
