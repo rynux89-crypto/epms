@@ -2,6 +2,7 @@
     contentType="text/html; charset=UTF-8"
     pageEncoding="UTF-8"
     trimDirectiveWhitespaces="true" %>
+<%@ include file="../includes/epms_html.jspf" %>
 <%
 request.setCharacterEncoding("UTF-8");
 response.setCharacterEncoding("UTF-8");
@@ -24,12 +25,32 @@ private Integer parsePositiveInt(String s) {
     }
 }
 
-private String esc(String s) {
-    if (s == null) return "";
-    return s.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;");
+private static class AgentManageState {
+    String ollamaUrl;
+    String selectedModel;
+    String selectedCoderModel;
+    Integer selectedSchemaCacheTtlMinutes;
+    Integer selectedConnectTimeoutSeconds;
+    Integer selectedReadTimeoutSeconds;
+    Integer selectedChatWidthPx;
+    Integer selectedChatMaxHeightVh;
+    Integer selectedChatFontSizePx;
+    String successMsg;
+    String errorMsg;
+    List<String> models = new ArrayList<String>();
+}
+
+private static class AgentManageRequest {
+    String action;
+    String ollamaUrl;
+    String model;
+    String coderModel;
+    Integer schemaCacheTtlMinutes;
+    Integer connectTimeoutSeconds;
+    Integer readTimeoutSeconds;
+    Integer chatWidthPx;
+    Integer chatMaxHeightVh;
+    Integer chatFontSizePx;
 }
 
 private String normalizeOllamaUrl(String s) {
@@ -106,141 +127,173 @@ private List<String> fetchOllamaModels(String ollamaUrl) throws Exception {
     }
     return parseModelNames(sb.toString());
 }
+
+private AgentManageState buildAgentManageState(javax.servlet.ServletContext application) {
+    AgentManageState state = new AgentManageState();
+    String envOllamaUrl = System.getenv("OLLAMA_URL");
+    if (envOllamaUrl == null || envOllamaUrl.isEmpty()) envOllamaUrl = "http://localhost:11434";
+    state.ollamaUrl = normalizeOllamaUrl(envOllamaUrl);
+
+    String envModel = System.getenv("OLLAMA_MODEL");
+    if (envModel == null || envModel.isEmpty()) envModel = "qwen2.5:14b";
+    String envCoderModel = System.getenv("OLLAMA_MODEL_CODER");
+    if (envCoderModel == null || envCoderModel.isEmpty()) envCoderModel = "qwen2.5-coder:7b";
+
+    Properties modelConfig = loadModelConfig(application);
+    String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
+    if (configuredOllamaUrl != null) state.ollamaUrl = configuredOllamaUrl;
+    state.selectedModel = trimToNull(modelConfig.getProperty("model"));
+    state.selectedCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
+    state.selectedSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes")));
+    if (state.selectedSchemaCacheTtlMinutes == null) state.selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
+    state.selectedConnectTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
+    if (state.selectedConnectTimeoutSeconds == null) state.selectedConnectTimeoutSeconds = Integer.valueOf(5);
+    state.selectedReadTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
+    if (state.selectedReadTimeoutSeconds == null) state.selectedReadTimeoutSeconds = Integer.valueOf(60);
+    state.selectedChatWidthPx = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_width_px")));
+    if (state.selectedChatWidthPx == null) state.selectedChatWidthPx = Integer.valueOf(360);
+    state.selectedChatMaxHeightVh = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_max_height_vh")));
+    if (state.selectedChatMaxHeightVh == null) state.selectedChatMaxHeightVh = Integer.valueOf(60);
+    state.selectedChatFontSizePx = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_font_size_px")));
+    if (state.selectedChatFontSizePx == null) state.selectedChatFontSizePx = Integer.valueOf(13);
+    if (state.selectedModel == null) state.selectedModel = envModel;
+    if (state.selectedCoderModel == null) state.selectedCoderModel = envCoderModel;
+    return state;
+}
+
+private AgentManageRequest buildAgentManageRequest(javax.servlet.http.HttpServletRequest request) {
+    AgentManageRequest req = new AgentManageRequest();
+    req.action = trimToNull(request.getParameter("action"));
+    req.ollamaUrl = normalizeOllamaUrl(request.getParameter("ollama_url"));
+    req.model = trimToNull(request.getParameter("model"));
+    req.coderModel = trimToNull(request.getParameter("coder_model"));
+    req.schemaCacheTtlMinutes = parsePositiveInt(trimToNull(request.getParameter("schema_cache_ttl_minutes")));
+    req.connectTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_connect_timeout_seconds")));
+    req.readTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_read_timeout_seconds")));
+    req.chatWidthPx = parsePositiveInt(trimToNull(request.getParameter("chat_width_px")));
+    req.chatMaxHeightVh = parsePositiveInt(trimToNull(request.getParameter("chat_max_height_vh")));
+    req.chatFontSizePx = parsePositiveInt(trimToNull(request.getParameter("chat_font_size_px")));
+    return req;
+}
+
+private void applyDefaultAgentManageState(AgentManageState state) {
+    String envOllamaUrl = System.getenv("OLLAMA_URL");
+    if (envOllamaUrl == null || envOllamaUrl.isEmpty()) envOllamaUrl = "http://localhost:11434";
+    state.ollamaUrl = normalizeOllamaUrl(envOllamaUrl);
+
+    String envModel = System.getenv("OLLAMA_MODEL");
+    if (envModel == null || envModel.isEmpty()) envModel = "qwen2.5:14b";
+    String envCoderModel = System.getenv("OLLAMA_MODEL_CODER");
+    if (envCoderModel == null || envCoderModel.isEmpty()) envCoderModel = "qwen2.5-coder:7b";
+
+    state.selectedModel = envModel;
+    state.selectedCoderModel = envCoderModel;
+    state.selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
+    state.selectedConnectTimeoutSeconds = Integer.valueOf(5);
+    state.selectedReadTimeoutSeconds = Integer.valueOf(60);
+    state.selectedChatWidthPx = Integer.valueOf(360);
+    state.selectedChatMaxHeightVh = Integer.valueOf(60);
+    state.selectedChatFontSizePx = Integer.valueOf(13);
+}
+
+private String validateAgentManageRequest(AgentManageRequest req, List<String> models) {
+    if (req.ollamaUrl == null || req.model == null || req.coderModel == null ||
+        req.schemaCacheTtlMinutes == null || req.connectTimeoutSeconds == null ||
+        req.readTimeoutSeconds == null || req.chatWidthPx == null ||
+        req.chatMaxHeightVh == null || req.chatFontSizePx == null) {
+        return "모델, 스키마 캐시 시간, 타임아웃, 채팅 UI 값을 모두 입력해 주세요.";
+    }
+    if (!req.ollamaUrl.startsWith("http://") && !req.ollamaUrl.startsWith("https://")) {
+        return "Ollama URL은 http:// 또는 https:// 로 시작해야 합니다.";
+    }
+    if (req.schemaCacheTtlMinutes.intValue() < 1 || req.schemaCacheTtlMinutes.intValue() > 1440) {
+        return "스키마 캐시 시간은 1~1440분으로 입력해 주세요.";
+    }
+    if (req.connectTimeoutSeconds.intValue() < 1 || req.connectTimeoutSeconds.intValue() > 60) {
+        return "연결 타임아웃은 1~60초로 입력해 주세요.";
+    }
+    if (req.readTimeoutSeconds.intValue() < 3 || req.readTimeoutSeconds.intValue() > 600) {
+        return "응답 타임아웃은 3~600초로 입력해 주세요.";
+    }
+    if (req.chatWidthPx.intValue() < 300 || req.chatWidthPx.intValue() > 560) {
+        return "챗창 폭은 300~560px 범위로 입력해 주세요.";
+    }
+    if (req.chatMaxHeightVh.intValue() < 40 || req.chatMaxHeightVh.intValue() > 90) {
+        return "챗창 최대 높이는 40~90vh 범위로 입력해 주세요.";
+    }
+    if (req.chatFontSizePx.intValue() < 12 || req.chatFontSizePx.intValue() > 20) {
+        return "챗 글자 크기는 12~20px 범위로 입력해 주세요.";
+    }
+    if (!models.isEmpty() && (!models.contains(req.model) || !models.contains(req.coderModel))) {
+        return "선택한 모델이 현재 Ollama 목록에 없습니다.";
+    }
+    return null;
+}
 %>
 <%
-String envOllamaUrl = System.getenv("OLLAMA_URL");
-if (envOllamaUrl == null || envOllamaUrl.isEmpty()) envOllamaUrl = "http://localhost:11434";
-envOllamaUrl = normalizeOllamaUrl(envOllamaUrl);
-String ollamaUrl = envOllamaUrl;
-
-String envModel = System.getenv("OLLAMA_MODEL");
-if (envModel == null || envModel.isEmpty()) envModel = "qwen2.5:14b";
-String envCoderModel = System.getenv("OLLAMA_MODEL_CODER");
-if (envCoderModel == null || envCoderModel.isEmpty()) envCoderModel = "qwen2.5-coder:7b";
-
-Properties modelConfig = loadModelConfig(application);
-String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
-if (configuredOllamaUrl != null) ollamaUrl = configuredOllamaUrl;
-String selectedModel = trimToNull(modelConfig.getProperty("model"));
-String selectedCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
-Integer selectedSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes")));
-if (selectedSchemaCacheTtlMinutes == null) selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
-Integer selectedConnectTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
-if (selectedConnectTimeoutSeconds == null) selectedConnectTimeoutSeconds = Integer.valueOf(5);
-Integer selectedReadTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
-if (selectedReadTimeoutSeconds == null) selectedReadTimeoutSeconds = Integer.valueOf(60);
-Integer selectedChatWidthPx = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_width_px")));
-if (selectedChatWidthPx == null) selectedChatWidthPx = Integer.valueOf(360);
-Integer selectedChatMaxHeightVh = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_max_height_vh")));
-if (selectedChatMaxHeightVh == null) selectedChatMaxHeightVh = Integer.valueOf(60);
-Integer selectedChatFontSizePx = parsePositiveInt(trimToNull(modelConfig.getProperty("chat_font_size_px")));
-if (selectedChatFontSizePx == null) selectedChatFontSizePx = Integer.valueOf(13);
-if (selectedModel == null) selectedModel = envModel;
-if (selectedCoderModel == null) selectedCoderModel = envCoderModel;
-
-String successMsg = null;
-String errorMsg = null;
-List<String> models = new ArrayList<String>();
+AgentManageState state = buildAgentManageState(application);
 
 try {
-    models = fetchOllamaModels(ollamaUrl);
+    state.models = fetchOllamaModels(state.ollamaUrl);
 } catch (Exception e) {
-    errorMsg = "Ollama 모델 목록 조회 실패: " + e.getMessage();
+    state.errorMsg = "Ollama 모델 목록 조회 실패: " + e.getMessage();
 }
 
 if ("POST".equalsIgnoreCase(request.getMethod())) {
-    String action = trimToNull(request.getParameter("action"));
-    if ("reset".equals(action)) {
+    AgentManageRequest formReq = buildAgentManageRequest(request);
+    if ("reset".equals(formReq.action)) {
         File file = getModelConfigFile(application);
         if (file != null && file.exists()) {
             if (!file.delete()) {
-                errorMsg = "설정 파일 삭제 실패: " + file.getAbsolutePath();
+                state.errorMsg = "설정 파일 삭제 실패: " + file.getAbsolutePath();
             } else {
-                ollamaUrl = envOllamaUrl;
-                selectedModel = envModel;
-                selectedCoderModel = envCoderModel;
-                selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
-                selectedConnectTimeoutSeconds = Integer.valueOf(5);
-                selectedReadTimeoutSeconds = Integer.valueOf(60);
-                selectedChatWidthPx = Integer.valueOf(360);
-                selectedChatMaxHeightVh = Integer.valueOf(60);
-                selectedChatFontSizePx = Integer.valueOf(13);
-                successMsg = "모델 설정을 기본값(환경변수)으로 복원했습니다. 즉시 반영됩니다.";
+                applyDefaultAgentManageState(state);
+                state.successMsg = "모델 설정을 기본값(환경변수)으로 복원했습니다. 즉시 반영됩니다.";
             }
         } else {
-            ollamaUrl = envOllamaUrl;
-            selectedModel = envModel;
-            selectedCoderModel = envCoderModel;
-            selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
-            selectedConnectTimeoutSeconds = Integer.valueOf(5);
-            selectedReadTimeoutSeconds = Integer.valueOf(60);
-                selectedChatWidthPx = Integer.valueOf(360);
-                selectedChatMaxHeightVh = Integer.valueOf(60);
-                selectedChatFontSizePx = Integer.valueOf(13);
-            successMsg = "이미 기본값(환경변수) 상태입니다.";
+            applyDefaultAgentManageState(state);
+            state.successMsg = "이미 기본값(환경변수) 상태입니다.";
         }
     } else {
-        String nextOllamaUrl = normalizeOllamaUrl(request.getParameter("ollama_url"));
-        String nextModel = trimToNull(request.getParameter("model"));
-        String nextCoderModel = trimToNull(request.getParameter("coder_model"));
-        Integer nextSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(request.getParameter("schema_cache_ttl_minutes")));
-        Integer nextConnectTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_connect_timeout_seconds")));
-        Integer nextReadTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_read_timeout_seconds")));
-        Integer nextChatWidthPx = parsePositiveInt(trimToNull(request.getParameter("chat_width_px")));
-        Integer nextChatMaxHeightVh = parsePositiveInt(trimToNull(request.getParameter("chat_max_height_vh")));
-        Integer nextChatFontSizePx = parsePositiveInt(trimToNull(request.getParameter("chat_font_size_px")));
-        if (nextOllamaUrl != null && !nextOllamaUrl.equals(ollamaUrl)) {
+        if (formReq.ollamaUrl != null && !formReq.ollamaUrl.equals(state.ollamaUrl)) {
             try {
-                models = fetchOllamaModels(nextOllamaUrl);
+                state.models = fetchOllamaModels(formReq.ollamaUrl);
             } catch (Exception e) {
-                errorMsg = "Ollama model list fetch failed: " + e.getMessage();
+                state.errorMsg = "Ollama model list fetch failed: " + e.getMessage();
             }
         }
-        if (nextOllamaUrl == null || nextModel == null || nextCoderModel == null || nextSchemaCacheTtlMinutes == null || nextConnectTimeoutSeconds == null || nextReadTimeoutSeconds == null || nextChatWidthPx == null || nextChatMaxHeightVh == null || nextChatFontSizePx == null) {
-            errorMsg = "모델, 스키마 캐시 시간, 타임아웃, 채팅 UI 값을 모두 입력해 주세요.";
-        } else if (!nextOllamaUrl.startsWith("http://") && !nextOllamaUrl.startsWith("https://")) {
-            errorMsg = "Ollama URL은 http:// 또는 https:// 로 시작해야 합니다.";
-        } else if (nextSchemaCacheTtlMinutes.intValue() < 1 || nextSchemaCacheTtlMinutes.intValue() > 1440) {
-            errorMsg = "스키마 캐시 시간은 1~1440분으로 입력해 주세요.";
-        } else if (nextConnectTimeoutSeconds.intValue() < 1 || nextConnectTimeoutSeconds.intValue() > 60) {
-            errorMsg = "연결 타임아웃은 1~60초로 입력해 주세요.";
-        } else if (nextReadTimeoutSeconds.intValue() < 3 || nextReadTimeoutSeconds.intValue() > 600) {
-            errorMsg = "응답 타임아웃은 3~600초로 입력해 주세요.";
-        } else if (nextChatWidthPx.intValue() < 300 || nextChatWidthPx.intValue() > 560) {
-            errorMsg = "챗창 폭은 300~560px 범위로 입력해 주세요.";
-        } else if (nextChatMaxHeightVh.intValue() < 40 || nextChatMaxHeightVh.intValue() > 90) {
-            errorMsg = "챗창 최대 높이는 40~90vh 범위로 입력해 주세요.";
-        } else if (nextChatFontSizePx.intValue() < 12 || nextChatFontSizePx.intValue() > 20) {
-            errorMsg = "챗 글자 크기는 12~20px 범위로 입력해 주세요.";
-        } else if (!models.isEmpty() && (!models.contains(nextModel) || !models.contains(nextCoderModel))) {
-            errorMsg = "선택한 모델이 현재 Ollama 목록에 없습니다.";
-        } else {
+        if (state.errorMsg == null) {
+            state.errorMsg = validateAgentManageRequest(formReq, state.models);
+        }
+        if (state.errorMsg == null) {
             try {
                 saveModelConfig(
                     application,
-                    nextOllamaUrl,
-                    nextModel,
-                    nextCoderModel,
-                    nextSchemaCacheTtlMinutes.intValue(),
-                    nextConnectTimeoutSeconds.intValue(),
-                    nextReadTimeoutSeconds.intValue(),
-                    nextChatWidthPx.intValue(),
-                    nextChatMaxHeightVh.intValue(),
-                    nextChatFontSizePx.intValue()
+                    formReq.ollamaUrl,
+                    formReq.model,
+                    formReq.coderModel,
+                    formReq.schemaCacheTtlMinutes.intValue(),
+                    formReq.connectTimeoutSeconds.intValue(),
+                    formReq.readTimeoutSeconds.intValue(),
+                    formReq.chatWidthPx.intValue(),
+                    formReq.chatMaxHeightVh.intValue(),
+                    formReq.chatFontSizePx.intValue()
                 );
-                selectedModel = nextModel;
-                selectedCoderModel = nextCoderModel;
-                selectedSchemaCacheTtlMinutes = nextSchemaCacheTtlMinutes;
-                selectedConnectTimeoutSeconds = nextConnectTimeoutSeconds;
-                selectedReadTimeoutSeconds = nextReadTimeoutSeconds;
-                selectedChatWidthPx = nextChatWidthPx;
-                selectedChatMaxHeightVh = nextChatMaxHeightVh;
-                selectedChatFontSizePx = nextChatFontSizePx;
-                ollamaUrl = nextOllamaUrl;
-                successMsg = "저장 완료: agent.jsp에 즉시 적용됩니다.";
+                state.selectedModel = formReq.model;
+                state.selectedCoderModel = formReq.coderModel;
+                state.selectedSchemaCacheTtlMinutes = formReq.schemaCacheTtlMinutes;
+                state.selectedConnectTimeoutSeconds = formReq.connectTimeoutSeconds;
+                state.selectedReadTimeoutSeconds = formReq.readTimeoutSeconds;
+                state.selectedChatWidthPx = formReq.chatWidthPx;
+                state.selectedChatMaxHeightVh = formReq.chatMaxHeightVh;
+                state.selectedChatFontSizePx = formReq.chatFontSizePx;
+                state.ollamaUrl = formReq.ollamaUrl;
+                state.successMsg = "저장 완료: agent.jsp에 즉시 적용됩니다.";
             } catch (Exception e) {
-                errorMsg = "저장 실패: " + e.getMessage();
+                state.errorMsg = "저장 실패: " + e.getMessage();
             }
+        } else {
+            state.successMsg = null;
         }
     }
 }
@@ -379,11 +432,11 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
         <h1>Agent 모델 관리</h1>
         <p class="sub">Ollama 등록 모델에서 선택하면 저장 직후 <code>agent.jsp</code> 요청부터 즉시 적용됩니다.</p>
 
-        <% if (successMsg != null) { %>
-        <div class="msg ok"><%= esc(successMsg) %></div>
+        <% if (state.successMsg != null) { %>
+        <div class="msg ok"><%= h(state.successMsg) %></div>
         <% } %>
-        <% if (errorMsg != null) { %>
-        <div class="msg err"><%= esc(errorMsg) %></div>
+        <% if (state.errorMsg != null) { %>
+        <div class="msg err"><%= h(state.errorMsg) %></div>
         <% } %>
 
         <form method="post">
@@ -393,17 +446,17 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                     <div class="section-title">현재 적용값</div>
                     <div class="grid">
                         <div class="label">Ollama URL</div>
-                        <div><code><%= esc(ollamaUrl) %></code></div>
+                        <div><code><%= h(state.ollamaUrl) %></code></div>
                         <div class="label">대화 모델</div>
-                        <div><code><%= esc(selectedModel) %></code></div>
+                        <div><code><%= h(state.selectedModel) %></code></div>
                         <div class="label">코더 모델</div>
-                        <div><code><%= esc(selectedCoderModel) %></code></div>
+                        <div><code><%= h(state.selectedCoderModel) %></code></div>
                         <div class="label">스키마 캐시(분)</div>
-                        <div><code><%= selectedSchemaCacheTtlMinutes %></code></div>
+                        <div><code><%= state.selectedSchemaCacheTtlMinutes %></code></div>
                         <div class="label">연결 타임아웃(초)</div>
-                        <div><code><%= selectedConnectTimeoutSeconds %></code></div>
+                        <div><code><%= state.selectedConnectTimeoutSeconds %></code></div>
                         <div class="label">응답 타임아웃(초)</div>
-                        <div><code><%= selectedReadTimeoutSeconds %></code></div>
+                        <div><code><%= state.selectedReadTimeoutSeconds %></code></div>
                     </div>
                     <div class="section-title">변경값 입력</div>
                     <div class="grid">
@@ -411,20 +464,20 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                         <input id="ollama_url"
                                name="ollama_url"
                                type="text"
-                               value="<%= esc(ollamaUrl) %>"
+                               value="<%= h(state.ollamaUrl) %>"
                                required
                                style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
                         <label class="label" for="model">대화 모델</label>
                         <select id="model" name="model" required>
-                            <% for (String m : models) { %>
-                            <option value="<%= esc(m) %>" <%= m.equals(selectedModel) ? "selected" : "" %>><%= esc(m) %></option>
+                            <% for (String m : state.models) { %>
+                            <option value="<%= h(m) %>" <%= m.equals(state.selectedModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
                         </select>
 
                         <label class="label" for="coder_model">코더 모델</label>
                         <select id="coder_model" name="coder_model" required>
-                            <% for (String m : models) { %>
-                            <option value="<%= esc(m) %>" <%= m.equals(selectedCoderModel) ? "selected" : "" %>><%= esc(m) %></option>
+                            <% for (String m : state.models) { %>
+                            <option value="<%= h(m) %>" <%= m.equals(state.selectedCoderModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
                         </select>
 
@@ -434,7 +487,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                                type="number"
                                min="1"
                                max="1440"
-                               value="<%= selectedSchemaCacheTtlMinutes %>"
+                               value="<%= state.selectedSchemaCacheTtlMinutes %>"
                                required
                                style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
@@ -444,7 +497,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                                type="number"
                                min="1"
                                max="60"
-                               value="<%= selectedConnectTimeoutSeconds %>"
+                               value="<%= state.selectedConnectTimeoutSeconds %>"
                                required
                                style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
@@ -454,7 +507,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                                type="number"
                                min="3"
                                max="600"
-                               value="<%= selectedReadTimeoutSeconds %>"
+                               value="<%= state.selectedReadTimeoutSeconds %>"
                                required
                                style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
                     </div>
@@ -465,11 +518,11 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                     <div class="section-title">현재 적용값</div>
                     <div class="grid">
                         <div class="label">채팅창 폭(px)</div>
-                        <div><code><%= selectedChatWidthPx %></code></div>
+                        <div><code><%= state.selectedChatWidthPx %></code></div>
                         <div class="label">채팅창 최대 높이(vh)</div>
-                        <div><code><%= selectedChatMaxHeightVh %></code></div>
+                        <div><code><%= state.selectedChatMaxHeightVh %></code></div>
                         <div class="label">채팅 글자 크기(px)</div>
-                        <div><code><%= selectedChatFontSizePx %></code></div>
+                        <div><code><%= state.selectedChatFontSizePx %></code></div>
                     </div>
                     <div class="section-title">변경값 입력</div>
                     <div class="grid">
@@ -479,7 +532,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                                type="number"
                                min="300"
                                max="560"
-                               value="<%= selectedChatWidthPx %>"
+                               value="<%= state.selectedChatWidthPx %>"
                                required
                                style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
@@ -489,7 +542,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                                type="number"
                                min="40"
                                max="90"
-                               value="<%= selectedChatMaxHeightVh %>"
+                               value="<%= state.selectedChatMaxHeightVh %>"
                                required
                                style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
 
@@ -499,7 +552,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                                type="number"
                                min="12"
                                max="20"
-                               value="<%= selectedChatFontSizePx %>"
+                               value="<%= state.selectedChatFontSizePx %>"
                                required
                                style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
                     </div>

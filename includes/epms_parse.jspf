@@ -1,0 +1,19 @@
+<%!
+    private static String trimToNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private static int parseIntSafe(String s, int def) {
+        try { return Integer.parseInt(s); } catch (Exception e) { return def; }
+    }
+
+    private static long parseLongSafe(String s, long def) {
+        try { return Long.parseLong(s); } catch (Exception e) { return def; }
+    }
+
+    private static Double parseDoubleSafe(String s) {
+        try { return Double.valueOf(s); } catch (Exception e) { return null; }
+    }
+%>

@@ -54,6 +54,11 @@ private static class DiWriteData {
     final List<Map<String, Object>> rows; final int changedCount; final long durationMs;
     DiWriteData(List<Map<String, Object>> r,int c,long d){rows=r;changedCount=c;durationMs=d;}
 }
+private static class WriteRequestContext {
+    String action;
+    Integer plcId;
+    boolean includeRows;
+}
 private static class ModbusTcpClient implements AutoCloseable {
     private final Socket socket; private final InputStream in; private final OutputStream out; private int txId=1;
     ModbusTcpClient(String ip,int port) throws IOException {
@@ -677,10 +682,24 @@ private static void applyWriteResultToState(WriteState st, WriteResult rr){
     st.lastRunAt = System.currentTimeMillis();
 }
 
+private static void resetWriteStateForPolling(WriteState st, int pollingMs) {
+    if (st == null) return;
+    st.running = true;
+    st.pollingMs = pollingMs;
+    st.lastError = "";
+}
+
+private static WriteResult runWriteCycle(WriteState st, int plcId) {
+    if (st != null) st.attemptCount.incrementAndGet();
+    WriteResult rr = writePlcSample(plcId);
+    applyWriteResultToState(st, rr);
+    return rr;
+}
+
 private static void stopWriting(int plcId){ ScheduledFuture<?> old=WRITE_TASKS.remove(plcId); if(old!=null) old.cancel(false); getWriteState(plcId).running=false; }
 private static void startWriting(final int plcId, final int pollingMs){
-    stopWriting(plcId); final WriteState st=getWriteState(plcId); st.running=true; st.pollingMs=pollingMs; st.lastError="";
-    Runnable task=new Runnable(){ public void run(){ st.attemptCount.incrementAndGet(); WriteResult rr=writePlcSample(plcId); applyWriteResultToState(st, rr); }};
+    stopWriting(plcId); final WriteState st=getWriteState(plcId); resetWriteStateForPolling(st, pollingMs);
+    Runnable task=new Runnable(){ public void run(){ runWriteCycle(st, plcId); }};
     WRITE_TASKS.put(plcId, WRITE_EXEC.scheduleAtFixedRate(task, 0, pollingMs, TimeUnit.MILLISECONDS));
 }
 
@@ -716,59 +735,74 @@ private static void appendWriteStateJson(StringBuilder s, Integer id, WriteState
      .append(",\"last_info\":\"").append(escJson(st.lastInfo)).append("\"")
      .append(",\"last_error\":\"").append(escJson(st.lastError)).append("\"");
 }
+
+private static WriteRequestContext buildWriteRequestContext(javax.servlet.http.HttpServletRequest req) {
+    WriteRequestContext ctx = new WriteRequestContext();
+    ctx.action = req.getParameter("action");
+    String plcParam = req.getParameter("plc_id");
+    try {
+        if (plcParam != null && !plcParam.trim().isEmpty()) ctx.plcId = Integer.parseInt(plcParam.trim());
+    } catch (Exception ignore) {
+    }
+    ctx.includeRows = "1".equals(req.getParameter("include_rows"));
+    return ctx;
+}
+
+private static String buildWriteStatesJson(boolean includeRows) {
+    StringBuilder s = new StringBuilder();
+    s.append("{\"ok\":true,\"states\":[");
+    List<Integer> ids = new ArrayList<>(WRITE_STATES.keySet());
+    Collections.sort(ids);
+    boolean first = true;
+    for (Integer id : ids) {
+        WriteState st = WRITE_STATES.get(id);
+        if (st == null) continue;
+        if (!first) s.append(",");
+        first = false;
+        appendWriteStateJson(s, id, st);
+        if (includeRows) {
+            s.append(",\"rows\":");
+            appendAiRowsJson(s, st.lastAiRows);
+            s.append(",\"di_rows\":");
+            appendDiRowsJson(s, st.lastDiRows);
+        }
+        s.append("}");
+    }
+    s.append("]}");
+    return s.toString();
+}
+
+private static String buildWriteResultJson(WriteResult rr) {
+    StringBuilder s = new StringBuilder();
+    s.append("{\"ok\":").append(rr.ok ? "true" : "false");
+    if (rr.ok) {
+        s.append(",\"info\":\"").append(escJson(rr.info)).append("\",\"rows\":");
+        appendAiRowsJson(s, rr.aiRows);
+        s.append(",\"di_rows\":");
+        appendDiRowsJson(s, rr.diRows);
+        s.append("}");
+    } else {
+        s.append(",\"error\":\"").append(escJson(rr.error)).append("\"}");
+    }
+    return s.toString();
+}
 %>
 <%
-String action = request.getParameter("action");
-if (action != null && !action.trim().isEmpty()) {
+WriteRequestContext reqCtx = buildWriteRequestContext(request);
+if (reqCtx.action != null && !reqCtx.action.trim().isEmpty()) {
     response.setContentType("application/json; charset=UTF-8");
-    String plcParam = request.getParameter("plc_id");
-    Integer plcId = null;
-    try { if (plcParam != null && !plcParam.trim().isEmpty()) plcId = Integer.parseInt(plcParam.trim()); } catch (Exception ignore) {}
 
-    if ("polling_status".equalsIgnoreCase(action)) {
-        StringBuilder s = new StringBuilder();
-        s.append("{\"ok\":true,\"states\":[");
-        List<Integer> ids = new ArrayList<>(WRITE_STATES.keySet());
-        Collections.sort(ids);
-        boolean first = true;
-        for (Integer id : ids) {
-            WriteState st = WRITE_STATES.get(id);
-            if (st == null) continue;
-            if (!first) s.append(",");
-            first = false;
-            appendWriteStateJson(s, id, st);
-            s.append("}");
-        }
-        s.append("]}");
-        out.print(s.toString());
+    if ("polling_status".equalsIgnoreCase(reqCtx.action)) {
+        out.print(buildWriteStatesJson(false));
         return;
     }
 
-    if ("polling_snapshot".equalsIgnoreCase(action)) {
-        boolean includeRows = "1".equals(request.getParameter("include_rows"));
-        StringBuilder s = new StringBuilder();
-        s.append("{\"ok\":true,\"states\":[");
-        List<Integer> ids = new ArrayList<>(WRITE_STATES.keySet());
-        Collections.sort(ids);
-        boolean first = true;
-        for (Integer id : ids) {
-            WriteState st = WRITE_STATES.get(id);
-            if (st == null) continue;
-            if (!first) s.append(",");
-            first = false;
-            appendWriteStateJson(s, id, st);
-            s.append(",\"rows\":");
-            if (includeRows) appendAiRowsJson(s, st.lastAiRows); else s.append("[]");
-            s.append(",\"di_rows\":");
-            if (includeRows) appendDiRowsJson(s, st.lastDiRows); else s.append("[]");
-            s.append("}");
-        }
-        s.append("]}");
-        out.print(s.toString());
+    if ("polling_snapshot".equalsIgnoreCase(reqCtx.action)) {
+        out.print(buildWriteStatesJson(reqCtx.includeRows));
         return;
     }
 
-    if ("get_tag_ranges".equalsIgnoreCase(action)) {
+    if ("get_tag_ranges".equalsIgnoreCase(reqCtx.action)) {
         try { loadTagRangesFromFile(); } catch (Exception ignore) {}
         StringBuilder s = new StringBuilder();
         s.append("{\"ok\":true,\"ranges\":");
@@ -778,7 +812,7 @@ if (action != null && !action.trim().isEmpty()) {
         return;
     }
 
-    if ("clear_tag_ranges".equalsIgnoreCase(action)) {
+    if ("clear_tag_ranges".equalsIgnoreCase(reqCtx.action)) {
         try {
             clearTagRangesInFile();
             out.print("{\"ok\":true,\"info\":\"tag ranges cleared\"}");
@@ -788,7 +822,7 @@ if (action != null && !action.trim().isEmpty()) {
         return;
     }
 
-    if ("set_tag_range".equalsIgnoreCase(action)) {
+    if ("set_tag_range".equalsIgnoreCase(reqCtx.action)) {
         String token = request.getParameter("token");
         String minParam = request.getParameter("min");
         String maxParam = request.getParameter("max");
@@ -807,7 +841,7 @@ if (action != null && !action.trim().isEmpty()) {
         return;
     }
 
-    if ("refresh_cache".equalsIgnoreCase(action)) {
+    if ("refresh_cache".equalsIgnoreCase(reqCtx.action)) {
         String scopeParam = request.getParameter("scope");
         String scope = (scopeParam == null || scopeParam.trim().isEmpty()) ? "all" : scopeParam.trim().toLowerCase(Locale.ROOT);
 
@@ -820,7 +854,7 @@ if (action != null && !action.trim().isEmpty()) {
             return;
         }
 
-        Integer targetPlcId = plcId;
+        Integer targetPlcId = reqCtx.plcId;
         if (doConfig) invalidateConfigCache(targetPlcId);
         if (doMap) invalidateTagMapCache(targetPlcId);
         if (doRuntime) invalidateRuntimeValueCache(targetPlcId);
@@ -831,36 +865,22 @@ if (action != null && !action.trim().isEmpty()) {
         return;
     }
 
-    if (plcId == null) {
+    if (reqCtx.plcId == null) {
         out.print("{\"ok\":false,\"error\":\"plc_id is required\"}");
         return;
     }
 
-    if ("write".equalsIgnoreCase(action)) {
-        WriteState st = getWriteState(plcId);
-        st.attemptCount.incrementAndGet();
-        WriteResult rr = writePlcSample(plcId);
-        applyWriteResultToState(st, rr);
-
-        StringBuilder s = new StringBuilder();
-        s.append("{\"ok\":").append(rr.ok ? "true" : "false");
-        if (rr.ok) {
-            s.append(",\"info\":\"").append(escJson(rr.info)).append("\",\"rows\":");
-            appendAiRowsJson(s, rr.aiRows);
-            s.append(",\"di_rows\":");
-            appendDiRowsJson(s, rr.diRows);
-            s.append("}");
-        } else {
-            s.append(",\"error\":\"").append(escJson(rr.error)).append("\"}");
-        }
-        out.print(s.toString());
+    if ("write".equalsIgnoreCase(reqCtx.action)) {
+        WriteState st = getWriteState(reqCtx.plcId);
+        WriteResult rr = runWriteCycle(st, reqCtx.plcId);
+        out.print(buildWriteResultJson(rr));
         return;
     }
 
-    if ("start_polling".equalsIgnoreCase(action)) {
+    if ("start_polling".equalsIgnoreCase(reqCtx.action)) {
         int pollingMs = 1000;
         try {
-            PlcConfig cfg = getCachedPlcConfig(plcId);
+            PlcConfig cfg = getCachedPlcConfig(reqCtx.plcId);
             if (!cfg.exists) {
                 out.print("{\"ok\":false,\"error\":\"Selected PLC config not found.\"}");
                 return;
@@ -881,13 +901,13 @@ if (action != null && !action.trim().isEmpty()) {
         }
         if (writeSec <= 0) writeSec = 1;
         pollingMs = writeSec * 1000;
-        startWriting(plcId, pollingMs);
+        startWriting(reqCtx.plcId, pollingMs);
         out.print("{\"ok\":true,\"info\":\"server write polling started (" + writeSec + "s)\"}");
         return;
     }
 
-    if ("stop_polling".equalsIgnoreCase(action)) {
-        stopWriting(plcId);
+    if ("stop_polling".equalsIgnoreCase(reqCtx.action)) {
+        stopWriting(reqCtx.plcId);
         out.print("{\"ok\":true,\"info\":\"server write polling stopped\"}");
         return;
     }

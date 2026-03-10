@@ -5,6 +5,8 @@
 <%@ page import="java.io.*" %>
 <%@ page import="java.nio.charset.StandardCharsets" %>
 <%@ include file="../includes/dbconfig.jspf" %>
+<%@ include file="../includes/epms_parse.jspf" %>
+<%@ include file="../includes/epms_json.jspf" %>
 <%!
     private static final ConcurrentHashMap<String, Integer> LAST_DI_VALUE_MAP = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> AI_PENDING_ON_MS = new ConcurrentHashMap<>();
@@ -30,6 +32,23 @@
         double value;
     }
 
+    private static class DiRequestPayload {
+        int plcId;
+        Timestamp measuredAt;
+        List<Map<String, Object>> rows = Collections.emptyList();
+    }
+
+    private static class AiRequestPayload {
+        int plcId;
+        Timestamp measuredAt;
+        List<AiRow> rows = Collections.emptyList();
+    }
+
+    private static class OpenCloseCount {
+        int opened;
+        int closed;
+    }
+
     private static Connection createConn() throws Exception {
         return openDbConnection();
     }
@@ -49,20 +68,6 @@
             st.execute(sql);
         } catch (Exception ignore) {
         }
-    }
-
-    private static String escJson(String s) {
-        if (s == null) return "";
-        StringBuilder b = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '"' || c == '\\') b.append('\\').append(c);
-            else if (c == '\n') b.append("\\n");
-            else if (c == '\r') b.append("\\r");
-            else if (c == '\t') b.append("\\t");
-            else b.append(c);
-        }
-        return b.toString();
     }
 
     private static boolean isOcrAlarmBit(String tagName) {
@@ -187,18 +192,6 @@
         return "WARN";
     }
 
-    private static int parseIntSafe(String s, int def) {
-        try { return Integer.parseInt(s); } catch (Exception e) { return def; }
-    }
-
-    private static long parseLongSafe(String s, long def) {
-        try { return Long.parseLong(s); } catch (Exception e) { return def; }
-    }
-
-    private static Double parseDoubleSafe(String s) {
-        try { return Double.valueOf(s); } catch (Exception e) { return null; }
-    }
-
     private static String b64urlDecode(String s) {
         if (s == null || s.isEmpty()) return "";
         try {
@@ -251,6 +244,180 @@
             out.add(r);
         }
         return out;
+    }
+
+    private static Long findOpenEventId(PreparedStatement ps, int deviceId, String eventType) throws Exception {
+        ps.setInt(1, deviceId);
+        ps.setString(2, eventType);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return rs.getLong(1);
+        }
+        return null;
+    }
+
+    private static Long findOpenAlarmId(PreparedStatement ps, int meterId, String alarmType) throws Exception {
+        ps.setInt(1, meterId);
+        ps.setString(2, alarmType);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return rs.getLong(1);
+        }
+        return null;
+    }
+
+    private static int closeOpenEvent(PreparedStatement close, Timestamp measuredAt, Long eventId) throws Exception {
+        if (eventId == null) return 0;
+        close.setTimestamp(1, measuredAt);
+        close.setTimestamp(2, measuredAt);
+        close.setTimestamp(3, measuredAt);
+        close.setLong(4, eventId.longValue());
+        return close.executeUpdate();
+    }
+
+    private static void clearOpenAlarm(PreparedStatement clearAlarm, Timestamp measuredAt, Long alarmId) throws Exception {
+        if (alarmId == null) return;
+        clearAlarm.setTimestamp(1, measuredAt);
+        clearAlarm.setLong(2, alarmId.longValue());
+        clearAlarm.executeUpdate();
+    }
+
+    private static int insertDeviceEvent(PreparedStatement ins, int deviceId, String eventType, Timestamp measuredAt, String severity, String description) throws Exception {
+        ins.setInt(1, deviceId);
+        ins.setString(2, eventType);
+        ins.setTimestamp(3, measuredAt);
+        ins.setString(4, severity);
+        ins.setString(5, description);
+        return ins.executeUpdate();
+    }
+
+    private static void insertDiAlarm(PreparedStatement insAlarm, int deviceId, String eventType, String severity, Timestamp measuredAt, String description) throws Exception {
+        insAlarm.setInt(1, deviceId);
+        insAlarm.setString(2, eventType);
+        insAlarm.setString(3, severity);
+        insAlarm.setTimestamp(4, measuredAt);
+        insAlarm.setString(5, description);
+        insAlarm.executeUpdate();
+    }
+
+    private static void insertAiAlarm(PreparedStatement insAlarm, int meterId, String eventType, String severity, Timestamp measuredAt, String description, AlarmRule rule, double value) throws Exception {
+        insAlarm.setInt(1, meterId);
+        insAlarm.setString(2, eventType);
+        insAlarm.setString(3, severity);
+        insAlarm.setTimestamp(4, measuredAt);
+        insAlarm.setString(5, description);
+        insAlarm.setInt(6, rule.ruleId);
+        insAlarm.setString(7, rule.ruleCode);
+        insAlarm.setString(8, rule.metricKey);
+        insAlarm.setString(9, (rule.sourceToken == null || rule.sourceToken.trim().isEmpty()) ? rule.metricKey : rule.sourceToken);
+        insAlarm.setDouble(10, value);
+        insAlarm.setString(11, rule.operator);
+        if (rule.threshold1 == null) insAlarm.setNull(12, Types.FLOAT); else insAlarm.setDouble(12, rule.threshold1.doubleValue());
+        if (rule.threshold2 == null) insAlarm.setNull(13, Types.FLOAT); else insAlarm.setDouble(13, rule.threshold2.doubleValue());
+        insAlarm.executeUpdate();
+    }
+
+    private static String buildDiOnDescription(int plcId, int pointId, int diAddress, int bitNo, String tagName, String itemName, String panelName) {
+        return "PLC " + plcId + " DI ON: point=" + pointId +
+               ", addr=" + diAddress + ", bit=" + bitNo +
+               ", tag=" + tagName + ", item=" + itemName + ", panel=" + panelName;
+    }
+
+    private static String buildGroupedAlarmDescription(String groupName, int plcId, int pointId, int diAddress, List<String> bitValues, String itemName, String panelName) {
+        return "PLC " + plcId + " " + groupName + " ALL ON: point=" + pointId +
+               ", addr=" + diAddress +
+               ", bits=" + String.join(",", bitValues) +
+               ", item=" + itemName + ", panel=" + panelName;
+    }
+
+    private static Map<String, Object> ensureDiGroup(Map<String, Map<String, Object>> groups, int pointId, int diAddress, String itemName, String panelName, String tagName) {
+        String gk = pointId + ":" + diAddress;
+        Map<String, Object> g = groups.get(gk);
+        if (g == null) {
+            g = new HashMap<>();
+            g.put("point_id", pointId);
+            g.put("di_address", diAddress);
+            g.put("item_name", itemName);
+            g.put("panel_name", panelName);
+            g.put("tag_name", tagName);
+            g.put("bit_count", 0);
+            g.put("on_count", 0);
+            g.put("bit_values", new ArrayList<String>());
+            groups.put(gk, g);
+        }
+        return g;
+    }
+
+    private static void accumulateDiGroup(Map<String, Map<String, Object>> groups, int plcId, int pointId, int diAddress, int bitNo, int value, String itemName, String panelName, String tagName) {
+        Map<String, Object> g = ensureDiGroup(groups, pointId, diAddress, itemName, panelName, tagName);
+        g.put("bit_count", ((Integer)g.get("bit_count")) + 1);
+        if (value == 1) g.put("on_count", ((Integer)g.get("on_count")) + 1);
+        @SuppressWarnings("unchecked")
+        List<String> bitValues = (List<String>)g.get("bit_values");
+        bitValues.add(bitNo + ":" + value);
+        LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
+    }
+
+    private static int closeStaleAiStages(
+            PreparedStatement selOpenAnyRule,
+            PreparedStatement close,
+            PreparedStatement selAlarmOpen,
+            PreparedStatement clearAlarm,
+            int meterId,
+            String rulePrefix,
+            String targetEventType,
+            Timestamp measuredAt) throws Exception {
+        int closed = 0;
+        selOpenAnyRule.setInt(1, meterId);
+        selOpenAnyRule.setString(2, rulePrefix + "%");
+        List<Long> closeIds = new ArrayList<>();
+        List<String> closeTypes = new ArrayList<>();
+        try (ResultSet rs = selOpenAnyRule.executeQuery()) {
+            while (rs.next()) {
+                long eid = rs.getLong("event_id");
+                String et = rs.getString("event_type");
+                if (targetEventType == null || et == null || !targetEventType.equals(et)) {
+                    closeIds.add(Long.valueOf(eid));
+                    closeTypes.add(et);
+                }
+            }
+        }
+        for (Long eid : closeIds) {
+            closed += closeOpenEvent(close, measuredAt, eid);
+        }
+        for (String et : closeTypes) {
+            if (et == null || et.trim().isEmpty()) continue;
+            clearOpenAlarm(clearAlarm, measuredAt, findOpenAlarmId(selAlarmOpen, meterId, et));
+        }
+        return closed;
+    }
+
+    private static OpenCloseCount applyGroupedDiAlarm(
+            PreparedStatement selOpen,
+            PreparedStatement ins,
+            PreparedStatement close,
+            PreparedStatement selAlarmOpen,
+            PreparedStatement insAlarm,
+            PreparedStatement clearAlarm,
+            Timestamp measuredAt,
+            int deviceId,
+            String eventType,
+            String description,
+            boolean shouldOpen) throws Exception {
+        OpenCloseCount count = new OpenCloseCount();
+        Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
+        if (shouldOpen) {
+            if (openEventId == null) {
+                String sev = "ALARM";
+                count.opened += insertDeviceEvent(ins, deviceId, eventType, measuredAt, sev, description);
+                Long openAlarmId = findOpenAlarmId(selAlarmOpen, deviceId, eventType);
+                if (openAlarmId == null) {
+                    insertDiAlarm(insAlarm, deviceId, eventType, sev, measuredAt, description);
+                }
+            }
+        } else if (openEventId != null) {
+            count.closed += closeOpenEvent(close, measuredAt, openEventId);
+            clearOpenAlarm(clearAlarm, measuredAt, findOpenAlarmId(selAlarmOpen, deviceId, eventType));
+        }
+        return count;
     }
 
     private static boolean evalOpen(String operator, Double t1, Double t2, double value) {
@@ -587,53 +754,14 @@
                     String targetEventType = (stage == null) ? null : (rulePrefix + "_" + stage);
 
                     // Close stale stages for this rule first (e.g. ALARM -> CRITICAL transition).
-                    selOpenAnyRule.setInt(1, meterId);
-                    selOpenAnyRule.setString(2, rulePrefix + "%");
-                    List<Long> closeIds = new ArrayList<>();
-                    List<String> closeTypes = new ArrayList<>();
-                    try (ResultSet rs = selOpenAnyRule.executeQuery()) {
-                        while (rs.next()) {
-                            long eid = rs.getLong("event_id");
-                            String et = rs.getString("event_type");
-                            if (targetEventType == null || et == null || !targetEventType.equals(et)) {
-                                closeIds.add(Long.valueOf(eid));
-                                closeTypes.add(et);
-                            }
-                        }
-                    }
-                    for (Long eid : closeIds) {
-                        close.setTimestamp(1, measuredAt);
-                        close.setTimestamp(2, measuredAt);
-                        close.setTimestamp(3, measuredAt);
-                        close.setLong(4, eid.longValue());
-                        closed += close.executeUpdate();
-                    }
-                    for (String et : closeTypes) {
-                        if (et == null || et.trim().isEmpty()) continue;
-                        selAlarmOpen.setInt(1, meterId);
-                        selAlarmOpen.setString(2, et);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId != null) {
-                            clearAlarm.setTimestamp(1, measuredAt);
-                            clearAlarm.setLong(2, openAlarmId.longValue());
-                            clearAlarm.executeUpdate();
-                        }
-                    }
+                    closed += closeStaleAiStages(selOpenAnyRule, close, selAlarmOpen, clearAlarm, meterId, rulePrefix, targetEventType, measuredAt);
 
                     if (targetEventType == null) {
                         AI_PENDING_ON_MS.remove(plcId + ":" + meterId + ":" + rulePrefix);
                         continue;
                     }
 
-                    selOpen.setInt(1, meterId);
-                    selOpen.setString(2, targetEventType);
-                    Long openEventId = null;
-                    try (ResultSet rs = selOpen.executeQuery()) {
-                        if (rs.next()) openEventId = rs.getLong(1);
-                    }
+                    Long openEventId = findOpenEventId(selOpen, meterId, targetEventType);
                     if (openEventId != null) {
                         AI_PENDING_ON_MS.remove(plcId + ":" + meterId + ":" + rulePrefix);
                         continue;
@@ -670,34 +798,11 @@
                         if (!mt.trim().isEmpty()) desc = mt + " | " + desc;
                     }
 
-                    ins.setInt(1, meterId);
-                    ins.setString(2, targetEventType);
-                    ins.setTimestamp(3, measuredAt);
-                    ins.setString(4, stage);
-                    ins.setString(5, desc);
-                    opened += ins.executeUpdate();
+                    opened += insertDeviceEvent(ins, meterId, targetEventType, measuredAt, stage, desc);
 
-                    selAlarmOpen.setInt(1, meterId);
-                    selAlarmOpen.setString(2, targetEventType);
-                    Long openAlarmId = null;
-                    try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                        if (rsA.next()) openAlarmId = rsA.getLong(1);
-                    }
+                    Long openAlarmId = findOpenAlarmId(selAlarmOpen, meterId, targetEventType);
                     if (openAlarmId == null) {
-                        insAlarm.setInt(1, meterId);
-                        insAlarm.setString(2, targetEventType);
-                        insAlarm.setString(3, stage);
-                        insAlarm.setTimestamp(4, measuredAt);
-                        insAlarm.setString(5, desc);
-                        insAlarm.setInt(6, rule.ruleId);
-                        insAlarm.setString(7, rule.ruleCode);
-                        insAlarm.setString(8, rule.metricKey);
-                        insAlarm.setString(9, (rule.sourceToken == null || rule.sourceToken.trim().isEmpty()) ? rule.metricKey : rule.sourceToken);
-                        insAlarm.setDouble(10, value);
-                        insAlarm.setString(11, rule.operator);
-                        if (rule.threshold1 == null) insAlarm.setNull(12, Types.FLOAT); else insAlarm.setDouble(12, rule.threshold1.doubleValue());
-                        if (rule.threshold2 == null) insAlarm.setNull(13, Types.FLOAT); else insAlarm.setDouble(13, rule.threshold2.doubleValue());
-                        insAlarm.executeUpdate();
+                        insertAiAlarm(insAlarm, meterId, targetEventType, stage, measuredAt, desc, rule, value);
                     }
                     AI_PENDING_ON_MS.remove(pendingKey);
                 }
@@ -758,72 +863,15 @@
                 String panelName = String.valueOf(row.get("panel_name") == null ? "" : row.get("panel_name"));
 
                 if (isOcrAlarmBit(tagName)) {
-                    String gk = pointId + ":" + diAddress;
-                    Map<String, Object> g = ocrGroups.get(gk);
-                    if (g == null) {
-                        g = new HashMap<>();
-                        g.put("point_id", pointId);
-                        g.put("di_address", diAddress);
-                        g.put("item_name", itemName);
-                        g.put("panel_name", panelName);
-                        g.put("tag_name", tagName);
-                        g.put("bit_count", 0);
-                        g.put("on_count", 0);
-                        g.put("bit_values", new ArrayList<String>());
-                        ocrGroups.put(gk, g);
-                    }
-                    g.put("bit_count", ((Integer)g.get("bit_count")) + 1);
-                    if (value == 1) g.put("on_count", ((Integer)g.get("on_count")) + 1);
-                    @SuppressWarnings("unchecked")
-                    List<String> bitValues = (List<String>)g.get("bit_values");
-                    bitValues.add(bitNo + ":" + value);
-                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
+                    accumulateDiGroup(ocrGroups, plcId, pointId, diAddress, bitNo, value, itemName, panelName, tagName);
                     continue;
                 }
                 if (isOcgrAlarmBit(tagName)) {
-                    String gk = pointId + ":" + diAddress;
-                    Map<String, Object> g = ocgrGroups.get(gk);
-                    if (g == null) {
-                        g = new HashMap<>();
-                        g.put("point_id", pointId);
-                        g.put("di_address", diAddress);
-                        g.put("item_name", itemName);
-                        g.put("panel_name", panelName);
-                        g.put("tag_name", tagName);
-                        g.put("bit_count", 0);
-                        g.put("on_count", 0);
-                        g.put("bit_values", new ArrayList<String>());
-                        ocgrGroups.put(gk, g);
-                    }
-                    g.put("bit_count", ((Integer)g.get("bit_count")) + 1);
-                    if (value == 1) g.put("on_count", ((Integer)g.get("on_count")) + 1);
-                    @SuppressWarnings("unchecked")
-                    List<String> bitValues = (List<String>)g.get("bit_values");
-                    bitValues.add(bitNo + ":" + value);
-                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
+                    accumulateDiGroup(ocgrGroups, plcId, pointId, diAddress, bitNo, value, itemName, panelName, tagName);
                     continue;
                 }
                 if (isOvrAlarmBit(tagName)) {
-                    String gk = pointId + ":" + diAddress;
-                    Map<String, Object> g = ovrGroups.get(gk);
-                    if (g == null) {
-                        g = new HashMap<>();
-                        g.put("point_id", pointId);
-                        g.put("di_address", diAddress);
-                        g.put("item_name", itemName);
-                        g.put("panel_name", panelName);
-                        g.put("tag_name", tagName);
-                        g.put("bit_count", 0);
-                        g.put("on_count", 0);
-                        g.put("bit_values", new ArrayList<String>());
-                        ovrGroups.put(gk, g);
-                    }
-                    g.put("bit_count", ((Integer)g.get("bit_count")) + 1);
-                    if (value == 1) g.put("on_count", ((Integer)g.get("on_count")) + 1);
-                    @SuppressWarnings("unchecked")
-                    List<String> bitValues = (List<String>)g.get("bit_values");
-                    bitValues.add(bitNo + ":" + value);
-                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
+                    accumulateDiGroup(ovrGroups, plcId, pointId, diAddress, bitNo, value, itemName, panelName, tagName);
                     continue;
                 }
 
@@ -834,37 +882,15 @@
 
                 if (prev == null) {
                     if (value == 1) {
-                        selOpen.setInt(1, deviceId);
-                        selOpen.setString(2, eventType);
-                        Long openEventId = null;
-                        try (ResultSet rs = selOpen.executeQuery()) {
-                            if (rs.next()) openEventId = rs.getLong(1);
-                        }
+                        Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
                         if (openEventId == null) {
-                            String desc = "PLC " + plcId + " DI ON: point=" + pointId +
-                                          ", addr=" + diAddress + ", bit=" + bitNo +
-                                          ", tag=" + tagName + ", item=" + itemName + ", panel=" + panelName;
+                            String desc = buildDiOnDescription(plcId, pointId, diAddress, bitNo, tagName, itemName, panelName);
                             String sev = buildDiSeverity(tagName);
-                            ins.setInt(1, deviceId);
-                            ins.setString(2, eventType);
-                            ins.setTimestamp(3, measuredAt);
-                            ins.setString(4, sev);
-                            ins.setString(5, desc);
-                            opened += ins.executeUpdate();
+                            opened += insertDeviceEvent(ins, deviceId, eventType, measuredAt, sev, desc);
                             if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
-                                selAlarmOpen.setInt(1, deviceId);
-                                selAlarmOpen.setString(2, eventType);
-                                Long openAlarmId = null;
-                                try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                                    if (rsA.next()) openAlarmId = rsA.getLong(1);
-                                }
+                                Long openAlarmId = findOpenAlarmId(selAlarmOpen, deviceId, eventType);
                                 if (openAlarmId == null) {
-                                    insAlarm.setInt(1, deviceId);
-                                    insAlarm.setString(2, eventType);
-                                    insAlarm.setString(3, sev);
-                                    insAlarm.setTimestamp(4, measuredAt);
-                                    insAlarm.setString(5, desc);
-                                    insAlarm.executeUpdate();
+                                    insertDiAlarm(insAlarm, deviceId, eventType, sev, measuredAt, desc);
                                 }
                             }
                         }
@@ -874,64 +900,23 @@
                 }
 
                 if (prev.intValue() == 0 && value == 1) {
-                    selOpen.setInt(1, deviceId);
-                    selOpen.setString(2, eventType);
-                    Long openEventId = null;
-                    try (ResultSet rs = selOpen.executeQuery()) {
-                        if (rs.next()) openEventId = rs.getLong(1);
-                    }
+                    Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
                     if (openEventId == null) {
-                        String desc = "PLC " + plcId + " DI ON: point=" + pointId +
-                                      ", addr=" + diAddress + ", bit=" + bitNo +
-                                      ", tag=" + tagName + ", item=" + itemName + ", panel=" + panelName;
+                        String desc = buildDiOnDescription(plcId, pointId, diAddress, bitNo, tagName, itemName, panelName);
                         String sev = buildDiSeverity(tagName);
-                        ins.setInt(1, deviceId);
-                        ins.setString(2, eventType);
-                        ins.setTimestamp(3, measuredAt);
-                        ins.setString(4, sev);
-                        ins.setString(5, desc);
-                        opened += ins.executeUpdate();
+                        opened += insertDeviceEvent(ins, deviceId, eventType, measuredAt, sev, desc);
                         if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
-                            selAlarmOpen.setInt(1, deviceId);
-                            selAlarmOpen.setString(2, eventType);
-                            Long openAlarmId = null;
-                            try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                                if (rsA.next()) openAlarmId = rsA.getLong(1);
-                            }
+                            Long openAlarmId = findOpenAlarmId(selAlarmOpen, deviceId, eventType);
                             if (openAlarmId == null) {
-                                insAlarm.setInt(1, deviceId);
-                                insAlarm.setString(2, eventType);
-                                insAlarm.setString(3, sev);
-                                insAlarm.setTimestamp(4, measuredAt);
-                                insAlarm.setString(5, desc);
-                                insAlarm.executeUpdate();
+                                insertDiAlarm(insAlarm, deviceId, eventType, sev, measuredAt, desc);
                             }
                         }
                     }
                 } else if (prev.intValue() == 1 && value == 0) {
-                    selOpen.setInt(1, deviceId);
-                    selOpen.setString(2, eventType);
-                    Long openEventId = null;
-                    try (ResultSet rs = selOpen.executeQuery()) {
-                        if (rs.next()) openEventId = rs.getLong(1);
-                    }
+                    Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
                     if (openEventId != null) {
-                        close.setTimestamp(1, measuredAt);
-                        close.setTimestamp(2, measuredAt);
-                        close.setTimestamp(3, measuredAt);
-                        close.setLong(4, openEventId.longValue());
-                        closed += close.executeUpdate();
-                        selAlarmOpen.setInt(1, deviceId);
-                        selAlarmOpen.setString(2, eventType);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId != null) {
-                            clearAlarm.setTimestamp(1, measuredAt);
-                            clearAlarm.setLong(2, openAlarmId.longValue());
-                            clearAlarm.executeUpdate();
-                        }
+                        closed += closeOpenEvent(close, measuredAt, openEventId);
+                        clearOpenAlarm(clearAlarm, measuredAt, findOpenAlarmId(selAlarmOpen, deviceId, eventType));
                     }
                 }
                 LAST_DI_VALUE_MAP.put(diKey, value);
@@ -954,61 +939,10 @@
                 String tagKey = compactEventToken(normalizeTagKey(tagName), "DI", "OCR");
                 String eventType = tagKey.isEmpty() ? "DI_OCR_ALL" : ("DI_OCR_ALL_" + tagKey);
 
-                selOpen.setInt(1, deviceId);
-                selOpen.setString(2, eventType);
-                Long openEventId = null;
-                try (ResultSet rs = selOpen.executeQuery()) {
-                    if (rs.next()) openEventId = rs.getLong(1);
-                }
-
-                if (allOn) {
-                    if (openEventId == null) {
-                        String desc = "PLC " + plcId + " OCR ALL ON: point=" + pointId +
-                                      ", addr=" + diAddress +
-                                      ", bits=" + String.join(",", bitValues) +
-                                      ", item=" + itemName + ", panel=" + panelName;
-                        String sev = "ALARM";
-                        ins.setInt(1, deviceId);
-                        ins.setString(2, eventType);
-                        ins.setTimestamp(3, measuredAt);
-                        ins.setString(4, sev);
-                        ins.setString(5, desc);
-                        opened += ins.executeUpdate();
-                        selAlarmOpen.setInt(1, deviceId);
-                        selAlarmOpen.setString(2, eventType);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId == null) {
-                            insAlarm.setInt(1, deviceId);
-                            insAlarm.setString(2, eventType);
-                            insAlarm.setString(3, sev);
-                            insAlarm.setTimestamp(4, measuredAt);
-                            insAlarm.setString(5, desc);
-                            insAlarm.executeUpdate();
-                        }
-                    }
-                } else {
-                    if (openEventId != null) {
-                        close.setTimestamp(1, measuredAt);
-                        close.setTimestamp(2, measuredAt);
-                        close.setTimestamp(3, measuredAt);
-                        close.setLong(4, openEventId.longValue());
-                        closed += close.executeUpdate();
-                        selAlarmOpen.setInt(1, deviceId);
-                        selAlarmOpen.setString(2, eventType);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId != null) {
-                            clearAlarm.setTimestamp(1, measuredAt);
-                            clearAlarm.setLong(2, openAlarmId.longValue());
-                            clearAlarm.executeUpdate();
-                        }
-                    }
-                }
+                String desc = buildGroupedAlarmDescription("OCR", plcId, pointId, diAddress, bitValues, itemName, panelName);
+                OpenCloseCount count = applyGroupedDiAlarm(selOpen, ins, close, selAlarmOpen, insAlarm, clearAlarm, measuredAt, deviceId, eventType, desc, allOn);
+                opened += count.opened;
+                closed += count.closed;
             }
 
             for (Map<String, Object> g : ocgrGroups.values()) {
@@ -1030,61 +964,10 @@
                 if ("51G".equals(tagKey)) eventType = "DI_OCGR_51G";
                 else eventType = tagKey.isEmpty() ? "DI_OCGR_ALL" : ("DI_OCGR_ALL_" + tagKey);
 
-                selOpen.setInt(1, deviceId);
-                selOpen.setString(2, eventType);
-                Long openEventId = null;
-                try (ResultSet rs = selOpen.executeQuery()) {
-                    if (rs.next()) openEventId = rs.getLong(1);
-                }
-
-                if (allOn) {
-                    if (openEventId == null) {
-                        String desc = "PLC " + plcId + " OCGR ALL ON: point=" + pointId +
-                                      ", addr=" + diAddress +
-                                      ", bits=" + String.join(",", bitValues) +
-                                      ", item=" + itemName + ", panel=" + panelName;
-                        String sev = "ALARM";
-                        ins.setInt(1, deviceId);
-                        ins.setString(2, eventType);
-                        ins.setTimestamp(3, measuredAt);
-                        ins.setString(4, sev);
-                        ins.setString(5, desc);
-                        opened += ins.executeUpdate();
-                        selAlarmOpen.setInt(1, deviceId);
-                        selAlarmOpen.setString(2, eventType);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId == null) {
-                            insAlarm.setInt(1, deviceId);
-                            insAlarm.setString(2, eventType);
-                            insAlarm.setString(3, sev);
-                            insAlarm.setTimestamp(4, measuredAt);
-                            insAlarm.setString(5, desc);
-                            insAlarm.executeUpdate();
-                        }
-                    }
-                } else {
-                    if (openEventId != null) {
-                        close.setTimestamp(1, measuredAt);
-                        close.setTimestamp(2, measuredAt);
-                        close.setTimestamp(3, measuredAt);
-                        close.setLong(4, openEventId.longValue());
-                        closed += close.executeUpdate();
-                        selAlarmOpen.setInt(1, deviceId);
-                        selAlarmOpen.setString(2, eventType);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId != null) {
-                            clearAlarm.setTimestamp(1, measuredAt);
-                            clearAlarm.setLong(2, openAlarmId.longValue());
-                            clearAlarm.executeUpdate();
-                        }
-                    }
-                }
+                String desc = buildGroupedAlarmDescription("OCGR", plcId, pointId, diAddress, bitValues, itemName, panelName);
+                OpenCloseCount count = applyGroupedDiAlarm(selOpen, ins, close, selAlarmOpen, insAlarm, clearAlarm, measuredAt, deviceId, eventType, desc, allOn);
+                opened += count.opened;
+                closed += count.closed;
             }
 
             for (Map<String, Object> g : ovrGroups.values()) {
@@ -1104,64 +987,39 @@
                 String tagKey = compactEventToken(normalizeTagKey(tagName), "DI", "OVR");
                 String eventType = tagKey.isEmpty() ? "DI_OVR_ALL" : ("DI_OVR_ALL_" + tagKey);
 
-                selOpen.setInt(1, deviceId);
-                selOpen.setString(2, eventType);
-                Long openEventId = null;
-                try (ResultSet rs = selOpen.executeQuery()) {
-                    if (rs.next()) openEventId = rs.getLong(1);
-                }
-
-                if (allOn) {
-                    if (openEventId == null) {
-                        String desc = "PLC " + plcId + " OVR ALL ON: point=" + pointId +
-                                      ", addr=" + diAddress +
-                                      ", bits=" + String.join(",", bitValues) +
-                                      ", item=" + itemName + ", panel=" + panelName;
-                        String sev = "ALARM";
-                        ins.setInt(1, deviceId);
-                        ins.setString(2, eventType);
-                        ins.setTimestamp(3, measuredAt);
-                        ins.setString(4, sev);
-                        ins.setString(5, desc);
-                        opened += ins.executeUpdate();
-                        selAlarmOpen.setInt(1, deviceId);
-                        selAlarmOpen.setString(2, eventType);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId == null) {
-                            insAlarm.setInt(1, deviceId);
-                            insAlarm.setString(2, eventType);
-                            insAlarm.setString(3, sev);
-                            insAlarm.setTimestamp(4, measuredAt);
-                            insAlarm.setString(5, desc);
-                            insAlarm.executeUpdate();
-                        }
-                    }
-                } else {
-                    if (openEventId != null) {
-                        close.setTimestamp(1, measuredAt);
-                        close.setTimestamp(2, measuredAt);
-                        close.setTimestamp(3, measuredAt);
-                        close.setLong(4, openEventId.longValue());
-                        closed += close.executeUpdate();
-                        selAlarmOpen.setInt(1, deviceId);
-                        selAlarmOpen.setString(2, eventType);
-                        Long openAlarmId = null;
-                        try (ResultSet rsA = selAlarmOpen.executeQuery()) {
-                            if (rsA.next()) openAlarmId = rsA.getLong(1);
-                        }
-                        if (openAlarmId != null) {
-                            clearAlarm.setTimestamp(1, measuredAt);
-                            clearAlarm.setLong(2, openAlarmId.longValue());
-                            clearAlarm.executeUpdate();
-                        }
-                    }
-                }
+                String desc = buildGroupedAlarmDescription("OVR", plcId, pointId, diAddress, bitValues, itemName, panelName);
+                OpenCloseCount count = applyGroupedDiAlarm(selOpen, ins, close, selAlarmOpen, insAlarm, clearAlarm, measuredAt, deviceId, eventType, desc, allOn);
+                opened += count.opened;
+                closed += count.closed;
             }
         }
         return new int[]{opened, closed};
+    }
+
+    private static DiRequestPayload parseDiRequest(javax.servlet.http.HttpServletRequest req) {
+        DiRequestPayload payload = new DiRequestPayload();
+        payload.plcId = parseIntSafe(req.getParameter("plc_id"), 0);
+        long measuredAtMs = parseLongSafe(req.getParameter("measured_at_ms"), System.currentTimeMillis());
+        payload.measuredAt = new Timestamp(measuredAtMs);
+        payload.rows = parseRows(req.getParameter("rows"));
+        return payload;
+    }
+
+    private static AiRequestPayload parseAiRequest(javax.servlet.http.HttpServletRequest req) {
+        AiRequestPayload payload = new AiRequestPayload();
+        payload.plcId = parseIntSafe(req.getParameter("plc_id"), 0);
+        long measuredAtMs = parseLongSafe(req.getParameter("measured_at_ms"), System.currentTimeMillis());
+        payload.measuredAt = new Timestamp(measuredAtMs);
+        payload.rows = parseAiRows(req.getParameter("rows"));
+        return payload;
+    }
+
+    private static void writeJsonError(javax.servlet.jsp.JspWriter out, String message) throws java.io.IOException {
+        out.print("{\"ok\":false,\"error\":\"" + escJson(message) + "\"}");
+    }
+
+    private static void writeJsonCounts(javax.servlet.jsp.JspWriter out, int opened, int closed, int rows) throws java.io.IOException {
+        out.print("{\"ok\":true,\"opened\":" + opened + ",\"closed\":" + closed + ",\"rows\":" + rows + "}");
     }
 %>
 <%
@@ -1170,7 +1028,7 @@
 
     String action = request.getParameter("action");
     if (action == null || action.trim().isEmpty()) {
-        out.print("{\"ok\":false,\"error\":\"action is required\"}");
+        writeJsonError(out, "action is required");
         return;
     }
 
@@ -1181,53 +1039,45 @@
 
     if ("process_di".equalsIgnoreCase(action)) {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
-            out.print("{\"ok\":false,\"error\":\"POST method is required\"}");
+            writeJsonError(out, "POST method is required");
             return;
         }
 
-        int plcId = parseIntSafe(request.getParameter("plc_id"), 0);
-        if (plcId <= 0) {
-            out.print("{\"ok\":false,\"error\":\"plc_id is required\"}");
+        DiRequestPayload diReq = parseDiRequest(request);
+        if (diReq.plcId <= 0) {
+            writeJsonError(out, "plc_id is required");
             return;
         }
-
-        long measuredAtMs = parseLongSafe(request.getParameter("measured_at_ms"), System.currentTimeMillis());
-        String rawRows = request.getParameter("rows");
-        List<Map<String, Object>> diRows = parseRows(rawRows);
 
         try {
-            int[] result = processDiEvents(plcId, diRows, new Timestamp(measuredAtMs));
-            out.print("{\"ok\":true,\"opened\":" + result[0] + ",\"closed\":" + result[1] + ",\"rows\":" + diRows.size() + "}");
+            int[] result = processDiEvents(diReq.plcId, diReq.rows, diReq.measuredAt);
+            writeJsonCounts(out, result[0], result[1], diReq.rows.size());
         } catch (Exception e) {
-            out.print("{\"ok\":false,\"error\":\"" + escJson(e.getMessage()) + "\"}");
+            writeJsonError(out, e.getMessage());
         }
         return;
     }
 
     if ("process_ai".equalsIgnoreCase(action)) {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
-            out.print("{\"ok\":false,\"error\":\"POST method is required\"}");
+            writeJsonError(out, "POST method is required");
             return;
         }
 
-        int plcId = parseIntSafe(request.getParameter("plc_id"), 0);
-        if (plcId <= 0) {
-            out.print("{\"ok\":false,\"error\":\"plc_id is required\"}");
+        AiRequestPayload aiReq = parseAiRequest(request);
+        if (aiReq.plcId <= 0) {
+            writeJsonError(out, "plc_id is required");
             return;
         }
-
-        long measuredAtMs = parseLongSafe(request.getParameter("measured_at_ms"), System.currentTimeMillis());
-        String rawRows = request.getParameter("rows");
-        List<AiRow> aiRows = parseAiRows(rawRows);
 
         try {
-            int[] result = processAiEvents(plcId, aiRows, new Timestamp(measuredAtMs));
-            out.print("{\"ok\":true,\"opened\":" + result[0] + ",\"closed\":" + result[1] + ",\"rows\":" + aiRows.size() + "}");
+            int[] result = processAiEvents(aiReq.plcId, aiReq.rows, aiReq.measuredAt);
+            writeJsonCounts(out, result[0], result[1], aiReq.rows.size());
         } catch (Exception e) {
-            out.print("{\"ok\":false,\"error\":\"" + escJson(e.getMessage()) + "\"}");
+            writeJsonError(out, e.getMessage());
         }
         return;
     }
 
-    out.print("{\"ok\":false,\"error\":\"unknown action\"}");
+    writeJsonError(out, "unknown action");
 %>

@@ -2,25 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconn.jsp" %>
-<%!
-    private static String h(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '&': out.append("&amp;"); break;
-                case '<': out.append("&lt;"); break;
-                case '>': out.append("&gt;"); break;
-                case '"': out.append("&quot;"); break;
-                case '\'': out.append("&#39;"); break;
-                default: out.append(c);
-            }
-        }
-        return out.toString();
-    }
-%>
+<%@ include file="../includes/epms_html.jspf" %>
 <%
     String plcParam = request.getParameter("plc_id");
     String meterParam = request.getParameter("meter_id");

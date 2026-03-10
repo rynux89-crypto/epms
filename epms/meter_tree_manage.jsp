@@ -54,26 +54,192 @@
         }
         return out.toString();
     }
+
+    private static class MeterTreeRequest {
+        String action;
+        Integer relationId;
+        Integer parentId;
+        Integer childId;
+        Integer sortOrder;
+        boolean isActive;
+        String note;
+    }
+
+    private static class MeterTreePageContext {
+        Integer editId;
+        Integer parentFilterId;
+        String childPanelQ;
+        Integer addParentId;
+        String parentFilterQs;
+        String childPanelQEncoded;
+        String childPanelFilterQs;
+    }
+
+    private static MeterTreePageContext buildMeterTreePageContext(javax.servlet.http.HttpServletRequest request) {
+        MeterTreePageContext ctx = new MeterTreePageContext();
+        ctx.editId = toInt(request.getParameter("edit_id"));
+        ctx.parentFilterId = toInt(request.getParameter("parent_filter"));
+        ctx.childPanelQ = request.getParameter("child_panel_q");
+        if (ctx.childPanelQ == null) ctx.childPanelQ = "";
+        ctx.childPanelQ = ctx.childPanelQ.trim();
+        ctx.addParentId = toInt(request.getParameter("add_parent_id"));
+        if (ctx.addParentId == null) ctx.addParentId = toInt(request.getParameter("parent_meter_id"));
+        ctx.parentFilterQs = (ctx.parentFilterId == null) ? "" : ("&parent_filter=" + ctx.parentFilterId);
+        ctx.childPanelQEncoded = "";
+        try { ctx.childPanelQEncoded = URLEncoder.encode(ctx.childPanelQ, "UTF-8"); } catch (Exception ignore) {}
+        ctx.childPanelFilterQs = ctx.childPanelQ.isEmpty() ? "" : ("&child_panel_q=" + ctx.childPanelQEncoded);
+        return ctx;
+    }
+
+    private static MeterTreeRequest buildMeterTreeRequest(javax.servlet.http.HttpServletRequest request) {
+        MeterTreeRequest req = new MeterTreeRequest();
+        req.action = request.getParameter("action");
+        req.relationId = toInt(request.getParameter("relation_id"));
+        req.parentId = toInt(request.getParameter("parent_meter_id"));
+        req.childId = toInt(request.getParameter("child_meter_id"));
+        req.sortOrder = toInt(request.getParameter("sort_order"));
+        req.isActive = toBool(request.getParameter("is_active"));
+        req.note = request.getParameter("note");
+        if (req.note != null) {
+            req.note = req.note.trim();
+            if (req.note.isEmpty()) req.note = null;
+        }
+        return req;
+    }
+
+    private static String buildChildPanelsAjaxJson(Connection conn, Integer parentFilterId) throws Exception {
+        StringBuilder ajaxSql = new StringBuilder();
+        ajaxSql.append("SELECT DISTINCT LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) AS panel_name ")
+              .append("FROM dbo.meter_tree t ")
+              .append("LEFT JOIN dbo.meters cm ON cm.meter_id = t.child_meter_id ")
+              .append("WHERE LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) <> '' ");
+        List<Object> ajaxParams = new ArrayList<>();
+        if (parentFilterId != null) {
+            ajaxSql.append("AND t.parent_meter_id = ? ");
+            ajaxParams.add(parentFilterId);
+        }
+        ajaxSql.append("ORDER BY panel_name");
+
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true,\"panels\":[");
+        boolean first = true;
+        try (PreparedStatement ps = conn.prepareStatement(ajaxSql.toString())) {
+            for (int i = 0; i < ajaxParams.size(); i++) ps.setObject(i + 1, ajaxParams.get(i));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String p = rs.getString("panel_name");
+                    if (p == null) continue;
+                    p = p.trim();
+                    if (p.isEmpty()) continue;
+                    if (!first) json.append(',');
+                    json.append('"').append(j(p)).append('"');
+                    first = false;
+                }
+            }
+        }
+        json.append("]}");
+        return json.toString();
+    }
+
+    private static String validateMeterTreeRequest(MeterTreeRequest req) {
+        if (req == null) return "요청이 올바르지 않습니다.";
+        if ("add".equalsIgnoreCase(req.action) || "update".equalsIgnoreCase(req.action)) {
+            if (req.parentId == null || req.childId == null) return "부모/자식 계측기는 필수입니다.";
+            if (req.parentId.intValue() == req.childId.intValue()) return "부모와 자식은 동일할 수 없습니다.";
+        }
+        if ("update".equalsIgnoreCase(req.action) || "delete".equalsIgnoreCase(req.action)) {
+            if (req.relationId == null) return ("delete".equalsIgnoreCase(req.action) ? "삭제 대상 relation_id가 없습니다." : "수정 대상 relation_id가 없습니다.");
+        }
+        return null;
+    }
+
+    private static String validateMeterTreeCycle(Connection conn, MeterTreeRequest req) throws Exception {
+        String cycleSql =
+            "WITH g AS ( " +
+            "  SELECT parent_meter_id, child_meter_id FROM dbo.meter_tree " +
+            "  WHERE is_active = 1 " +
+            ("update".equalsIgnoreCase(req.action) ? "    AND relation_id <> ? " : "") +
+            "), r AS ( " +
+            "  SELECT parent_meter_id, child_meter_id FROM g WHERE parent_meter_id = ? " +
+            "  UNION ALL " +
+            "  SELECT g.parent_meter_id, g.child_meter_id " +
+            "  FROM g INNER JOIN r ON g.parent_meter_id = r.child_meter_id " +
+            ") " +
+            "SELECT TOP 1 1 FROM r WHERE child_meter_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(cycleSql)) {
+            int p = 1;
+            if ("update".equalsIgnoreCase(req.action)) {
+                ps.setInt(p++, req.relationId.intValue());
+            }
+            ps.setInt(p++, req.childId.intValue());
+            ps.setInt(p++, req.parentId.intValue());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return "순환 참조가 발생합니다. (자식 아래로 부모가 이미 연결됨)";
+            }
+        }
+        return null;
+    }
+
+    private static String handleMeterTreeAdd(Connection conn, MeterTreeRequest req) {
+        String insSql =
+            "INSERT INTO dbo.meter_tree " +
+            "(parent_meter_id, child_meter_id, is_active, sort_order, note, updated_at) " +
+            "VALUES (?, ?, ?, ?, ?, sysutcdatetime())";
+        try (PreparedStatement ps = conn.prepareStatement(insSql)) {
+            ps.setInt(1, req.parentId.intValue());
+            ps.setInt(2, req.childId.intValue());
+            ps.setBoolean(3, req.isActive);
+            if (req.sortOrder == null) ps.setNull(4, Types.INTEGER); else ps.setInt(4, req.sortOrder.intValue());
+            if (req.note == null) ps.setNull(5, Types.NVARCHAR); else ps.setString(5, req.note);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleMeterTreeUpdate(Connection conn, MeterTreeRequest req) {
+        String updSql =
+            "UPDATE dbo.meter_tree " +
+            "SET parent_meter_id=?, child_meter_id=?, is_active=?, sort_order=?, note=?, updated_at=sysutcdatetime() " +
+            "WHERE relation_id=?";
+        try (PreparedStatement ps = conn.prepareStatement(updSql)) {
+            ps.setInt(1, req.parentId.intValue());
+            ps.setInt(2, req.childId.intValue());
+            ps.setBoolean(3, req.isActive);
+            if (req.sortOrder == null) ps.setNull(4, Types.INTEGER); else ps.setInt(4, req.sortOrder.intValue());
+            if (req.note == null) ps.setNull(5, Types.NVARCHAR); else ps.setString(5, req.note);
+            ps.setInt(6, req.relationId.intValue());
+            int changed = ps.executeUpdate();
+            return changed == 0 ? "수정 대상이 없습니다." : null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleMeterTreeDelete(Connection conn, MeterTreeRequest req) {
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.meter_tree WHERE relation_id=?")) {
+            ps.setInt(1, req.relationId.intValue());
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
 %>
 <%
     request.setCharacterEncoding("UTF-8");
 
     String msg = request.getParameter("msg");
     String err = null;
-    Integer editId = toInt(request.getParameter("edit_id"));
-    Integer parentFilterId = toInt(request.getParameter("parent_filter"));
-    String childPanelQ = request.getParameter("child_panel_q");
-    if (childPanelQ == null) childPanelQ = "";
-    childPanelQ = childPanelQ.trim();
-    Integer addParentId = toInt(request.getParameter("add_parent_id"));
-    if (addParentId == null) addParentId = toInt(request.getParameter("parent_meter_id"));
-    String parentFilterQs = (parentFilterId == null) ? "" : ("&parent_filter=" + parentFilterId);
-    String childPanelQEncoded = "";
-    try { childPanelQEncoded = URLEncoder.encode(childPanelQ, "UTF-8"); } catch (Exception ignore) {}
-    String childPanelFilterQs = "";
-    if (!childPanelQ.isEmpty()) {
-        childPanelFilterQs = "&child_panel_q=" + childPanelQEncoded;
-    }
+    MeterTreePageContext pageCtx = buildMeterTreePageContext(request);
+    Integer editId = pageCtx.editId;
+    Integer parentFilterId = pageCtx.parentFilterId;
+    String childPanelQ = pageCtx.childPanelQ;
+    Integer addParentId = pageCtx.addParentId;
+    String parentFilterQs = pageCtx.parentFilterQs;
+    String childPanelQEncoded = pageCtx.childPanelQEncoded;
+    String childPanelFilterQs = pageCtx.childPanelFilterQs;
 
     List<Map<String, Object>> meters = new ArrayList<>();
     List<Map<String, Object>> rows = new ArrayList<>();
@@ -87,37 +253,7 @@
         response.setContentType("application/json;charset=UTF-8");
         Integer ajaxParentFilterId = toInt(request.getParameter("parent_filter"));
         try {
-            StringBuilder ajaxSql = new StringBuilder();
-            ajaxSql.append("SELECT DISTINCT LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) AS panel_name ")
-                  .append("FROM dbo.meter_tree t ")
-                  .append("LEFT JOIN dbo.meters cm ON cm.meter_id = t.child_meter_id ")
-                  .append("WHERE LTRIM(RTRIM(ISNULL(cm.panel_name, ''))) <> '' ");
-            List<Object> ajaxParams = new ArrayList<>();
-            if (ajaxParentFilterId != null) {
-                ajaxSql.append("AND t.parent_meter_id = ? ");
-                ajaxParams.add(ajaxParentFilterId);
-            }
-            ajaxSql.append("ORDER BY panel_name");
-
-            StringBuilder json = new StringBuilder();
-            json.append("{\"ok\":true,\"panels\":[");
-            boolean first = true;
-            try (PreparedStatement ps = conn.prepareStatement(ajaxSql.toString())) {
-                for (int i = 0; i < ajaxParams.size(); i++) ps.setObject(i + 1, ajaxParams.get(i));
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        String p = rs.getString("panel_name");
-                        if (p == null) continue;
-                        p = p.trim();
-                        if (p.isEmpty()) continue;
-                        if (!first) json.append(',');
-                        json.append('"').append(j(p)).append('"');
-                        first = false;
-                    }
-                }
-            }
-            json.append("]}");
-            out.print(json.toString());
+            out.print(buildChildPanelsAjaxJson(conn, ajaxParentFilterId));
         } catch (Exception ex) {
             out.print("{\"ok\":false,\"error\":\"" + j(ex.getMessage()) + "\"}");
         } finally {
@@ -153,116 +289,33 @@
 
         if ("POST".equalsIgnoreCase(request.getMethod())) {
             try {
-                String action = request.getParameter("action");
-                if (action == null) action = "";
-
-            if ("add".equalsIgnoreCase(action) || "update".equalsIgnoreCase(action)) {
-                Integer parentId = toInt(request.getParameter("parent_meter_id"));
-                Integer childId = toInt(request.getParameter("child_meter_id"));
-                Integer sortOrder = toInt(request.getParameter("sort_order"));
-                boolean isActive = toBool(request.getParameter("is_active"));
-                String note = request.getParameter("note");
-                if (note != null) {
-                    note = note.trim();
-                    if (note.isEmpty()) note = null;
-                }
-
-                if (parentId == null || childId == null) {
-                    err = "부모/자식 계측기는 필수입니다.";
-                } else if (parentId.intValue() == childId.intValue()) {
-                    err = "부모와 자식은 동일할 수 없습니다.";
-                } else {
-                    String cycleSql =
-                        "WITH g AS ( " +
-                        "  SELECT parent_meter_id, child_meter_id FROM dbo.meter_tree " +
-                        "  WHERE is_active = 1 " +
-                        ("update".equalsIgnoreCase(action) ? "    AND relation_id <> ? " : "") +
-                        "), r AS ( " +
-                        "  SELECT parent_meter_id, child_meter_id FROM g WHERE parent_meter_id = ? " +
-                        "  UNION ALL " +
-                        "  SELECT g.parent_meter_id, g.child_meter_id " +
-                        "  FROM g INNER JOIN r ON g.parent_meter_id = r.child_meter_id " +
-                        ") " +
-                        "SELECT TOP 1 1 FROM r WHERE child_meter_id = ?";
-
-                    boolean hasCycle = false;
-                    try (PreparedStatement ps = conn.prepareStatement(cycleSql)) {
-                        int p = 1;
-                        if ("update".equalsIgnoreCase(action)) {
-                            Integer relationId = toInt(request.getParameter("relation_id"));
-                            if (relationId == null) {
-                                err = "수정 대상 relation_id가 없습니다.";
-                            } else {
-                                ps.setInt(p++, relationId.intValue());
-                            }
-                        }
-                        if (err == null) {
-                            ps.setInt(p++, childId.intValue());
-                            ps.setInt(p++, parentId.intValue());
-                            try (ResultSet rs = ps.executeQuery()) {
-                                hasCycle = rs.next();
-                            }
-                        }
-                    }
-
-                    if (err == null && hasCycle) {
-                        err = "순환 참조가 발생합니다. (자식 아래로 부모가 이미 연결됨)";
-                    }
-
+                MeterTreeRequest formReq = buildMeterTreeRequest(request);
+                if ("add".equalsIgnoreCase(formReq.action) || "update".equalsIgnoreCase(formReq.action)) {
+                    err = validateMeterTreeRequest(formReq);
+                    if (err == null) err = validateMeterTreeCycle(conn, formReq);
                     if (err == null) {
-                        if ("add".equalsIgnoreCase(action)) {
-                            String insSql =
-                                "INSERT INTO dbo.meter_tree " +
-                                "(parent_meter_id, child_meter_id, is_active, sort_order, note, updated_at) " +
-                                "VALUES (?, ?, ?, ?, ?, sysutcdatetime())";
-                            try (PreparedStatement ps = conn.prepareStatement(insSql)) {
-                                ps.setInt(1, parentId.intValue());
-                                ps.setInt(2, childId.intValue());
-                                ps.setBoolean(3, isActive);
-                                if (sortOrder == null) ps.setNull(4, Types.INTEGER); else ps.setInt(4, sortOrder.intValue());
-                                if (note == null) ps.setNull(5, Types.NVARCHAR); else ps.setString(5, note);
-                                ps.executeUpdate();
+                        if ("add".equalsIgnoreCase(formReq.action)) {
+                            err = handleMeterTreeAdd(conn, formReq);
+                            if (err == null) {
+                                response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("등록 완료", "UTF-8") + parentFilterQs + childPanelFilterQs + "&add_parent_id=" + formReq.parentId);
+                                return;
                             }
-                            response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("등록 완료", "UTF-8") + parentFilterQs + childPanelFilterQs + "&add_parent_id=" + parentId);
-                            return;
                         } else {
-                            Integer relationId = toInt(request.getParameter("relation_id"));
-                            if (relationId == null) {
-                                err = "수정 대상 relation_id가 없습니다.";
-                            } else {
-                                String updSql =
-                                    "UPDATE dbo.meter_tree " +
-                                    "SET parent_meter_id=?, child_meter_id=?, is_active=?, sort_order=?, note=?, updated_at=sysutcdatetime() " +
-                                    "WHERE relation_id=?";
-                                try (PreparedStatement ps = conn.prepareStatement(updSql)) {
-                                    ps.setInt(1, parentId.intValue());
-                                    ps.setInt(2, childId.intValue());
-                                    ps.setBoolean(3, isActive);
-                                    if (sortOrder == null) ps.setNull(4, Types.INTEGER); else ps.setInt(4, sortOrder.intValue());
-                                    if (note == null) ps.setNull(5, Types.NVARCHAR); else ps.setString(5, note);
-                                    ps.setInt(6, relationId.intValue());
-                                    int changed = ps.executeUpdate();
-                                    if (changed == 0) err = "수정 대상이 없습니다.";
-                                }
-                                if (err == null) {
-                                    response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8") + parentFilterQs + childPanelFilterQs);
-                                    return;
-                                }
+                            err = handleMeterTreeUpdate(conn, formReq);
+                            if (err == null) {
+                                response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8") + parentFilterQs + childPanelFilterQs);
+                                return;
                             }
                         }
                     }
-                }
-                } else if ("delete".equalsIgnoreCase(action)) {
-                    Integer relationId = toInt(request.getParameter("relation_id"));
-                    if (relationId == null) {
-                        err = "삭제 대상 relation_id가 없습니다.";
-                    } else {
-                        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.meter_tree WHERE relation_id=?")) {
-                            ps.setInt(1, relationId.intValue());
-                            ps.executeUpdate();
+                } else if ("delete".equalsIgnoreCase(formReq.action)) {
+                    err = validateMeterTreeRequest(formReq);
+                    if (err == null) {
+                        err = handleMeterTreeDelete(conn, formReq);
+                        if (err == null) {
+                            response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("삭제 완료", "UTF-8") + parentFilterQs + childPanelFilterQs);
+                            return;
                         }
-                        response.sendRedirect("meter_tree_manage.jsp?msg=" + URLEncoder.encode("삭제 완료", "UTF-8") + parentFilterQs + childPanelFilterQs);
-                        return;
                     }
                 }
             } catch (Exception postEx) {

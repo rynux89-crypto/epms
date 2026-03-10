@@ -2,25 +2,8 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
 <%!
-    private static String h(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '&': out.append("&amp;"); break;
-                case '<': out.append("&lt;"); break;
-                case '>': out.append("&gt;"); break;
-                case '"': out.append("&quot;"); break;
-                case '\'': out.append("&#39;"); break;
-                default: out.append(c);
-            }
-        }
-        return out.toString();
-    }
-
     private static String jsq(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");

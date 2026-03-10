@@ -2,11 +2,8 @@
 <%@ page import="java.time.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
 <%!
-    private static String h(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
-    }
     private static String jsq(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", " ").replace("\n", " ");

@@ -1,9 +1,33 @@
-﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
+<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.time.*" %>
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
 <%!
+    private static class DataRetentionRequest {
+        int retentionYears;
+        String action;
+        boolean isPost;
+        boolean doBackup;
+        boolean doDelete;
+        boolean confirmedDelete;
+        String backupPath;
+        LocalDate today;
+        LocalDate cutoffDate;
+        Timestamp cutoffTimestamp;
+    }
+
+    private static class DataRetentionResult {
+        List<Map<String, String>> activeTargets = new ArrayList<>();
+        LinkedHashMap<String, Long> previewCounts = new LinkedHashMap<>();
+        long previewTotalCount = 0L;
+        long deletedTotalCount = 0L;
+        String successMsg;
+        String errorMsg;
+        String backupPathUsed;
+    }
+
     private static boolean tableExists(Connection conn, String schema, String table) throws SQLException {
         String sql = "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -30,76 +54,42 @@
         }
         return null;
     }
-%>
-<%
-    request.setCharacterEncoding("UTF-8");
 
-    int retentionYears = 5;
-    String yearsParam = request.getParameter("retention_years");
-    if (yearsParam != null) {
+    private static int parseRetentionYears(String value) {
         try {
-            int y = Integer.parseInt(yearsParam);
-            if (y == 5 || y == 7 || y == 10) retentionYears = y;
+            int y = Integer.parseInt(value);
+            if (y == 5 || y == 7 || y == 10) return y;
         } catch (Exception ignore) {}
+        return 5;
     }
 
-    LocalDate today = LocalDate.now();
-    LocalDate cutoffDate = today.minusYears(retentionYears);
-    Timestamp cutoffTs = Timestamp.valueOf(cutoffDate.atStartOfDay());
-
-    String action = request.getParameter("action");
-    boolean isPost = "POST".equalsIgnoreCase(request.getMethod());
-    boolean doBackup = isPost && "backup".equalsIgnoreCase(action);
-    boolean doDelete = isPost && "delete".equalsIgnoreCase(action);
-    boolean confirmed = "Y".equalsIgnoreCase(request.getParameter("confirm_delete"));
-
-    String backupPath = request.getParameter("backup_path");
-    if (backupPath == null || backupPath.trim().isEmpty()) {
-        backupPath = "F:\\backup\\epms_" + today + ".bak";
-    } else {
-        backupPath = backupPath.trim();
+    private static String defaultBackupPath(LocalDate today) {
+        return "F:\\backup\\epms_" + today + ".bak";
     }
 
-    List<String> candidateTables = Arrays.asList(
-        "dbo.measurements",
-        "dbo.harmonic_measurements",
-        "dbo.flicker_measurements",
-        "dbo.voltage_events",
-        "dbo.device_events",
-        "dbo.voltage_event_log",
-        "dbo.alarm_log",
-        "dbo.plc_ai_samples",
-        "dbo.plc_di_samples"
-    );
-    List<String> timeCols = Arrays.asList("measured_at", "triggered_at", "event_time", "event_at", "occurred_at", "created_at", "reg_time");
+    private static DataRetentionRequest buildDataRetentionRequest(javax.servlet.http.HttpServletRequest request) {
+        DataRetentionRequest req = new DataRetentionRequest();
+        req.retentionYears = parseRetentionYears(request.getParameter("retention_years"));
+        req.action = request.getParameter("action");
+        req.isPost = "POST".equalsIgnoreCase(request.getMethod());
+        req.doBackup = req.isPost && "backup".equalsIgnoreCase(req.action);
+        req.doDelete = req.isPost && "delete".equalsIgnoreCase(req.action);
+        req.confirmedDelete = "Y".equalsIgnoreCase(request.getParameter("confirm_delete"));
+        req.today = LocalDate.now();
+        req.cutoffDate = req.today.minusYears(req.retentionYears);
+        req.cutoffTimestamp = Timestamp.valueOf(req.cutoffDate.atStartOfDay());
 
-    List<Map<String, String>> activeTargets = new ArrayList<>();
-    LinkedHashMap<String, Long> previewCounts = new LinkedHashMap<>();
-    long previewTotalCount = 0L;
-    long deletedTotalCount = 0L;
-
-    String successMsg = null;
-    String errorMsg = null;
-    String backupPathUsed = null;
-
-    try {
-        if (doBackup) {
-            backupPathUsed = backupPath;
-            if (backupPath.length() < 3) {
-                errorMsg = "백업 경로를 확인해 주세요.";
-            } else {
-                String backupSql =
-                    "DECLARE @p nvarchar(4000) = ?; " +
-                    "DECLARE @sql nvarchar(max) = N'BACKUP DATABASE [epms] TO DISK = N''' + REPLACE(@p, '''', '''''') + N''' WITH INIT, COMPRESSION, STATS = 10'; " +
-                    "EXEC(@sql);";
-                try (PreparedStatement ps = conn.prepareStatement(backupSql)) {
-                    ps.setString(1, backupPath);
-                    ps.execute();
-                    successMsg = "DB 백업 완료: " + backupPathUsed;
-                }
-            }
+        String backupPath = request.getParameter("backup_path");
+        if (backupPath == null || backupPath.trim().isEmpty()) {
+            req.backupPath = defaultBackupPath(req.today);
+        } else {
+            req.backupPath = backupPath.trim();
         }
+        return req;
+    }
 
+    private static List<Map<String, String>> findActiveTargets(Connection conn, List<String> candidateTables, List<String> timeCols) throws SQLException {
+        List<Map<String, String>> activeTargets = new ArrayList<>();
         for (String fqtn : candidateTables) {
             String[] p = fqtn.split("\\.");
             if (p.length != 2) continue;
@@ -115,72 +105,121 @@
             target.put("timeCol", timeCol);
             activeTargets.add(target);
         }
+        return activeTargets;
+    }
 
-        for (Map<String, String> t : activeTargets) {
+    private static void refreshPreviewCounts(Connection conn, DataRetentionRequest req, DataRetentionResult result) throws SQLException {
+        result.previewCounts.clear();
+        result.previewTotalCount = 0L;
+        for (Map<String, String> t : result.activeTargets) {
             String fqtn = t.get("fqtn");
             String timeCol = t.get("timeCol");
             String cntSql = "SELECT COUNT(*) AS cnt FROM " + fqtn + " WHERE " + timeCol + " < ?";
             try (PreparedStatement ps = conn.prepareStatement(cntSql)) {
-                ps.setTimestamp(1, cutoffTs);
+                ps.setTimestamp(1, req.cutoffTimestamp);
                 try (ResultSet rs = ps.executeQuery()) {
                     long cnt = rs.next() ? rs.getLong("cnt") : 0L;
-                    previewCounts.put(fqtn, cnt);
-                    previewTotalCount += cnt;
+                    result.previewCounts.put(fqtn, cnt);
+                    result.previewTotalCount += cnt;
                 }
             }
         }
+    }
 
-        if (doDelete) {
-            if (!confirmed) {
-                errorMsg = "삭제를 확인했습니다 체크박스를 선택해 주세요.";
-            } else if (activeTargets.isEmpty()) {
-                errorMsg = "삭제 가능한 대상 테이블을 찾지 못했습니다.";
-            } else if (previewTotalCount <= 0) {
-                successMsg = "삭제 대상 데이터가 없습니다.";
-            } else {
-                boolean oldAutoCommit = conn.getAutoCommit();
-                try {
-                    conn.setAutoCommit(false);
-                    for (Map<String, String> t : activeTargets) {
-                        String fqtn = t.get("fqtn");
-                        String timeCol = t.get("timeCol");
-                        String delSql = "DELETE FROM " + fqtn + " WHERE " + timeCol + " < ?";
-                        try (PreparedStatement ps = conn.prepareStatement(delSql)) {
-                            ps.setTimestamp(1, cutoffTs);
-                            deletedTotalCount += ps.executeUpdate();
-                        }
-                    }
-                    conn.commit();
-                    successMsg = "삭제 완료: 총 " + deletedTotalCount + "건";
-                } catch (Exception ex) {
-                    try { conn.rollback(); } catch (Exception ignore) {}
-                    throw ex;
-                } finally {
-                    try { conn.setAutoCommit(oldAutoCommit); } catch (Exception ignore) {}
+    private static String executeBackup(Connection conn, String backupPath) {
+        if (backupPath == null || backupPath.length() < 3) return "백업 경로를 확인해 주세요.";
+        String backupSql =
+            "DECLARE @p nvarchar(4000) = ?; " +
+            "DECLARE @sql nvarchar(max) = N'BACKUP DATABASE [epms] TO DISK = N''' + REPLACE(@p, '''', '''''') + N''' WITH INIT, COMPRESSION, STATS = 10'; " +
+            "EXEC(@sql);";
+        try (PreparedStatement ps = conn.prepareStatement(backupSql)) {
+            ps.setString(1, backupPath);
+            ps.execute();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String executeDelete(Connection conn, DataRetentionRequest req, DataRetentionResult result) {
+        boolean oldAutoCommit = true;
+        try {
+            oldAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            result.deletedTotalCount = 0L;
+            for (Map<String, String> t : result.activeTargets) {
+                String fqtn = t.get("fqtn");
+                String timeCol = t.get("timeCol");
+                String delSql = "DELETE FROM " + fqtn + " WHERE " + timeCol + " < ?";
+                try (PreparedStatement ps = conn.prepareStatement(delSql)) {
+                    ps.setTimestamp(1, req.cutoffTimestamp);
+                    result.deletedTotalCount += ps.executeUpdate();
                 }
+            }
+            conn.commit();
+            return null;
+        } catch (Exception e) {
+            try { conn.rollback(); } catch (Exception ignore) {}
+            return e.getMessage();
+        } finally {
+            try { conn.setAutoCommit(oldAutoCommit); } catch (Exception ignore) {}
+        }
+    }
+%>
+<%
+    request.setCharacterEncoding("UTF-8");
 
-                previewCounts.clear();
-                previewTotalCount = 0L;
-                for (Map<String, String> t : activeTargets) {
-                    String fqtn = t.get("fqtn");
-                    String timeCol = t.get("timeCol");
-                    String cntSql = "SELECT COUNT(*) AS cnt FROM " + fqtn + " WHERE " + timeCol + " < ?";
-                    try (PreparedStatement ps = conn.prepareStatement(cntSql)) {
-                        ps.setTimestamp(1, cutoffTs);
-                        try (ResultSet rs = ps.executeQuery()) {
-                            long cnt = rs.next() ? rs.getLong("cnt") : 0L;
-                            previewCounts.put(fqtn, cnt);
-                            previewTotalCount += cnt;
-                        }
-                    }
+    DataRetentionRequest req = buildDataRetentionRequest(request);
+    List<String> candidateTables = Arrays.asList(
+        "dbo.measurements",
+        "dbo.harmonic_measurements",
+        "dbo.flicker_measurements",
+        "dbo.voltage_events",
+        "dbo.device_events",
+        "dbo.voltage_event_log",
+        "dbo.alarm_log",
+        "dbo.plc_ai_samples",
+        "dbo.plc_di_samples"
+    );
+    List<String> timeCols = Arrays.asList("measured_at", "triggered_at", "event_time", "event_at", "occurred_at", "created_at", "reg_time");
+    DataRetentionResult result = new DataRetentionResult();
+
+    try {
+        if (req.doBackup) {
+            result.backupPathUsed = req.backupPath;
+            String backupErr = executeBackup(conn, req.backupPath);
+            if (backupErr != null) {
+                result.errorMsg = backupErr;
+            } else {
+                result.successMsg = "DB 백업 완료: " + result.backupPathUsed;
+            }
+        }
+
+        result.activeTargets = findActiveTargets(conn, candidateTables, timeCols);
+        refreshPreviewCounts(conn, req, result);
+
+        if (req.doDelete) {
+            if (!req.confirmedDelete) {
+                result.errorMsg = "삭제를 확인했습니다 체크박스를 선택해 주세요.";
+            } else if (result.activeTargets.isEmpty()) {
+                result.errorMsg = "삭제 가능한 대상 테이블을 찾지 못했습니다.";
+            } else if (result.previewTotalCount <= 0) {
+                result.successMsg = "삭제 대상 데이터가 없습니다.";
+            } else {
+                String deleteErr = executeDelete(conn, req, result);
+                if (deleteErr != null) {
+                    result.errorMsg = deleteErr;
+                } else {
+                    result.successMsg = "삭제 완료: 총 " + result.deletedTotalCount + "건";
+                    refreshPreviewCounts(conn, req, result);
                 }
             }
         }
     } catch (Exception e) {
-        if (doBackup && backupPathUsed != null) {
-            errorMsg = "[백업 경로: " + backupPathUsed + "] " + e.getMessage();
+        if (req.doBackup && result.backupPathUsed != null) {
+            result.errorMsg = "[백업 경로: " + result.backupPathUsed + "] " + e.getMessage();
         } else {
-            errorMsg = e.getMessage();
+            result.errorMsg = e.getMessage();
         }
     } finally {
         try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
@@ -236,14 +275,14 @@
             <div class="warn-box">
                 주의: 삭제는 되돌릴 수 없습니다. 삭제 전 DB 백업을 먼저 실행하세요.
             </div>
-            <% if (successMsg != null) { %>
-            <div class="ok-box"><%= successMsg %></div>
+            <% if (result.successMsg != null) { %>
+            <div class="ok-box"><%= h(result.successMsg) %></div>
             <% } %>
-            <% if (errorMsg != null) { %>
-            <div class="err-box"><%= errorMsg %></div>
+            <% if (result.errorMsg != null) { %>
+            <div class="err-box"><%= h(result.errorMsg) %></div>
             <% } %>
-            <% if (backupPathUsed != null) { %>
-            <div class="warn-box">이번 백업 요청 경로: <span class="mono"><%= backupPathUsed %></span></div>
+            <% if (result.backupPathUsed != null) { %>
+            <div class="warn-box">이번 백업 요청 경로: <span class="mono"><%= h(result.backupPathUsed) %></span></div>
             <% } %>
         </section>
 
@@ -251,8 +290,8 @@
             <form method="post" action="">
                 <div class="row">
                     <div class="label">DB 서버 백업 경로</div>
-                    <input class="path-input mono" type="text" name="backup_path" value="<%= backupPath %>" placeholder="예: F:\backup\epms_2026-02-13.bak" />
-                    <input type="hidden" name="retention_years" value="<%= retentionYears %>" />
+                    <input class="path-input mono" type="text" name="backup_path" value="<%= h(req.backupPath) %>" placeholder="예: F:\backup\epms_2026-02-13.bak" />
+                    <input type="hidden" name="retention_years" value="<%= req.retentionYears %>" />
                     <input type="hidden" name="action" value="backup" />
                     <button type="submit" class="btn-backup" onclick="return confirm('입력한 서버 경로로 DB 백업을 실행하시겠습니까?');">DB 백업 실행</button>
                 </div>
@@ -261,14 +300,14 @@
 
         <section class="panel_s">
             <form method="post" action="">
-                <input type="hidden" name="backup_path" value="<%= backupPath %>" />
+                <input type="hidden" name="backup_path" value="<%= h(req.backupPath) %>" />
 
                 <div class="row row-tight">
                     <div class="label">보관기간</div>
                     <select name="retention_years" required>
-                        <option value="5" <%= retentionYears == 5 ? "selected" : "" %>>5년</option>
-                        <option value="7" <%= retentionYears == 7 ? "selected" : "" %>>7년</option>
-                        <option value="10" <%= retentionYears == 10 ? "selected" : "" %>>10년</option>
+                        <option value="5" <%= req.retentionYears == 5 ? "selected" : "" %>>5년</option>
+                        <option value="7" <%= req.retentionYears == 7 ? "selected" : "" %>>7년</option>
+                        <option value="10" <%= req.retentionYears == 10 ? "selected" : "" %>>10년</option>
                     </select>
                     <button type="button" class="back-btn" onclick="location.href='data_retention_manage.jsp?retention_years='+document.querySelector('select[name=retention_years]').value+'&backup_path='+encodeURIComponent(document.querySelector('input[name=backup_path]').value);">건수 다시 조회</button>
                 </div>
@@ -278,21 +317,21 @@
                         <tbody>
                         <tr>
                             <th>기준일</th>
-                            <td class="mono"><%= cutoffDate %> 00:00:00</td>
+                            <td class="mono"><%= req.cutoffDate %> 00:00:00</td>
                         </tr>
                         <tr>
                             <th>삭제 범위</th>
                             <td>기준일 이전 데이터 삭제</td>
                         </tr>
-                        <% for (Map.Entry<String, Long> e : previewCounts.entrySet()) { %>
+                        <% for (Map.Entry<String, Long> e : result.previewCounts.entrySet()) { %>
                         <tr>
-                            <th>삭제 대상 (<%= e.getKey() %>)</th>
+                            <th>삭제 대상 (<%= h(e.getKey()) %>)</th>
                             <td><b><%= String.format("%,d", e.getValue()) %></b> 건</td>
                         </tr>
                         <% } %>
                         <tr>
                             <th>삭제 대상 건수 (합계)</th>
-                            <td><b><%= String.format("%,d", previewTotalCount) %></b> 건</td>
+                            <td><b><%= String.format("%,d", result.previewTotalCount) %></b> 건</td>
                         </tr>
                         </tbody>
                     </table>

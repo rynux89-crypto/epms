@@ -2,23 +2,8 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
 <%! 
-  private static String escHtml(String s) {
-    if (s == null) return "";
-    StringBuilder b = new StringBuilder();
-    for (int i = 0; i < s.length(); i++) {
-      char c = s.charAt(i);
-      switch (c) {
-        case '&': b.append("&amp;"); break;
-        case '<': b.append("&lt;"); break;
-        case '>': b.append("&gt;"); break;
-        case '"': b.append("&quot;"); break;
-        case '\'': b.append("&#39;"); break;
-        default: b.append(c);
-      }
-    }
-    return b.toString();
-  }
 
   private static String escJson(String s) {
     if (s == null) return "";
@@ -379,7 +364,7 @@
         <label for="meter">Meter</label>
         <select id="meter" name="meter">
           <% for (String[] opt : meterOptions) { %>
-            <option value="<%= escHtml(opt[0]) %>" <%= Objects.equals(opt[0], selectedMeter) ? "selected" : "" %>><%= escHtml(opt[1]) %></option>
+            <option value="<%= h(opt[0]) %>" <%= Objects.equals(opt[0], selectedMeter) ? "selected" : "" %>><%= h(opt[1]) %></option>
           <% } %>
         </select>
         <button type="submit">조회</button>

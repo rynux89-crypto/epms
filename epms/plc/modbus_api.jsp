@@ -17,7 +17,6 @@
     private static final ConcurrentHashMap<Integer, CacheEntry<List<Map<String, Object>>>> DI_TAG_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CacheEntry<Map<String, Map<String, Object>>>> AI_MEAS_MATCH_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Integer> LAST_DI_VALUE_MAP = new ConcurrentHashMap<>();
-    private static final String ALARM_API_URL = "http://127.0.0.1:8080/epms/alarm_api.jsp";
     private static final long CACHE_TTL_MS = 30_000L;
 
     private static class CacheEntry<T> {
@@ -179,8 +178,75 @@
         }
     }
 
+    private static class ApiRequestContext {
+        String action;
+        String actionNorm;
+        Integer plcId;
+    }
+
     private static Connection createConn() throws Exception {
         return openDbConnection();
+    }
+
+    private static String trimToNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private static ApiRequestContext buildApiRequestContext(javax.servlet.http.HttpServletRequest req) {
+        ApiRequestContext ctx = new ApiRequestContext();
+        ctx.action = req.getParameter("action");
+        String plcParam = req.getParameter("plc_id");
+        try {
+            if (plcParam != null && !plcParam.trim().isEmpty()) ctx.plcId = Integer.parseInt(plcParam.trim());
+        } catch (Exception ignore) {
+        }
+        ctx.actionNorm = (ctx.action == null) ? "" : ctx.action.trim().toLowerCase(java.util.Locale.ROOT);
+        return ctx;
+    }
+
+    private static void traceRequestIfNeeded(javax.servlet.http.HttpServletRequest req, ApiRequestContext ctx) {
+        boolean shouldTrace = "read".equals(ctx.actionNorm) ||
+                              "start_polling".equals(ctx.actionNorm) ||
+                              "stop_polling".equals(ctx.actionNorm);
+        if (!shouldTrace) return;
+        String remoteAddr = clipForLog(req.getRemoteAddr(), 64);
+        String xff = clipForLog(req.getHeader("X-Forwarded-For"), 120);
+        String ua = clipForLog(req.getHeader("User-Agent"), 220);
+        String referer = clipForLog(req.getHeader("Referer"), 220);
+        String query = clipForLog(req.getQueryString(), 220);
+        String method = clipForLog(req.getMethod(), 10);
+        System.out.println(
+            "[modbus_api] ts=" + new java.sql.Timestamp(System.currentTimeMillis()) +
+            " action=" + ctx.actionNorm +
+            " plc_id=" + (ctx.plcId == null ? "-" : String.valueOf(ctx.plcId)) +
+            " method=" + method +
+            " remote=" + remoteAddr +
+            " xff=" + xff +
+            " referer=" + referer +
+            " ua=" + ua +
+            " query=" + query
+        );
+    }
+
+    private static String resolveAlarmApiUrl(javax.servlet.http.HttpServletRequest req) {
+        String env = trimToNull(System.getenv("EPMS_ALARM_API_URL"));
+        if (env != null) return env;
+
+        if (req == null) return "http://127.0.0.1:8080/epms/alarm_api.jsp";
+
+        String scheme = trimToNull(req.getScheme());
+        String host = trimToNull(req.getServerName());
+        String ctx = trimToNull(req.getContextPath());
+        int port = req.getServerPort();
+        if (scheme == null) scheme = "http";
+        if (host == null) host = "127.0.0.1";
+        if (ctx == null) ctx = "";
+        boolean defaultPort = ("http".equalsIgnoreCase(scheme) && port == 80)
+                || ("https".equalsIgnoreCase(scheme) && port == 443);
+        String portPart = defaultPort ? "" : (":" + port);
+        return scheme + "://" + host + portPart + ctx + "/epms/alarm_api.jsp";
     }
 
     private static PollState getPollState(PollRuntime rt, int plcId) {
@@ -485,6 +551,41 @@
         return def;
     }
 
+    private static int[] invokeAlarmApiPersist(String actionName, String body) throws Exception {
+        HttpURLConnection con = null;
+        try {
+            URL u = new URL(resolveAlarmApiUrl(null));
+            con = (HttpURLConnection)u.openConnection();
+            con.setRequestMethod("POST");
+            con.setConnectTimeout(3000);
+            con.setReadTimeout(6000);
+            con.setDoOutput(true);
+            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+            byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try (OutputStream os = con.getOutputStream()) {
+                os.write(bytes);
+            }
+
+            int code = con.getResponseCode();
+            InputStream is = (code >= 200 && code < 300) ? con.getInputStream() : con.getErrorStream();
+            StringBuilder sb = new StringBuilder();
+            if (is != null) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                }
+            }
+            String json = sb.toString();
+            boolean ok = parseJsonBoolField(json, "ok", false);
+            if (!ok) throw new Exception("alarm_api " + actionName + " failed: " + json);
+            int opened = parseJsonIntField(json, "opened", 0);
+            int closed = parseJsonIntField(json, "closed", 0);
+            return new int[]{opened, closed};
+        } finally {
+            if (con != null) con.disconnect();
+        }
+    }
+
     private static int[] persistDiRowsViaAlarmApi(int plcId, List<Map<String, Object>> diRows, Timestamp measuredAt) throws Exception {
         if (diRows == null || diRows.isEmpty()) return new int[]{0, 0};
 
@@ -511,39 +612,7 @@
                 "&plc_id=" + plcId +
                 "&measured_at_ms=" + measuredAt.getTime() +
                 "&rows=" + URLEncoder.encode(rows.toString(), "UTF-8");
-
-        HttpURLConnection con = null;
-        try {
-            URL u = new URL(ALARM_API_URL);
-            con = (HttpURLConnection)u.openConnection();
-            con.setRequestMethod("POST");
-            con.setConnectTimeout(3000);
-            con.setReadTimeout(6000);
-            con.setDoOutput(true);
-            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-            byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            try (OutputStream os = con.getOutputStream()) {
-                os.write(bytes);
-            }
-
-            int code = con.getResponseCode();
-            InputStream is = (code >= 200 && code < 300) ? con.getInputStream() : con.getErrorStream();
-            StringBuilder sb = new StringBuilder();
-            if (is != null) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = br.readLine()) != null) sb.append(line);
-                }
-            }
-            String json = sb.toString();
-            boolean ok = parseJsonBoolField(json, "ok", false);
-            if (!ok) throw new Exception("alarm_api process_di failed: " + json);
-            int opened = parseJsonIntField(json, "opened", 0);
-            int closed = parseJsonIntField(json, "closed", 0);
-            return new int[]{opened, closed};
-        } finally {
-            if (con != null) con.disconnect();
-        }
+        return invokeAlarmApiPersist("process_di", body);
     }
 
     private static int[] persistAiRowsViaAlarmApi(int plcId, List<Map<String, Object>> aiRows, Timestamp measuredAt) throws Exception {
@@ -572,39 +641,7 @@
                 "&plc_id=" + plcId +
                 "&measured_at_ms=" + measuredAt.getTime() +
                 "&rows=" + URLEncoder.encode(rows.toString(), "UTF-8");
-
-        HttpURLConnection con = null;
-        try {
-            URL u = new URL(ALARM_API_URL);
-            con = (HttpURLConnection)u.openConnection();
-            con.setRequestMethod("POST");
-            con.setConnectTimeout(3000);
-            con.setReadTimeout(6000);
-            con.setDoOutput(true);
-            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-            byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            try (OutputStream os = con.getOutputStream()) {
-                os.write(bytes);
-            }
-
-            int code = con.getResponseCode();
-            InputStream is = (code >= 200 && code < 300) ? con.getInputStream() : con.getErrorStream();
-            StringBuilder sb = new StringBuilder();
-            if (is != null) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = br.readLine()) != null) sb.append(line);
-                }
-            }
-            String json = sb.toString();
-            boolean ok = parseJsonBoolField(json, "ok", false);
-            if (!ok) throw new Exception("alarm_api process_ai failed: " + json);
-            int opened = parseJsonIntField(json, "opened", 0);
-            int closed = parseJsonIntField(json, "closed", 0);
-            return new int[]{opened, closed};
-        } finally {
-            if (con != null) con.disconnect();
-        }
+        return invokeAlarmApiPersist("process_ai", body);
     }
 
     private static PlcConfig loadPlcConfig(Connection conn, int plcId) throws Exception {
@@ -1438,6 +1475,78 @@
         st.running = false;
     }
 
+    private static void resetPollState(PollState st, int pollingMs) {
+        st.attemptCount.set(0L);
+        st.successCount.set(0L);
+        st.readCount.set(0L);
+        st.diReadCount.set(0L);
+        st.aiReadCount.set(0L);
+        st.readDurationSumMs.set(0L);
+        st.lastReadDurationMs = 0L;
+        st.lastDiReadMs = 0L;
+        st.lastAiReadMs = 0L;
+        st.lastProcMs = 0L;
+        st.lastRows = Collections.emptyList();
+        st.lastDiRows = Collections.emptyList();
+        st.lastRunAt = 0L;
+        st.running = true;
+        st.pollingMs = pollingMs;
+        st.lastInfo = "";
+        st.lastError = "";
+    }
+
+    private static boolean applyInvalidPlcState(PollState st, PlcConfig cfg) {
+        if (!cfg.exists || cfg.ip == null) {
+            st.lastError = "Selected PLC config not found.";
+            st.lastRunAt = System.currentTimeMillis();
+            return true;
+        }
+        if (!cfg.enabled) {
+            st.lastError = "Selected PLC is inactive.";
+            st.lastRunAt = System.currentTimeMillis();
+            return true;
+        }
+        return false;
+    }
+
+    private static void applyPollFailure(PollState st, Exception e) {
+        e.printStackTrace();
+        st.lastError = e.getMessage();
+        st.lastRunAt = System.currentTimeMillis();
+    }
+
+    private static void applyDiPollSuccess(PollState st, int plcId, DiReadData diData, int[] diPersist, long usedElapsed) {
+        st.successCount.incrementAndGet();
+        st.readCount.incrementAndGet();
+        st.diReadCount.incrementAndGet();
+        st.lastReadDurationMs = usedElapsed;
+        st.lastDiReadMs = diData.durationMs;
+        st.lastProcMs = 0L;
+        st.readDurationSumMs.addAndGet(usedElapsed);
+        st.lastDiRows = new ArrayList<>(diData.rows);
+        st.lastInfo = "DI read success. PLC " + plcId + ", di_tags=" + diData.rows.size() +
+                      ", events_opened=" + diPersist[0] + ", events_closed=" + diPersist[1];
+        st.lastError = "";
+        st.lastRunAt = System.currentTimeMillis();
+    }
+
+    private static void applyAiPollSuccess(PollState st, int plcId, AiReadData aiData, int[] aiPersist, int[] aiAlarmPersist, long usedElapsed) {
+        st.successCount.incrementAndGet();
+        st.readCount.incrementAndGet();
+        st.aiReadCount.incrementAndGet();
+        st.lastReadDurationMs = usedElapsed;
+        st.lastAiReadMs = aiData.durationMs;
+        st.lastProcMs = 0L;
+        st.readDurationSumMs.addAndGet(usedElapsed);
+        st.lastRows = new ArrayList<>(aiData.rows);
+        st.lastInfo = "AI read success. PLC " + plcId + ", meters=" + aiData.meterRead + ", total_floats=" + aiData.totalFloat +
+                      ", measurements_ins=" + aiPersist[0] + ", harmonic_ins=" + aiPersist[1] +
+                      ", flicker_ins=" + aiPersist[2] +
+                      ", ai_alarm_opened=" + aiAlarmPersist[0] + ", ai_alarm_closed=" + aiAlarmPersist[1];
+        st.lastError = "";
+        st.lastRunAt = System.currentTimeMillis();
+    }
+
     private static void clearCaches(Integer plcId) {
         if (plcId == null) {
             PLC_CONFIG_CACHE.clear();
@@ -1464,23 +1573,7 @@
     private static void startServerPolling(final PollRuntime rt, final int plcId, final int pollingMs) {
         stopServerPolling(rt, plcId);
         final PollState st = getPollState(rt, plcId);
-        st.attemptCount.set(0L);
-        st.successCount.set(0L);
-        st.readCount.set(0L);
-        st.diReadCount.set(0L);
-        st.aiReadCount.set(0L);
-        st.readDurationSumMs.set(0L);
-        st.lastReadDurationMs = 0L;
-        st.lastDiReadMs = 0L;
-        st.lastAiReadMs = 0L;
-        st.lastProcMs = 0L;
-        st.lastRows = Collections.emptyList();
-        st.lastDiRows = Collections.emptyList();
-        st.lastRunAt = 0L;
-        st.running = true;
-        st.pollingMs = pollingMs;
-        st.lastInfo = "";
-        st.lastError = "";
+        resetPollState(st, pollingMs);
 
         Runnable diTask = new Runnable() {
             @Override
@@ -1491,16 +1584,7 @@
                     long t0 = System.currentTimeMillis();
                     Timestamp measuredAt = new Timestamp(t0);
                     PlcConfig cfg = getCachedPlcConfig(plcId);
-                    if (!cfg.exists || cfg.ip == null) {
-                        st.lastError = "Selected PLC config not found.";
-                        st.lastRunAt = System.currentTimeMillis();
-                        return;
-                    }
-                    if (!cfg.enabled) {
-                        st.lastError = "Selected PLC is inactive.";
-                        st.lastRunAt = System.currentTimeMillis();
-                        return;
-                    }
+                    if (applyInvalidPlcState(st, cfg)) return;
 
                     DiReadData diData = readDiData(plcId, cfg);
                     int[] diPersist;
@@ -1510,22 +1594,9 @@
                         diPersist = persistDiRowsToDeviceEvents(plcId, diData.rows, measuredAt);
                     }
                     long usedElapsed = diData.durationMs > 0L ? diData.durationMs : Math.max(0L, System.currentTimeMillis() - t0);
-                    st.successCount.incrementAndGet();
-                    st.readCount.incrementAndGet();
-                    st.diReadCount.incrementAndGet();
-                    st.lastReadDurationMs = usedElapsed;
-                    st.lastDiReadMs = diData.durationMs;
-                    st.lastProcMs = 0L;
-                    st.readDurationSumMs.addAndGet(usedElapsed);
-                    st.lastDiRows = new ArrayList<>(diData.rows);
-                    st.lastInfo = "DI read success. PLC " + plcId + ", di_tags=" + diData.rows.size() +
-                                  ", events_opened=" + diPersist[0] + ", events_closed=" + diPersist[1];
-                    st.lastError = "";
-                    st.lastRunAt = System.currentTimeMillis();
+                    applyDiPollSuccess(st, plcId, diData, diPersist, usedElapsed);
                 } catch (Exception e) {
-                    e.printStackTrace(); // 서버 로그에 에러 출력
-                    st.lastError = e.getMessage();
-                    st.lastRunAt = System.currentTimeMillis();
+                    applyPollFailure(st, e);
                 } finally {
                     st.diInProgress.set(false);
                 }
@@ -1541,16 +1612,7 @@
                     long t0 = System.currentTimeMillis();
                     Timestamp measuredAt = new Timestamp(t0);
                     PlcConfig cfg = getCachedPlcConfig(plcId);
-                    if (!cfg.exists || cfg.ip == null) {
-                        st.lastError = "Selected PLC config not found.";
-                        st.lastRunAt = System.currentTimeMillis();
-                        return;
-                    }
-                    if (!cfg.enabled) {
-                        st.lastError = "Selected PLC is inactive.";
-                        st.lastRunAt = System.currentTimeMillis();
-                        return;
-                    }
+                    if (applyInvalidPlcState(st, cfg)) return;
 
                     AiReadData aiData = readAiData(plcId, cfg);
                     int[] aiPersist = persistAiRowsToTargetTables(aiData.rows, measuredAt);
@@ -1561,24 +1623,9 @@
                         // Keep AI polling flow alive even when alarm_api is temporarily unavailable.
                     }
                     long usedElapsed = aiData.durationMs > 0L ? aiData.durationMs : Math.max(0L, System.currentTimeMillis() - t0);
-                    st.successCount.incrementAndGet();
-                    st.readCount.incrementAndGet();
-                    st.aiReadCount.incrementAndGet();
-                    st.lastReadDurationMs = usedElapsed;
-                    st.lastAiReadMs = aiData.durationMs;
-                    st.lastProcMs = 0L;
-                    st.readDurationSumMs.addAndGet(usedElapsed);
-                    st.lastRows = new ArrayList<>(aiData.rows);
-                    st.lastInfo = "AI read success. PLC " + plcId + ", meters=" + aiData.meterRead + ", total_floats=" + aiData.totalFloat +
-                                  ", measurements_ins=" + aiPersist[0] + ", harmonic_ins=" + aiPersist[1] +
-                                  ", flicker_ins=" + aiPersist[2] +
-                                  ", ai_alarm_opened=" + aiAlarmPersist[0] + ", ai_alarm_closed=" + aiAlarmPersist[1];
-                    st.lastError = "";
-                    st.lastRunAt = System.currentTimeMillis();
+                    applyAiPollSuccess(st, plcId, aiData, aiPersist, aiAlarmPersist, usedElapsed);
                 } catch (Exception e) {
-                    e.printStackTrace(); // 서버 로그에 에러 출력
-                    st.lastError = e.getMessage();
-                    st.lastRunAt = System.currentTimeMillis();
+                    applyPollFailure(st, e);
                 } finally {
                     st.aiInProgress.set(false);
                 }
@@ -1651,153 +1698,101 @@
         }
         outJson.append("]");
     }
+
+    private static void appendPollStateJson(StringBuilder s, Integer id, PollState st, boolean includeRows) {
+        long attempt = st.attemptCount.get();
+        long success = st.successCount.get();
+        double successRate = (attempt > 0L) ? (success * 100.0d / attempt) : 0.0d;
+        double avgReadMs = (success > 0L) ? (st.readDurationSumMs.get() * 1.0d / success) : 0.0d;
+        s.append("{")
+         .append("\"plc_id\":").append(id).append(",")
+         .append("\"running\":").append(st.running ? "true" : "false").append(",")
+         .append("\"polling_ms\":").append(st.pollingMs).append(",")
+         .append("\"attempt_count\":").append(attempt).append(",")
+         .append("\"success_count\":").append(success).append(",")
+         .append("\"success_rate\":").append(String.format(java.util.Locale.US, "%.2f", successRate)).append(",")
+         .append("\"read_count\":").append(st.readCount.get()).append(",")
+         .append("\"di_read_count\":").append(st.diReadCount.get()).append(",")
+         .append("\"ai_read_count\":").append(st.aiReadCount.get()).append(",")
+         .append("\"last_read_ms\":").append(st.lastReadDurationMs).append(",")
+         .append("\"di_read_ms\":").append(st.lastDiReadMs).append(",")
+         .append("\"ai_read_ms\":").append(st.lastAiReadMs).append(",")
+         .append("\"proc_ms\":").append(st.lastProcMs).append(",")
+         .append("\"avg_read_ms\":").append(String.format(java.util.Locale.US, "%.1f", avgReadMs)).append(",")
+         .append("\"last_run_at\":").append(st.lastRunAt).append(",")
+         .append("\"last_info\":\"").append(escJson(st.lastInfo)).append("\",")
+         .append("\"last_error\":\"").append(escJson(st.lastError)).append("\"");
+        if (includeRows) {
+            s.append(",\"rows\":");
+            appendAiRowsJson(s, st.lastRows);
+            s.append(",\"di_rows\":");
+            appendDiRowsJson(s, st.lastDiRows);
+        }
+        s.append("}");
+    }
+
+    private static String buildPollingStateJson(PollRuntime pollRt, boolean includeRows) {
+        StringBuilder s = new StringBuilder();
+        s.append("{\"ok\":true,\"states\":[");
+        boolean first = true;
+        List<Integer> ids = new ArrayList<>(pollRt.states.keySet());
+        Collections.sort(ids);
+        for (Integer id : ids) {
+            PollState st = pollRt.states.get(id);
+            if (st == null) continue;
+            if (!first) s.append(",");
+            first = false;
+            appendPollStateJson(s, id, st, includeRows);
+        }
+        s.append("]}");
+        return s.toString();
+    }
 %>
 <%
     response.setContentType("application/json; charset=UTF-8");
     PollRuntime pollRt = getPollRuntime(application);
+    ApiRequestContext reqCtx = buildApiRequestContext(request);
+    traceRequestIfNeeded(request, reqCtx);
 
-    String action = request.getParameter("action");
-    String plcParam = request.getParameter("plc_id");
-    Integer plcId = null;
-    try { if (plcParam != null && !plcParam.trim().isEmpty()) plcId = Integer.parseInt(plcParam.trim()); } catch (Exception ignore) {}
-
-    String actionNorm = (action == null) ? "" : action.trim().toLowerCase(java.util.Locale.ROOT);
-    boolean shouldTrace = "read".equals(actionNorm) ||
-                          "start_polling".equals(actionNorm) ||
-                          "stop_polling".equals(actionNorm);
-    if (shouldTrace) {
-        String remoteAddr = clipForLog(request.getRemoteAddr(), 64);
-        String xff = clipForLog(request.getHeader("X-Forwarded-For"), 120);
-        String ua = clipForLog(request.getHeader("User-Agent"), 220);
-        String referer = clipForLog(request.getHeader("Referer"), 220);
-        String query = clipForLog(request.getQueryString(), 220);
-        String method = clipForLog(request.getMethod(), 10);
-        System.out.println(
-            "[modbus_api] ts=" + new java.sql.Timestamp(System.currentTimeMillis()) +
-            " action=" + actionNorm +
-            " plc_id=" + (plcId == null ? "-" : String.valueOf(plcId)) +
-            " method=" + method +
-            " remote=" + remoteAddr +
-            " xff=" + xff +
-            " referer=" + referer +
-            " ua=" + ua +
-            " query=" + query
-        );
-    }
-
-    if (action == null || action.trim().isEmpty()) {
+    if (reqCtx.action == null || reqCtx.action.trim().isEmpty()) {
         out.print("{\"ok\":false,\"error\":\"action is required\"}");
         return;
     }
 
-    if ("polling_status".equalsIgnoreCase(action)) {
-        StringBuilder s = new StringBuilder();
-        s.append("{\"ok\":true,\"states\":[");
-        boolean first = true;
-        List<Integer> ids = new ArrayList<>(pollRt.states.keySet());
-        Collections.sort(ids);
-        for (Integer id : ids) {
-            PollState st = pollRt.states.get(id);
-            if (st == null) continue;
-            long attempt = st.attemptCount.get();
-            long success = st.successCount.get();
-            double successRate = (attempt > 0L) ? (success * 100.0d / attempt) : 0.0d;
-            double avgReadMs = (success > 0L) ? (st.readDurationSumMs.get() * 1.0d / success) : 0.0d;
-            if (!first) s.append(",");
-            first = false;
-            s.append("{")
-             .append("\"plc_id\":").append(id).append(",")
-             .append("\"running\":").append(st.running ? "true" : "false").append(",")
-             .append("\"polling_ms\":").append(st.pollingMs).append(",")
-             .append("\"attempt_count\":").append(attempt).append(",")
-             .append("\"success_count\":").append(success).append(",")
-             .append("\"success_rate\":").append(String.format(java.util.Locale.US, "%.2f", successRate)).append(",")
-             .append("\"read_count\":").append(st.readCount.get()).append(",")
-             .append("\"di_read_count\":").append(st.diReadCount.get()).append(",")
-             .append("\"ai_read_count\":").append(st.aiReadCount.get()).append(",")
-             .append("\"last_read_ms\":").append(st.lastReadDurationMs).append(",")
-             .append("\"di_read_ms\":").append(st.lastDiReadMs).append(",")
-             .append("\"ai_read_ms\":").append(st.lastAiReadMs).append(",")
-             .append("\"proc_ms\":").append(st.lastProcMs).append(",")
-             .append("\"avg_read_ms\":").append(String.format(java.util.Locale.US, "%.1f", avgReadMs)).append(",")
-             .append("\"last_run_at\":").append(st.lastRunAt).append(",")
-             .append("\"last_info\":\"").append(escJson(st.lastInfo)).append("\",")
-             .append("\"last_error\":\"").append(escJson(st.lastError)).append("\"")
-             .append("}");
-        }
-        s.append("]}");
-        out.print(s.toString());
+    if ("polling_status".equalsIgnoreCase(reqCtx.action)) {
+        out.print(buildPollingStateJson(pollRt, false));
         return;
     }
 
-    if ("polling_snapshot".equalsIgnoreCase(action)) {
-        StringBuilder s = new StringBuilder();
-        s.append("{\"ok\":true,\"states\":[");
-        boolean first = true;
-        List<Integer> ids = new ArrayList<>(pollRt.states.keySet());
-        Collections.sort(ids);
-        for (Integer id : ids) {
-            PollState st = pollRt.states.get(id);
-            if (st == null) continue;
-            long attempt = st.attemptCount.get();
-            long success = st.successCount.get();
-            double successRate = (attempt > 0L) ? (success * 100.0d / attempt) : 0.0d;
-            double avgReadMs = (success > 0L) ? (st.readDurationSumMs.get() * 1.0d / success) : 0.0d;
-            if (!first) s.append(",");
-            first = false;
-            s.append("{")
-             .append("\"plc_id\":").append(id).append(",")
-             .append("\"running\":").append(st.running ? "true" : "false").append(",")
-             .append("\"polling_ms\":").append(st.pollingMs).append(",")
-             .append("\"attempt_count\":").append(attempt).append(",")
-             .append("\"success_count\":").append(success).append(",")
-             .append("\"success_rate\":").append(String.format(java.util.Locale.US, "%.2f", successRate)).append(",")
-             .append("\"read_count\":").append(st.readCount.get()).append(",")
-             .append("\"di_read_count\":").append(st.diReadCount.get()).append(",")
-             .append("\"ai_read_count\":").append(st.aiReadCount.get()).append(",")
-             .append("\"last_read_ms\":").append(st.lastReadDurationMs).append(",")
-             .append("\"di_read_ms\":").append(st.lastDiReadMs).append(",")
-             .append("\"ai_read_ms\":").append(st.lastAiReadMs).append(",")
-             .append("\"proc_ms\":").append(st.lastProcMs).append(",")
-             .append("\"avg_read_ms\":").append(String.format(java.util.Locale.US, "%.1f", avgReadMs)).append(",")
-             .append("\"last_run_at\":").append(st.lastRunAt).append(",")
-             .append("\"last_info\":\"").append(escJson(st.lastInfo)).append("\",")
-             .append("\"last_error\":\"").append(escJson(st.lastError)).append("\",")
-             .append("\"rows\":");
-            appendAiRowsJson(s, st.lastRows);
-            s.append(",\"di_rows\":");
-            appendDiRowsJson(s, st.lastDiRows);
-            s.append("}");
-        }
-        s.append("]}");
-        out.print(s.toString());
+    if ("polling_snapshot".equalsIgnoreCase(reqCtx.action)) {
+        out.print(buildPollingStateJson(pollRt, true));
         return;
     }
 
-    if ("clear_cache".equalsIgnoreCase(action)) {
+    if ("clear_cache".equalsIgnoreCase(reqCtx.action)) {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             out.print("{\"ok\":false,\"error\":\"POST method is required for clear_cache\"}");
             return;
         }
-        clearCaches(plcId);
+        clearCaches(reqCtx.plcId);
         out.print("{\"ok\":true,\"info\":\"cache cleared\"}");
         return;
     }
 
-    if (plcId == null) {
+    if (reqCtx.plcId == null) {
         out.print("{\"ok\":false,\"error\":\"plc_id is required\"}");
         return;
     }
 
-    if ("read".equalsIgnoreCase(action)) {
+    if ("read".equalsIgnoreCase(reqCtx.action)) {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             out.print("{\"ok\":false,\"error\":\"POST method is required for read\"}");
             return;
         }
-        PollState st = getPollState(pollRt, plcId);
+        PollState st = getPollState(pollRt, reqCtx.plcId);
         st.attemptCount.incrementAndGet();
         long t0 = System.currentTimeMillis();
-        PlcReadResult rr = readPlcData(plcId);
+        PlcReadResult rr = readPlcData(reqCtx.plcId);
         long elapsed = Math.max(0L, System.currentTimeMillis() - t0);
         if (rr.ok) {
             st.successCount.incrementAndGet();
@@ -1822,15 +1817,15 @@
         return;
     }
 
-    if ("start_polling".equalsIgnoreCase(action)) {
+    if ("start_polling".equalsIgnoreCase(reqCtx.action)) {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             out.print("{\"ok\":false,\"error\":\"POST method is required for start_polling\"}");
             return;
         }
         int pollingMs = 1000;
         try {
-            PLC_CONFIG_CACHE.remove(plcId);
-            PlcConfig cfg = getCachedPlcConfig(plcId);
+            PLC_CONFIG_CACHE.remove(reqCtx.plcId);
+            PlcConfig cfg = getCachedPlcConfig(reqCtx.plcId);
             if (!cfg.exists) {
                 out.print("{\"ok\":false,\"error\":\"Selected PLC config not found.\"}");
                 return;
@@ -1851,17 +1846,17 @@
         }
         if (pollingMs <= 0) pollingMs = 1000;
 
-        startServerPolling(pollRt, plcId, pollingMs);
+        startServerPolling(pollRt, reqCtx.plcId, pollingMs);
         out.print("{\"ok\":true,\"info\":\"server polling started (" + pollingMs + "ms)\"}");
         return;
     }
 
-    if ("stop_polling".equalsIgnoreCase(action)) {
+    if ("stop_polling".equalsIgnoreCase(reqCtx.action)) {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             out.print("{\"ok\":false,\"error\":\"POST method is required for stop_polling\"}");
             return;
         }
-        stopServerPolling(pollRt, plcId);
+        stopServerPolling(pollRt, reqCtx.plcId);
         out.print("{\"ok\":true,\"info\":\"server polling stopped\"}");
         return;
     }

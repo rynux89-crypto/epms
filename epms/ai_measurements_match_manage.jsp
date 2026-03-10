@@ -3,23 +3,18 @@
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
 <%!
-    private static String h(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '&': out.append("&amp;"); break;
-                case '<': out.append("&lt;"); break;
-                case '>': out.append("&gt;"); break;
-                case '"': out.append("&quot;"); break;
-                case '\'': out.append("&#39;"); break;
-                default: out.append(c);
-            }
-        }
-        return out.toString();
+    private static class AiMeasurementMatchRequest {
+        String action;
+        String token;
+        String originalToken;
+        Integer floatIndex;
+        Integer floatRegisters;
+        String measurementColumn;
+        String targetTable;
+        boolean supported;
+        String note;
     }
 
     private static Integer toInt(String v) {
@@ -34,6 +29,110 @@
         String t = v.trim().toLowerCase(java.util.Locale.ROOT);
         return "1".equals(t) || "true".equals(t) || "y".equals(t) || "yes".equals(t) || "on".equals(t);
     }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String normalizeToken(String value) {
+        String trimmed = trimToNull(value);
+        return trimmed == null ? null : trimmed.toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private static String normalizeTargetTable(String value) {
+        String trimmed = trimToNull(value);
+        return trimmed == null ? null : trimmed.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static AiMeasurementMatchRequest buildAiMeasurementMatchRequest(javax.servlet.http.HttpServletRequest request) {
+        AiMeasurementMatchRequest req = new AiMeasurementMatchRequest();
+        req.action = trimToNull(request.getParameter("action"));
+        req.token = normalizeToken(request.getParameter("token"));
+        req.originalToken = normalizeToken(request.getParameter("original_token"));
+        req.floatIndex = toInt(request.getParameter("float_index"));
+        req.floatRegisters = toInt(request.getParameter("float_registers"));
+        req.measurementColumn = trimToNull(request.getParameter("measurement_column"));
+        req.targetTable = normalizeTargetTable(request.getParameter("target_table"));
+        req.supported = toBool(request.getParameter("is_supported"));
+        req.note = trimToNull(request.getParameter("note"));
+        return req;
+    }
+
+    private static String validateAiMeasurementMatchRequest(AiMeasurementMatchRequest req) {
+        if (req == null || req.action == null) return "요청이 올바르지 않습니다.";
+        if ("add".equalsIgnoreCase(req.action) || "update".equalsIgnoreCase(req.action)) {
+            if (req.token == null) return "token은 필수입니다.";
+            if (req.floatIndex == null || req.floatRegisters == null) return "float_index, float_registers는 숫자 필수입니다.";
+        }
+        if ("update".equalsIgnoreCase(req.action) && req.originalToken == null) {
+            return "수정 대상 token이 없습니다.";
+        }
+        if ("delete".equalsIgnoreCase(req.action) && req.token == null) {
+            return "삭제할 token이 없습니다.";
+        }
+        return null;
+    }
+
+    private static String handleAddAiMeasurementMatch(Connection conn, AiMeasurementMatchRequest req) {
+        String sql =
+            "INSERT INTO dbo.plc_ai_measurements_match " +
+            "(token, float_index, float_registers, measurement_column, target_table, is_supported, note, updated_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, SYSDATETIME())";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, req.token);
+            ps.setInt(2, req.floatIndex.intValue());
+            ps.setInt(3, req.floatRegisters.intValue());
+            if (req.measurementColumn == null) ps.setNull(4, Types.NVARCHAR);
+            else ps.setString(4, req.measurementColumn);
+            if (req.targetTable == null) ps.setNull(5, Types.NVARCHAR);
+            else ps.setString(5, req.targetTable);
+            ps.setBoolean(6, req.supported);
+            if (req.note == null) ps.setNull(7, Types.NVARCHAR);
+            else ps.setString(7, req.note);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleUpdateAiMeasurementMatch(Connection conn, AiMeasurementMatchRequest req) {
+        String sql =
+            "UPDATE dbo.plc_ai_measurements_match " +
+            "SET token = ?, float_index = ?, float_registers = ?, measurement_column = ?, target_table = ?, " +
+            "    is_supported = ?, note = ?, updated_at = SYSDATETIME() " +
+            "WHERE token = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, req.token);
+            ps.setInt(2, req.floatIndex.intValue());
+            ps.setInt(3, req.floatRegisters.intValue());
+            if (req.measurementColumn == null) ps.setNull(4, Types.NVARCHAR);
+            else ps.setString(4, req.measurementColumn);
+            if (req.targetTable == null) ps.setNull(5, Types.NVARCHAR);
+            else ps.setString(5, req.targetTable);
+            ps.setBoolean(6, req.supported);
+            if (req.note == null) ps.setNull(7, Types.NVARCHAR);
+            else ps.setString(7, req.note);
+            ps.setString(8, req.originalToken);
+            int changed = ps.executeUpdate();
+            return changed == 0 ? "수정 대상이 없습니다." : null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleDeleteAiMeasurementMatch(Connection conn, AiMeasurementMatchRequest req) {
+        String sql = "DELETE FROM dbo.plc_ai_measurements_match WHERE token = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, req.token);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
 %>
 <%
     request.setCharacterEncoding("UTF-8");
@@ -46,95 +145,24 @@
 
     try {
         if ("POST".equalsIgnoreCase(request.getMethod())) {
-            String action = request.getParameter("action");
-            if (action == null) action = "";
+            AiMeasurementMatchRequest formReq = buildAiMeasurementMatchRequest(request);
+            err = validateAiMeasurementMatchRequest(formReq);
 
-            if ("add".equalsIgnoreCase(action)) {
-                String token = request.getParameter("token");
-                Integer floatIndex = toInt(request.getParameter("float_index"));
-                Integer floatRegisters = toInt(request.getParameter("float_registers"));
-                String measurementColumn = request.getParameter("measurement_column");
-                String targetTable = request.getParameter("target_table");
-                boolean isSupported = toBool(request.getParameter("is_supported"));
-                String note = request.getParameter("note");
-
-                if (token == null || token.trim().isEmpty()) {
-                    err = "token은 필수입니다.";
-                } else if (floatIndex == null || floatRegisters == null) {
-                    err = "float_index, float_registers는 숫자 필수입니다.";
-                } else {
-                    String sql =
-                        "INSERT INTO dbo.plc_ai_measurements_match " +
-                        "(token, float_index, float_registers, measurement_column, target_table, is_supported, note, updated_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, SYSDATETIME())";
-                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                        ps.setString(1, token.trim().toUpperCase(java.util.Locale.ROOT));
-                        ps.setInt(2, floatIndex.intValue());
-                        ps.setInt(3, floatRegisters.intValue());
-                        if (measurementColumn == null || measurementColumn.trim().isEmpty()) ps.setNull(4, Types.NVARCHAR);
-                        else ps.setString(4, measurementColumn.trim());
-                        if (targetTable == null || targetTable.trim().isEmpty()) ps.setNull(5, Types.NVARCHAR);
-                        else ps.setString(5, targetTable.trim().toLowerCase(java.util.Locale.ROOT));
-                        ps.setBoolean(6, isSupported);
-                        if (note == null || note.trim().isEmpty()) ps.setNull(7, Types.NVARCHAR);
-                        else ps.setString(7, note.trim());
-                        ps.executeUpdate();
-                    }
+            if (err == null && "add".equalsIgnoreCase(formReq.action)) {
+                err = handleAddAiMeasurementMatch(conn, formReq);
+                if (err == null) {
                     response.sendRedirect("ai_measurements_match_manage.jsp?msg=" + URLEncoder.encode("등록 완료", "UTF-8"));
                     return;
                 }
-            } else if ("update".equalsIgnoreCase(action)) {
-                String originalToken = request.getParameter("original_token");
-                String token = request.getParameter("token");
-                Integer floatIndex = toInt(request.getParameter("float_index"));
-                Integer floatRegisters = toInt(request.getParameter("float_registers"));
-                String measurementColumn = request.getParameter("measurement_column");
-                String targetTable = request.getParameter("target_table");
-                boolean isSupported = toBool(request.getParameter("is_supported"));
-                String note = request.getParameter("note");
-
-                if (originalToken == null || originalToken.trim().isEmpty()) {
-                    err = "수정 대상 token이 없습니다.";
-                } else if (token == null || token.trim().isEmpty()) {
-                    err = "token은 필수입니다.";
-                } else if (floatIndex == null || floatRegisters == null) {
-                    err = "float_index, float_registers는 숫자 필수입니다.";
-                } else {
-                    String sql =
-                        "UPDATE dbo.plc_ai_measurements_match " +
-                        "SET token = ?, float_index = ?, float_registers = ?, measurement_column = ?, target_table = ?, " +
-                        "    is_supported = ?, note = ?, updated_at = SYSDATETIME() " +
-                        "WHERE token = ?";
-                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                        ps.setString(1, token.trim().toUpperCase(java.util.Locale.ROOT));
-                        ps.setInt(2, floatIndex.intValue());
-                        ps.setInt(3, floatRegisters.intValue());
-                        if (measurementColumn == null || measurementColumn.trim().isEmpty()) ps.setNull(4, Types.NVARCHAR);
-                        else ps.setString(4, measurementColumn.trim());
-                        if (targetTable == null || targetTable.trim().isEmpty()) ps.setNull(5, Types.NVARCHAR);
-                        else ps.setString(5, targetTable.trim().toLowerCase(java.util.Locale.ROOT));
-                        ps.setBoolean(6, isSupported);
-                        if (note == null || note.trim().isEmpty()) ps.setNull(7, Types.NVARCHAR);
-                        else ps.setString(7, note.trim());
-                        ps.setString(8, originalToken.trim().toUpperCase(java.util.Locale.ROOT));
-                        int changed = ps.executeUpdate();
-                        if (changed == 0) err = "수정 대상이 없습니다.";
-                    }
-                    if (err == null) {
-                        response.sendRedirect("ai_measurements_match_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8"));
-                        return;
-                    }
+            } else if (err == null && "update".equalsIgnoreCase(formReq.action)) {
+                err = handleUpdateAiMeasurementMatch(conn, formReq);
+                if (err == null) {
+                    response.sendRedirect("ai_measurements_match_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8"));
+                    return;
                 }
-            } else if ("delete".equalsIgnoreCase(action)) {
-                String token = request.getParameter("token");
-                if (token == null || token.trim().isEmpty()) {
-                    err = "삭제할 token이 없습니다.";
-                } else {
-                    String sql = "DELETE FROM dbo.plc_ai_measurements_match WHERE token = ?";
-                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                        ps.setString(1, token.trim().toUpperCase(java.util.Locale.ROOT));
-                        ps.executeUpdate();
-                    }
+            } else if (err == null && "delete".equalsIgnoreCase(formReq.action)) {
+                err = handleDeleteAiMeasurementMatch(conn, formReq);
+                if (err == null) {
                     response.sendRedirect("ai_measurements_match_manage.jsp?msg=" + URLEncoder.encode("삭제 완료", "UTF-8"));
                     return;
                 }

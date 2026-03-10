@@ -1,12 +1,45 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="javax.naming.InitialContext" %>
+<%@ page import="javax.naming.NamingException" %>
 <%@ page import="javax.sql.DataSource" %>
 <%!
     private static final String DB_JNDI_NAME = "java:comp/env/jdbc/epms";
+    private static final Object DB_DATASOURCE_LOCK = new Object();
+    private static volatile DataSource CACHED_DATA_SOURCE = null;
+
+    private static DataSource resolveDataSource() throws Exception {
+        DataSource ds = CACHED_DATA_SOURCE;
+        if (ds != null) return ds;
+
+        synchronized (DB_DATASOURCE_LOCK) {
+            if (CACHED_DATA_SOURCE != null) return CACHED_DATA_SOURCE;
+
+            InitialContext ic = null;
+            NamingException lastError = null;
+            try {
+                ic = new InitialContext();
+                String[] names = new String[]{ DB_JNDI_NAME, "jdbc/epms" };
+                for (String name : names) {
+                    try {
+                        Object obj = ic.lookup(name);
+                        if (obj instanceof DataSource) {
+                            CACHED_DATA_SOURCE = (DataSource)obj;
+                            return CACHED_DATA_SOURCE;
+                        }
+                    } catch (NamingException ne) {
+                        lastError = ne;
+                    }
+                }
+            } finally {
+                try { if (ic != null) ic.close(); } catch (Exception ignore) {}
+            }
+
+            if (lastError != null) throw lastError;
+            throw new NamingException("JNDI datasource not found: " + DB_JNDI_NAME);
+        }
+    }
 
     private static Connection openDbConnection() throws Exception {
-        InitialContext ic = new InitialContext();
-        DataSource ds = (DataSource) ic.lookup(DB_JNDI_NAME);
-        return ds.getConnection();
+        return resolveDataSource().getConnection();
     }
 %>

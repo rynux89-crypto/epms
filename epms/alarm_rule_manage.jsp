@@ -89,6 +89,145 @@
         }
         return new ArrayList<>(set);
     }
+
+    private static class AlarmRuleRequest {
+        String action;
+        Integer ruleId;
+        String ruleCode;
+        String ruleName;
+        String category;
+        String targetScope;
+        String metricKey;
+        String operator;
+        Double threshold1;
+        Double threshold2;
+        Integer durationSec;
+        Double hysteresis;
+        String severity;
+        String sourceToken;
+        String messageTemplate;
+        String description;
+    }
+
+    private static AlarmRuleRequest buildAlarmRuleRequest(javax.servlet.http.HttpServletRequest request) {
+        AlarmRuleRequest req = new AlarmRuleRequest();
+        req.action = request.getParameter("action");
+        req.ruleId = toInt(request.getParameter("rule_id"));
+        req.ruleCode = request.getParameter("rule_code");
+        req.ruleName = request.getParameter("rule_name");
+        req.category = request.getParameter("category");
+        req.targetScope = request.getParameter("target_scope");
+        req.metricKey = request.getParameter("metric_key");
+        req.operator = request.getParameter("operator");
+        req.threshold1 = toDouble(request.getParameter("threshold1"));
+        req.threshold2 = toDouble(request.getParameter("threshold2"));
+        req.durationSec = toInt(request.getParameter("duration_sec"));
+        req.hysteresis = toDouble(request.getParameter("hysteresis"));
+        req.severity = request.getParameter("severity");
+        req.sourceToken = request.getParameter("source_token");
+        req.messageTemplate = request.getParameter("message_template");
+        req.description = request.getParameter("description");
+        return req;
+    }
+
+    private static String validateAlarmRuleRequest(AlarmRuleRequest req, Set<String> metricKeySet) {
+        if (req == null) return "요청이 올바르지 않습니다.";
+        String action = req.action == null ? "" : req.action;
+        if ("add".equals(action)) {
+            if (req.ruleCode == null || req.ruleCode.trim().isEmpty() ||
+                req.ruleName == null || req.ruleName.trim().isEmpty() ||
+                req.category == null || req.category.trim().isEmpty() ||
+                req.metricKey == null || req.metricKey.trim().isEmpty()) {
+                return "필수값(rule_code/rule_name/category/metric_key)을 입력하세요.";
+            }
+        }
+        if ("update".equals(action) || "toggle".equals(action) || "delete".equals(action)) {
+            if (req.ruleId == null) return "잘못된 rule_id 입니다.";
+        }
+        if ("add".equals(action) || "update".equals(action)) {
+            String metricKeyNorm = normKey(req.metricKey);
+            if (metricKeyNorm.isEmpty() || !metricKeySet.contains(metricKeyNorm)) {
+                return "허용되지 않은 지표키입니다. 목록에서 선택해 주세요.";
+            }
+        }
+        return null;
+    }
+
+    private static String handleAddAlarmRule(Connection conn, AlarmRuleRequest req) {
+        String insSql =
+            "INSERT INTO dbo.alarm_rule " +
+            "(rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, hysteresis, severity, enabled, source_token, message_template, description, updated_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, SYSUTCDATETIME())";
+        try (PreparedStatement ps = conn.prepareStatement(insSql)) {
+            ps.setString(1, req.ruleCode.trim().toUpperCase(Locale.ROOT));
+            ps.setString(2, req.ruleName.trim());
+            ps.setString(3, req.category.trim().toUpperCase(Locale.ROOT));
+            ps.setString(4, (req.targetScope == null || req.targetScope.trim().isEmpty()) ? "METER" : req.targetScope.trim().toUpperCase(Locale.ROOT));
+            ps.setString(5, normKey(req.metricKey));
+            ps.setString(6, (req.operator == null || req.operator.trim().isEmpty()) ? ">=" : req.operator.trim());
+            if (req.threshold1 == null) ps.setNull(7, Types.DECIMAL); else ps.setDouble(7, req.threshold1);
+            if (req.threshold2 == null) ps.setNull(8, Types.DECIMAL); else ps.setDouble(8, req.threshold2);
+            ps.setInt(9, (req.durationSec == null || req.durationSec.intValue() < 0) ? 0 : req.durationSec.intValue());
+            if (req.hysteresis == null) ps.setNull(10, Types.DECIMAL); else ps.setDouble(10, req.hysteresis);
+            ps.setString(11, (req.severity == null || req.severity.trim().isEmpty()) ? "WARN" : req.severity.trim().toUpperCase(Locale.ROOT));
+            ps.setString(12, req.sourceToken);
+            ps.setString(13, req.messageTemplate);
+            ps.setString(14, req.description);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleUpdateAlarmRule(Connection conn, AlarmRuleRequest req) {
+        String updSql =
+            "UPDATE dbo.alarm_rule SET " +
+            " rule_name = ?, category = ?, target_scope = ?, metric_key = ?, operator = ?, " +
+            " threshold1 = ?, threshold2 = ?, duration_sec = ?, hysteresis = ?, severity = ?, source_token = ?, message_template = ?, description = ?, updated_at = SYSUTCDATETIME() " +
+            "WHERE rule_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(updSql)) {
+            ps.setString(1, req.ruleName);
+            ps.setString(2, req.category);
+            ps.setString(3, req.targetScope);
+            ps.setString(4, normKey(req.metricKey));
+            ps.setString(5, req.operator);
+            if (req.threshold1 == null) ps.setNull(6, Types.DECIMAL); else ps.setDouble(6, req.threshold1);
+            if (req.threshold2 == null) ps.setNull(7, Types.DECIMAL); else ps.setDouble(7, req.threshold2);
+            ps.setInt(8, (req.durationSec == null || req.durationSec.intValue() < 0) ? 0 : req.durationSec.intValue());
+            if (req.hysteresis == null) ps.setNull(9, Types.DECIMAL); else ps.setDouble(9, req.hysteresis);
+            ps.setString(10, req.severity);
+            ps.setString(11, req.sourceToken);
+            ps.setString(12, req.messageTemplate);
+            ps.setString(13, req.description);
+            ps.setInt(14, req.ruleId.intValue());
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleToggleAlarmRule(Connection conn, AlarmRuleRequest req) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE dbo.alarm_rule SET enabled = CASE WHEN enabled = 1 THEN 0 ELSE 1 END, updated_at = SYSUTCDATETIME() WHERE rule_id = ?")) {
+            ps.setInt(1, req.ruleId.intValue());
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleDeleteAlarmRule(Connection conn, AlarmRuleRequest req) {
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.alarm_rule WHERE rule_id = ?")) {
+            ps.setInt(1, req.ruleId.intValue());
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
 %>
 <%
     request.setCharacterEncoding("UTF-8");
@@ -200,121 +339,48 @@
         }
 
         if ("POST".equalsIgnoreCase(request.getMethod())) {
-            String action = request.getParameter("action");
+            AlarmRuleRequest formReq = buildAlarmRuleRequest(request);
+            String formErr = validateAlarmRuleRequest(formReq, metricKeySet);
+            if (formErr != null) {
+                response.sendRedirect(self + "?err=" + URLEncoder.encode(formErr, "UTF-8"));
+                return;
+            }
 
-            if ("add".equals(action)) {
-                String ruleCode = request.getParameter("rule_code");
-                String ruleName = request.getParameter("rule_name");
-                String category = request.getParameter("category");
-                String targetScope = request.getParameter("target_scope");
-                String metricKey = request.getParameter("metric_key");
-                String operator = request.getParameter("operator");
-                Double threshold1 = toDouble(request.getParameter("threshold1"));
-                Double threshold2 = toDouble(request.getParameter("threshold2"));
-                Integer durationSec = toInt(request.getParameter("duration_sec"));
-                Double hysteresis = toDouble(request.getParameter("hysteresis"));
-                String severity = request.getParameter("severity");
-                String desc = request.getParameter("description");
-
-                if (ruleCode == null || ruleCode.trim().isEmpty() || ruleName == null || ruleName.trim().isEmpty() ||
-                    category == null || category.trim().isEmpty() || metricKey == null || metricKey.trim().isEmpty()) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("필수값(rule_code/rule_name/category/metric_key)을 입력하세요.", "UTF-8"));
+            if ("add".equals(formReq.action)) {
+                String saveErr = handleAddAlarmRule(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
                     return;
-                }
-                String metricKeyNorm = normKey(metricKey);
-                if (!metricKeySet.contains(metricKeyNorm)) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("허용되지 않은 지표키입니다. 목록에서 선택해 주세요.", "UTF-8"));
-                    return;
-                }
-
-                String insSql =
-                    "INSERT INTO dbo.alarm_rule " +
-                    "(rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, hysteresis, severity, enabled, source_token, message_template, description, updated_at) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, SYSUTCDATETIME())";
-                try (PreparedStatement ps = conn.prepareStatement(insSql)) {
-                    ps.setString(1, ruleCode.trim().toUpperCase(Locale.ROOT));
-                    ps.setString(2, ruleName.trim());
-                    ps.setString(3, category.trim().toUpperCase(Locale.ROOT));
-                    ps.setString(4, (targetScope == null || targetScope.trim().isEmpty()) ? "METER" : targetScope.trim().toUpperCase(Locale.ROOT));
-                    ps.setString(5, metricKeyNorm);
-                    ps.setString(6, (operator == null || operator.trim().isEmpty()) ? ">=" : operator.trim());
-                    if (threshold1 == null) ps.setNull(7, Types.DECIMAL); else ps.setDouble(7, threshold1);
-                    if (threshold2 == null) ps.setNull(8, Types.DECIMAL); else ps.setDouble(8, threshold2);
-                    ps.setInt(9, (durationSec == null || durationSec < 0) ? 0 : durationSec);
-                    if (hysteresis == null) ps.setNull(10, Types.DECIMAL); else ps.setDouble(10, hysteresis);
-                    ps.setString(11, (severity == null || severity.trim().isEmpty()) ? "WARN" : severity.trim().toUpperCase(Locale.ROOT));
-                    ps.setString(12, request.getParameter("source_token"));
-                    ps.setString(13, request.getParameter("message_template"));
-                    ps.setString(14, desc);
-                    ps.executeUpdate();
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("알람 규칙을 추가했습니다.", "UTF-8"));
                 return;
             }
 
-            if ("update".equals(action)) {
-                Integer ruleId = toInt(request.getParameter("rule_id"));
-                if (ruleId == null) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("잘못된 rule_id 입니다.", "UTF-8"));
+            if ("update".equals(formReq.action)) {
+                String saveErr = handleUpdateAlarmRule(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
                     return;
-                }
-                String metricKey = request.getParameter("metric_key");
-                String metricKeyNorm = normKey(metricKey);
-                if (metricKeyNorm.isEmpty() || !metricKeySet.contains(metricKeyNorm)) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("허용되지 않은 지표키입니다. 목록에서 선택해 주세요.", "UTF-8"));
-                    return;
-                }
-
-                String updSql =
-                    "UPDATE dbo.alarm_rule SET " +
-                    " rule_name = ?, category = ?, target_scope = ?, metric_key = ?, operator = ?, " +
-                    " threshold1 = ?, threshold2 = ?, duration_sec = ?, hysteresis = ?, severity = ?, source_token = ?, message_template = ?, description = ?, updated_at = SYSUTCDATETIME() " +
-                    "WHERE rule_id = ?";
-                try (PreparedStatement ps = conn.prepareStatement(updSql)) {
-                    ps.setString(1, request.getParameter("rule_name"));
-                    ps.setString(2, request.getParameter("category"));
-                    ps.setString(3, request.getParameter("target_scope"));
-                    ps.setString(4, metricKeyNorm);
-                    ps.setString(5, request.getParameter("operator"));
-                    Double t1 = toDouble(request.getParameter("threshold1"));
-                    Double t2 = toDouble(request.getParameter("threshold2"));
-                    Integer ds = toInt(request.getParameter("duration_sec"));
-                    Double hy = toDouble(request.getParameter("hysteresis"));
-                    if (t1 == null) ps.setNull(6, Types.DECIMAL); else ps.setDouble(6, t1);
-                    if (t2 == null) ps.setNull(7, Types.DECIMAL); else ps.setDouble(7, t2);
-                    ps.setInt(8, (ds == null || ds < 0) ? 0 : ds);
-                    if (hy == null) ps.setNull(9, Types.DECIMAL); else ps.setDouble(9, hy);
-                    ps.setString(10, request.getParameter("severity"));
-                    ps.setString(11, request.getParameter("source_token"));
-                    ps.setString(12, request.getParameter("message_template"));
-                    ps.setString(13, request.getParameter("description"));
-                    ps.setInt(14, ruleId);
-                    ps.executeUpdate();
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("알람 규칙을 수정했습니다.", "UTF-8"));
                 return;
             }
 
-            if ("toggle".equals(action)) {
-                Integer ruleId = toInt(request.getParameter("rule_id"));
-                if (ruleId != null) {
-                    try (PreparedStatement ps = conn.prepareStatement(
-                            "UPDATE dbo.alarm_rule SET enabled = CASE WHEN enabled = 1 THEN 0 ELSE 1 END, updated_at = SYSUTCDATETIME() WHERE rule_id = ?")) {
-                        ps.setInt(1, ruleId);
-                        ps.executeUpdate();
-                    }
+            if ("toggle".equals(formReq.action)) {
+                String saveErr = handleToggleAlarmRule(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
+                    return;
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("알람 규칙 상태가 변경되었습니다.", "UTF-8"));
                 return;
             }
 
-            if ("delete".equals(action)) {
-                Integer ruleId = toInt(request.getParameter("rule_id"));
-                if (ruleId != null) {
-                    try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.alarm_rule WHERE rule_id = ?")) {
-                        ps.setInt(1, ruleId);
-                        ps.executeUpdate();
-                    }
+            if ("delete".equals(formReq.action)) {
+                String saveErr = handleDeleteAlarmRule(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
+                    return;
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("알람 규칙을 삭제했습니다.", "UTF-8"));
                 return;

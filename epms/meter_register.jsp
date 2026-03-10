@@ -40,6 +40,104 @@
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
     }
+
+    private static class MeterRegisterRequest {
+        String action;
+        Integer meterId;
+        String name;
+        String buildingName;
+        String panelName;
+        String usageType;
+        Double ratedVoltage;
+        Double ratedCurrent;
+    }
+
+    private static MeterRegisterRequest buildMeterRegisterRequest(javax.servlet.http.HttpServletRequest request) {
+        MeterRegisterRequest req = new MeterRegisterRequest();
+        req.action = request.getParameter("action");
+        req.meterId = parseIntStrict(request.getParameter("meter_id"));
+        req.name = trimOrNull(request.getParameter("name"));
+        req.buildingName = trimOrNull(request.getParameter("building_name"));
+        req.panelName = trimOrNull(request.getParameter("panel_name"));
+        req.usageType = trimOrNull(request.getParameter("usage_type"));
+        req.ratedVoltage = parseDoubleNullable(request.getParameter("rated_voltage"));
+        req.ratedCurrent = parseDoubleNullable(request.getParameter("rated_current"));
+        return req;
+    }
+
+    private static String buildMeterRegisterQuerySuffix(String buildingQ, String panelQ) {
+        try {
+            return "&building_q=" + URLEncoder.encode(buildingQ == null ? "" : buildingQ, "UTF-8") +
+                   "&panel_q=" + URLEncoder.encode(panelQ == null ? "" : panelQ, "UTF-8");
+        } catch (Exception ignore) {
+            return "";
+        }
+    }
+
+    private static String validateMeterRegisterRequest(MeterRegisterRequest req) {
+        if (req == null) return "요청이 올바르지 않습니다.";
+        if ("add".equals(req.action) || "update".equals(req.action)) {
+            if (req.name == null) return "계측기 이름을 입력해 주세요.";
+        }
+        if ("update".equals(req.action) || "delete".equals(req.action)) {
+            if (req.meterId == null) return "유효하지 않은 계측기 ID입니다.";
+        }
+        return null;
+    }
+
+    private static String handleAddMeter(Connection conn, MeterRegisterRequest req) {
+        try {
+            String insSql =
+                "INSERT INTO dbo.meters " +
+                "(name, panel_name, building_name, usage_type, rated_voltage, rated_current) " +
+                "VALUES (?, ?, ?, ?, ?, ?)";
+            try (PreparedStatement ps = conn.prepareStatement(insSql)) {
+                ps.setString(1, req.name);
+                ps.setString(2, req.panelName);
+                ps.setString(3, req.buildingName);
+                ps.setString(4, req.usageType);
+                if (req.ratedVoltage == null) ps.setNull(5, Types.DOUBLE); else ps.setDouble(5, req.ratedVoltage);
+                if (req.ratedCurrent == null) ps.setNull(6, Types.DOUBLE); else ps.setDouble(6, req.ratedCurrent);
+                ps.executeUpdate();
+            }
+            return null;
+        } catch (Exception e) {
+            return "등록 실패: " + e.getMessage();
+        }
+    }
+
+    private static String handleUpdateMeter(Connection conn, MeterRegisterRequest req) {
+        String updSql =
+            "UPDATE dbo.meters " +
+            "SET name = ?, panel_name = ?, building_name = ?, usage_type = ?, rated_voltage = ?, rated_current = ? " +
+            "WHERE meter_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(updSql)) {
+            ps.setString(1, req.name);
+            ps.setString(2, req.panelName);
+            ps.setString(3, req.buildingName);
+            ps.setString(4, req.usageType);
+            if (req.ratedVoltage == null) ps.setNull(5, Types.DOUBLE); else ps.setDouble(5, req.ratedVoltage);
+            if (req.ratedCurrent == null) ps.setNull(6, Types.DOUBLE); else ps.setDouble(6, req.ratedCurrent);
+            ps.setInt(7, req.meterId);
+            int affected = ps.executeUpdate();
+            if (affected == 0) return "수정할 계측기를 찾을 수 없습니다.";
+            return null;
+        } catch (Exception e) {
+            return "수정 실패: " + e.getMessage();
+        }
+    }
+
+    private static String handleDeleteMeter(Connection conn, MeterRegisterRequest req) {
+        String delSql = "DELETE FROM dbo.meters WHERE meter_id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(delSql)) {
+            ps.setInt(1, req.meterId);
+            int affected = ps.executeUpdate();
+            if (affected == 0) return "삭제할 계측기를 찾을 수 없습니다.";
+            return null;
+        } catch (Exception e) {
+            return "삭제 실패: " + e.getMessage();
+        }
+    }
 %>
 <%
     request.setCharacterEncoding("UTF-8");
@@ -55,102 +153,30 @@
     buildingQ = buildingQ.trim();
     panelQ = panelQ.trim();
 
-    String querySuffix = "";
-    try {
-        querySuffix =
-            "&building_q=" + URLEncoder.encode(buildingQ, "UTF-8") +
-            "&panel_q=" + URLEncoder.encode(panelQ, "UTF-8");
-    } catch (Exception ignore) {}
+    String querySuffix = buildMeterRegisterQuerySuffix(buildingQ, panelQ);
 
     if ("POST".equalsIgnoreCase(request.getMethod())) {
-        String action = request.getParameter("action");
+        MeterRegisterRequest formReq = buildMeterRegisterRequest(request);
+        error = validateMeterRegisterRequest(formReq);
 
-        if ("add".equals(action)) {
-            String name = trimOrNull(request.getParameter("name"));
-            String buildingName = trimOrNull(request.getParameter("building_name"));
-            String panelName = trimOrNull(request.getParameter("panel_name"));
-            String usageType = trimOrNull(request.getParameter("usage_type"));
-            Double ratedVoltage = parseDoubleNullable(request.getParameter("rated_voltage"));
-            Double ratedCurrent = parseDoubleNullable(request.getParameter("rated_current"));
-
-            if (name == null) {
-                error = "계측기 이름을 입력해 주세요.";
-            } else {
-                try {
-                    String insSql =
-                        "INSERT INTO dbo.meters " +
-                        "(name, panel_name, building_name, usage_type, rated_voltage, rated_current) " +
-                        "VALUES (?, ?, ?, ?, ?, ?)";
-                    try (PreparedStatement ps = conn.prepareStatement(insSql)) {
-                        ps.setString(1, name);
-                        ps.setString(2, panelName);
-                        ps.setString(3, buildingName);
-                        ps.setString(4, usageType);
-                        if (ratedVoltage == null) ps.setNull(5, Types.DOUBLE); else ps.setDouble(5, ratedVoltage);
-                        if (ratedCurrent == null) ps.setNull(6, Types.DOUBLE); else ps.setDouble(6, ratedCurrent);
-                        ps.executeUpdate();
-                    }
-
-                    response.sendRedirect(self + "?msg=" + URLEncoder.encode("계측기 등록이 완료되었습니다.", "UTF-8") + querySuffix);
+        if (error == null) {
+            if ("add".equals(formReq.action)) {
+                error = handleAddMeter(conn, formReq);
+                if (error == null) {
+                    response.sendRedirect(self + "?msg=" + URLEncoder.encode("계측기가 등록되었습니다.", "UTF-8") + querySuffix);
                     return;
-                } catch (Exception e) {
-                    error = "등록 실패: " + e.getMessage();
                 }
-            }
-        } else if ("update".equals(action)) {
-            Integer meterId = parseIntStrict(request.getParameter("meter_id"));
-            String name = trimOrNull(request.getParameter("name"));
-            String buildingName = trimOrNull(request.getParameter("building_name"));
-            String panelName = trimOrNull(request.getParameter("panel_name"));
-            String usageType = trimOrNull(request.getParameter("usage_type"));
-            Double ratedVoltage = parseDoubleNullable(request.getParameter("rated_voltage"));
-            Double ratedCurrent = parseDoubleNullable(request.getParameter("rated_current"));
-
-            if (meterId == null) {
-                error = "유효하지 않은 계측기 ID입니다.";
-            } else if (name == null) {
-                error = "계측기 이름을 입력해 주세요.";
-            } else {
-                String updSql =
-                    "UPDATE dbo.meters " +
-                    "SET name = ?, panel_name = ?, building_name = ?, usage_type = ?, rated_voltage = ?, rated_current = ? " +
-                    "WHERE meter_id = ?";
-                try (PreparedStatement ps = conn.prepareStatement(updSql)) {
-                    ps.setString(1, name);
-                    ps.setString(2, panelName);
-                    ps.setString(3, buildingName);
-                    ps.setString(4, usageType);
-                    if (ratedVoltage == null) ps.setNull(5, Types.DOUBLE); else ps.setDouble(5, ratedVoltage);
-                    if (ratedCurrent == null) ps.setNull(6, Types.DOUBLE); else ps.setDouble(6, ratedCurrent);
-                    ps.setInt(7, meterId);
-                    int affected = ps.executeUpdate();
-                    if (affected == 0) {
-                        error = "수정할 계측기를 찾을 수 없습니다.";
-                    } else {
-                        response.sendRedirect(self + "?msg=" + URLEncoder.encode("계측기 정보가 수정되었습니다.", "UTF-8") + querySuffix);
-                        return;
-                    }
-                } catch (Exception e) {
-                    error = "수정 실패: " + e.getMessage();
+            } else if ("update".equals(formReq.action)) {
+                error = handleUpdateMeter(conn, formReq);
+                if (error == null) {
+                    response.sendRedirect(self + "?msg=" + URLEncoder.encode("계측기 정보가 수정되었습니다.", "UTF-8") + querySuffix);
+                    return;
                 }
-            }
-        } else if ("delete".equals(action)) {
-            Integer meterId = parseIntStrict(request.getParameter("meter_id"));
-            if (meterId == null) {
-                error = "유효하지 않은 계측기 ID입니다.";
-            } else {
-                String delSql = "DELETE FROM dbo.meters WHERE meter_id = ?";
-                try (PreparedStatement ps = conn.prepareStatement(delSql)) {
-                    ps.setInt(1, meterId);
-                    int affected = ps.executeUpdate();
-                    if (affected == 0) {
-                        error = "삭제할 계측기를 찾을 수 없습니다.";
-                    } else {
-                        response.sendRedirect(self + "?msg=" + URLEncoder.encode("계측기가 삭제되었습니다.", "UTF-8") + querySuffix);
-                        return;
-                    }
-                } catch (Exception e) {
-                    error = "삭제 실패: " + e.getMessage();
+            } else if ("delete".equals(formReq.action)) {
+                error = handleDeleteMeter(conn, formReq);
+                if (error == null) {
+                    response.sendRedirect(self + "?msg=" + URLEncoder.encode("계측기가 삭제되었습니다.", "UTF-8") + querySuffix);
+                    return;
                 }
             }
         }
@@ -322,8 +348,8 @@
     <% } %>
 
     <div class="info-box">
-        <div>대상 테이블: <b>dbo.meters</b> (기본키: <b>meter_id</b>, 신규 등록 시 자동 부여)</div>
-        <div>총 <b><%= stats.get("total_cnt") == null ? 0 : stats.get("total_cnt") %></b>건, 건물 <b><%= stats.get("building_cnt") == null ? 0 : stats.get("building_cnt") %></b>종, 판넬 <b><%= stats.get("panel_cnt") == null ? 0 : stats.get("panel_cnt") %></b>종</div>
+        <div>대상 테이블: <b>dbo.meters</b> (기본키 <b>meter_id</b>, 신규 등록 시 자동 부여)</div>
+        <div>총 <b><%= stats.get("total_cnt") == null ? 0 : stats.get("total_cnt") %></b>건 / 건물 <b><%= stats.get("building_cnt") == null ? 0 : stats.get("building_cnt") %></b>종 / 패널 <b><%= stats.get("panel_cnt") == null ? 0 : stats.get("panel_cnt") %></b>종</div>
         <div class="schema-line">
             <% for (int i = 0; i < schemaRows.size(); i++) { %>
                 <% Map<String, Object> c = schemaRows.get(i); %>
@@ -338,7 +364,7 @@
         <div class="search-grid">
             <div class="search-item">
                 <label for="building_q">건물명 검색</label>
-                <input id="building_q" type="text" name="building_q" value="<%= escHtml(buildingQ) %>" placeholder="예: 동관">
+                <input id="building_q" type="text" name="building_q" value="<%= escHtml(buildingQ) %>" placeholder="예: 공학관">
                 <select id="building_q_select" class="quick-select">
                     <option value="">건물 전체 목록에서 선택</option>
                     <% for (String b : buildingOptions) { %>
@@ -347,16 +373,16 @@
                 </select>
             </div>
             <div class="search-item">
-                <label for="panel_q">판넬명 검색</label>
+                <label for="panel_q">패널명 검색</label>
                 <input id="panel_q" type="text" name="panel_q" value="<%= escHtml(panelQ) %>" placeholder="예: MDB">
                 <select id="panel_q_select" class="quick-select">
-                    <option value="">판넬 전체 목록에서 선택</option>
+                    <option value="">패널 전체 목록에서 선택</option>
                     <% for (String p : panelOptions) { %>
                     <option value="<%= escHtml(p) %>"><%= escHtml(p) %></option>
                     <% } %>
                 </select>
             </div>
-            <button class="btn btn-primary" type="submit">검색</button>
+            <button class="btn btn-primary" type="submit">조회</button>
             <button class="btn btn-sub" type="button" onclick="location.href='meter_register.jsp'">초기화</button>
         </div>
     </form>
@@ -375,7 +401,7 @@
                 <input id="building_name" type="text" name="building_name" maxlength="100">
             </div>
             <div class="input-group">
-                <label for="panel_name">판넬명</label>
+                <label for="panel_name">패널명</label>
                 <input id="panel_name" type="text" name="panel_name" maxlength="100">
             </div>
             <div class="input-group">
@@ -400,7 +426,7 @@
             <th>계측기 ID</th>
             <th>계측기 이름</th>
             <th>건물명</th>
-            <th>판넬명</th>
+            <th>패널명</th>
             <th>용도</th>
             <th>정격 전압</th>
             <th>정격 전류</th>
@@ -428,7 +454,7 @@
                             <input type="hidden" name="meter_id" value="<%= r.get("meter_id") %>">
                             <input type="hidden" name="building_q" value="<%= escHtml(buildingQ) %>">
                             <input type="hidden" name="panel_q" value="<%= escHtml(panelQ) %>">
-                            <button type="submit" class="action-btn btn-update">저장</button>
+                            <button type="submit" class="action-btn btn-update">수정</button>
                         </form>
                         <form class="row-form" method="POST" onsubmit="return confirm('해당 계측기를 삭제하시겠습니까?');">
                             <input type="hidden" name="action" value="delete">

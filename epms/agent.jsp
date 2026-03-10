@@ -25,6 +25,78 @@ private static volatile long schemaCacheTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
 private static volatile List<String> meterScopeValueCache = new ArrayList<String>();
 private static volatile long meterScopeCacheAt = 0L;
 
+private static class AgentRuntimeConfig {
+    String ollamaUrl;
+    String model;
+    String coderModel;
+    int ollamaConnectTimeoutMs;
+    int ollamaReadTimeoutMs;
+    long schemaCacheTtlMs;
+}
+
+private static class OllamaHttpResponse {
+    int statusCode;
+    String body;
+}
+
+private static class AgentRequestContext {
+    Integer requestedMeterId;
+    String requestedMeterScope;
+    Integer requestedMonth;
+    boolean needsPerMeterPower;
+    boolean needsMeterList;
+    boolean needsPhaseCurrent;
+    boolean needsPhaseVoltage;
+    boolean needsLineVoltage;
+    boolean needsHarmonic;
+    List<String> panelTokens = new ArrayList<String>();
+    String requestedPhase;
+    String requestedLinePair;
+}
+
+private static class DirectAnswerResult {
+    String answer;
+    String dbContext;
+}
+
+private static class AgentExecutionContext {
+    Integer requestedMeterId;
+    String requestedMeterScope;
+    Integer requestedMonth;
+    Integer requestedTopN;
+    String requestedPhase;
+    String requestedLinePair;
+    List<String> panelTokens = new ArrayList<String>();
+    boolean needsMeter;
+    boolean needsAlarm;
+    boolean needsFrequency;
+    boolean needsPerMeterPower;
+    boolean needsMeterList;
+    boolean needsPhaseCurrent;
+    boolean needsPhaseVoltage;
+    boolean needsLineVoltage;
+    boolean needsHarmonic;
+    boolean needsDb;
+    boolean forceCoderFlow;
+}
+
+private static class PlannerExecutionResult {
+    String meterCtx = "";
+    String alarmCtx = "";
+    String frequencyCtx = "";
+    String powerCtx = "";
+    String meterListCtx = "";
+    String phaseCurrentCtx = "";
+    String phaseVoltageCtx = "";
+    String lineVoltageCtx = "";
+    String harmonicCtx = "";
+    String coderDraft = "";
+}
+
+private static class SpecializedAnswerResult {
+    String answer;
+}
+
 private boolean checkRateLimit(String clientIp) {
     long now = System.currentTimeMillis();
     
@@ -88,6 +160,619 @@ private Properties loadAgentModelConfig(javax.servlet.ServletContext app) {
     } catch (Exception ignore) {
     }
     return p;
+}
+
+private int clampSeconds(Integer value, int min, int max, int fallback) {
+    if (value == null) return fallback;
+    int s = value.intValue();
+    if (s < min) s = min;
+    if (s > max) s = max;
+    return s;
+}
+
+private long resolveSchemaCacheTtlMs(Properties modelConfig) {
+    String ttlMinutesRaw = trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes"));
+    Integer ttlMin = parsePositiveInt(ttlMinutesRaw);
+    if (ttlMin == null) return DEFAULT_SCHEMA_CACHE_TTL_MS;
+    int m = ttlMin.intValue();
+    if (m < 1) m = 1;
+    if (m > 1440) m = 1440;
+    return m * 60L * 1000L;
+}
+
+private void applySchemaCacheTtl(long nextTtlMs) {
+    long prevTtlMs = schemaCacheTtlMs;
+    schemaCacheTtlMs = nextTtlMs;
+    if (prevTtlMs != nextTtlMs) {
+        schemaContextCacheAt = 0L;
+    }
+}
+
+private AgentRuntimeConfig loadAgentRuntimeConfig(javax.servlet.ServletContext app) {
+    AgentRuntimeConfig cfg = new AgentRuntimeConfig();
+
+    String ollamaUrl = System.getenv("OLLAMA_URL");
+    if (ollamaUrl == null || ollamaUrl.isEmpty()) {
+        ollamaUrl = "http://localhost:11434";
+    }
+    ollamaUrl = normalizeOllamaUrl(ollamaUrl);
+
+    String model = System.getenv("OLLAMA_MODEL");
+    if (model == null || model.isEmpty()) {
+        model = "qwen2.5:14b";
+    }
+
+    String coderModel = System.getenv("OLLAMA_MODEL_CODER");
+    if (coderModel == null || coderModel.isEmpty()) {
+        coderModel = "qwen2.5-coder:7b";
+    }
+
+    Properties modelConfig = loadAgentModelConfig(app);
+    String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
+    String configuredModel = trimToNull(modelConfig.getProperty("model"));
+    String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
+    if (configuredOllamaUrl != null) ollamaUrl = configuredOllamaUrl;
+    if (configuredModel != null) model = configuredModel;
+    if (configuredCoderModel != null) coderModel = configuredCoderModel;
+
+    Integer connectSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
+    Integer readSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
+
+    cfg.ollamaUrl = ollamaUrl;
+    cfg.model = model;
+    cfg.coderModel = coderModel;
+    cfg.ollamaConnectTimeoutMs = clampSeconds(connectSec, 1, 60, 5) * 1000;
+    cfg.ollamaReadTimeoutMs = clampSeconds(readSec, 3, 600, 60) * 1000;
+    cfg.schemaCacheTtlMs = resolveSchemaCacheTtlMs(modelConfig);
+    return cfg;
+}
+
+private String readHttpBody(InputStream is) throws Exception {
+    if (is == null) return "";
+    StringBuilder body = new StringBuilder();
+    try (BufferedReader br = new BufferedReader(new InputStreamReader(is, "utf-8"))) {
+        String l;
+        while ((l = br.readLine()) != null) {
+            body.append(l);
+        }
+    }
+    return body.toString();
+}
+
+private OllamaHttpResponse callOllamaEndpoint(String url, String method, String payload, int connectTimeoutMs, int readTimeoutMs) throws Exception {
+    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+    conn.setRequestMethod(method);
+    conn.setConnectTimeout(connectTimeoutMs);
+    conn.setReadTimeout(readTimeoutMs);
+
+    if (payload != null) {
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        try (OutputStream os = conn.getOutputStream()) {
+            byte[] input = payload.getBytes("utf-8");
+            os.write(input, 0, input.length);
+        }
+    }
+
+    OllamaHttpResponse resp = new OllamaHttpResponse();
+    resp.statusCode = conn.getResponseCode();
+    InputStream is = (resp.statusCode >= 200 && resp.statusCode < 400) ? conn.getInputStream() : conn.getErrorStream();
+    resp.body = readHttpBody(is);
+    return resp;
+}
+
+private String fetchOllamaTagList(String ollamaUrl, int connectTimeoutMs, int readTimeoutMs) throws Exception {
+    OllamaHttpResponse resp = callOllamaEndpoint(ollamaUrl + "/api/tags", "GET", null, connectTimeoutMs, readTimeoutMs);
+    if (resp.statusCode != 200) {
+        throw new IOException("Ollama unavailable");
+    }
+    return resp.body == null ? "" : resp.body;
+}
+
+private AgentRequestContext buildAgentRequestContext(String userMessage) {
+    AgentRequestContext ctx = new AgentRequestContext();
+    ctx.requestedMeterId = extractMeterId(userMessage);
+    if (ctx.requestedMeterId == null) {
+        ctx.requestedMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
+    }
+
+    ctx.requestedMeterScope = extractMeterScopeToken(userMessage);
+    if (ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) {
+        ctx.requestedMeterScope = extractAlarmAreaToken(userMessage);
+    }
+    if (ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) {
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        if (scopeHints != null && !scopeHints.isEmpty()) {
+            ctx.requestedMeterScope = String.join(",", scopeHints);
+        }
+    }
+
+    ctx.requestedMonth = extractMonth(userMessage);
+    ctx.needsPerMeterPower = wantsPerMeterPowerSummary(userMessage);
+    ctx.needsMeterList = wantsMeterListSummary(userMessage);
+    ctx.needsPhaseCurrent = wantsPhaseCurrentValue(userMessage);
+    ctx.needsPhaseVoltage = wantsPhaseVoltageValue(userMessage);
+    ctx.needsLineVoltage = wantsLineVoltageValue(userMessage);
+    ctx.needsHarmonic = wantsHarmonicSummary(userMessage);
+    ctx.panelTokens = ctx.needsPerMeterPower ? new ArrayList<String>() : extractPanelTokens(userMessage);
+    ctx.requestedPhase = extractPhaseLabel(userMessage);
+    ctx.requestedLinePair = extractLinePairLabel(userMessage);
+    return ctx;
+}
+
+private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forceLlmOnly) throws Exception {
+    if (forceLlmOnly) return null;
+
+    Integer directMeterId = extractMeterId(userMessage);
+    if (directMeterId == null) {
+        directMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
+    }
+    Integer directMonth = extractMonth(userMessage);
+    Integer directTopN = extractTopN(userMessage, 10, 50);
+    Integer directDays = extractDays(userMessage, 7, 90);
+    Integer directExplicitDays = extractExplicitDays(userMessage, 90);
+    TimeWindow directWindow = extractTimeWindow(userMessage);
+    Double directHz = extractHzThreshold(userMessage);
+    Double directPf = extractPfThreshold(userMessage);
+    boolean directTripOnly = wantsTripAlarmOnly(userMessage);
+    String directAlarmTypeToken = extractAlarmTypeToken(userMessage);
+    if (directTripOnly && (directAlarmTypeToken == null || directAlarmTypeToken.trim().isEmpty())) {
+        directAlarmTypeToken = "TRIP";
+    }
+    String directAlarmAreaToken = extractAlarmAreaToken(userMessage);
+    if (directAlarmAreaToken == null || directAlarmAreaToken.trim().isEmpty()) {
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        if (scopeHints != null && !scopeHints.isEmpty()) {
+            directAlarmAreaToken = String.join(",", scopeHints);
+        }
+    }
+    String directMeterScopeToken = extractMeterScopeToken(userMessage);
+    if ((directMeterScopeToken == null || directMeterScopeToken.trim().isEmpty()) &&
+        directAlarmAreaToken != null && !directAlarmAreaToken.trim().isEmpty()) {
+        directMeterScopeToken = directAlarmAreaToken;
+    }
+    List<String> directPanelTokens = extractPanelTokens(userMessage);
+    if (wantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
+        directPanelTokens = extractPanelTokensLoose(userMessage);
+    }
+
+    DirectAnswerResult result = new DirectAnswerResult();
+    if (wantsVoltageAverageSummary(userMessage)) {
+        Timestamp fromTs = directWindow != null ? directWindow.fromTs : null;
+        Timestamp toTs = directWindow != null ? directWindow.toTs : null;
+        String periodLabel = directWindow != null ? directWindow.label : null;
+        Integer daysFallback = (directWindow == null ? directExplicitDays : null);
+        result.dbContext = getVoltageAverageContext(directMeterId, directPanelTokens, fromTs, toTs, periodLabel, daysFallback);
+        result.answer = buildVoltageAverageDirectAnswer(result.dbContext, directMeterId);
+    } else if (wantsMonthlyPowerStats(userMessage)) {
+        result.dbContext = getMonthlyPowerStatsContext(directMeterId, directMonth);
+        result.answer = result.dbContext.contains("no data")
+            ? "요청한 월 전력 통계 데이터가 없습니다."
+            : "월 평균/최대 전력 통계를 조회했습니다.";
+    } else if (wantsBuildingPowerTopN(userMessage)) {
+        result.dbContext = getBuildingPowerTopNContext(directMonth, directTopN);
+        result.answer = result.dbContext.contains("no data")
+            ? "건물별 전력 TOP 데이터가 없습니다."
+            : "건물별 전력 TOP 조회 결과입니다.";
+    } else if (wantsVoltagePhaseAngle(userMessage)) {
+        result.dbContext = getVoltagePhaseAngleContext(directMeterId);
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty())
+            ? "전압 위상각을 조회했습니다."
+            : userCtx;
+    } else if (wantsCurrentPhaseAngle(userMessage)) {
+        result.dbContext = getCurrentPhaseAngleContext(directMeterId);
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty())
+            ? "전류 위상각을 조회했습니다."
+            : userCtx;
+    } else if (wantsPhaseCurrentValue(userMessage)) {
+        result.dbContext = getPhaseCurrentContext(directMeterId, extractPhaseLabel(userMessage));
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전류를 조회했습니다." : userCtx;
+    } else if (wantsPhaseVoltageValue(userMessage)) {
+        result.dbContext = getPhaseVoltageContext(directMeterId, extractPhaseLabel(userMessage));
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전압을 조회했습니다." : userCtx;
+    } else if (wantsLineVoltageValue(userMessage)) {
+        result.dbContext = getLineVoltageContext(directMeterId, extractLinePairLabel(userMessage));
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "선간전압을 조회했습니다." : userCtx;
+    } else if (wantsMeterListSummary(userMessage)) {
+        result.dbContext = getMeterListContext(directMeterScopeToken, directTopN);
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "계측기 목록을 조회했습니다." : userCtx;
+    } else if (wantsPanelLatestStatus(userMessage)) {
+        result.dbContext = getPanelLatestStatusContext(directPanelTokens, directTopN);
+        if (result.dbContext.contains("no data")) {
+            result.answer = "패널 최신 상태 데이터가 없습니다.";
+        } else {
+            String userCtx = buildUserDbContext(result.dbContext);
+            result.answer = (userCtx == null || userCtx.trim().isEmpty())
+                ? "패널 최신 상태를 조회했습니다."
+                : userCtx;
+        }
+    } else if (wantsAlarmTypeSummary(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getAlarmTypeSummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directTripOnly, directTopN);
+        } else {
+            result.dbContext = getAlarmTypeSummaryContext(directDays, null, null, null, directMeterId, directTripOnly, directTopN);
+        }
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 종류를 조회했습니다." : userCtx;
+    } else if (wantsAlarmCountSummary(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
+        } else {
+            result.dbContext = getAlarmCountContext(directDays, null, null, null, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
+        }
+        String userCtx = buildUserDbContext(result.dbContext);
+        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 건수를 조회했습니다." : userCtx;
+    } else if (wantsAlarmSeveritySummary(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getAlarmSeveritySummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        } else {
+            result.dbContext = getAlarmSeveritySummaryContext(directDays);
+        }
+        result.answer = result.dbContext.contains("no data")
+            ? "심각도별 알람 집계 데이터가 없습니다."
+            : "알람 심각도별 건수 요약입니다.";
+    } else if (wantsOpenAlarms(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getOpenAlarmsContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        } else {
+            result.dbContext = getOpenAlarmsContext(directTopN);
+        }
+        result.answer = result.dbContext.contains("none")
+            ? "현재 미해결 알람이 없습니다."
+            : "현재 미해결 알람 목록입니다.";
+    } else if (wantsHarmonicExceed(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getHarmonicExceedListContext(null, null, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+            result.answer = result.dbContext.contains("none")
+                ? "지정 기간 고조파 이상 계측기가 없습니다."
+                : "지정 기간 고조파 이상 계측기 목록입니다.";
+        } else {
+            result.dbContext = getHarmonicExceedListContext(null, null, directTopN);
+            result.answer = result.dbContext.contains("none")
+                ? "고조파 이상 계측기가 없습니다."
+                : "고조파 이상 계측기 목록입니다.";
+        }
+    } else if (wantsFrequencyOutlier(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getFrequencyOutlierListContext(directHz, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        } else {
+            result.dbContext = getFrequencyOutlierListContext(directHz, directTopN);
+        }
+        result.answer = result.dbContext.contains("none")
+            ? "주파수 이상치가 없습니다."
+            : "주파수 이상치 목록입니다.";
+    } else if (wantsVoltageUnbalanceTopN(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getVoltageUnbalanceTopNContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        } else {
+            result.dbContext = getVoltageUnbalanceTopNContext(directTopN);
+        }
+        result.answer = result.dbContext.contains("no data")
+            ? "전압 불평형 데이터가 없습니다."
+            : "전압 불평형 상위 목록입니다.";
+    } else if (wantsPowerFactorOutlier(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getPowerFactorOutlierListContext(directPf, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        } else {
+            result.dbContext = getPowerFactorOutlierListContext(directPf, directTopN);
+        }
+        int pfNoSignalCount = directWindow != null
+            ? getPowerFactorNoSignalCount(directWindow.fromTs, directWindow.toTs)
+            : getPowerFactorNoSignalCount();
+        result.answer = result.dbContext.contains("none")
+            ? "역률 이상(유효신호 기준, 임계 미만) 계측기가 없습니다."
+            : "역률 이상(유효신호 기준, 임계 미만) 계측기 목록입니다.";
+        if (pfNoSignalCount >= 0) {
+            result.answer = result.answer + " (신호없음 " + pfNoSignalCount + "개 별도)";
+        }
+    } else if (wantsMeterSummary(userMessage) || wantsAlarmSummary(userMessage)) {
+        boolean needMeterSummary = wantsMeterSummary(userMessage);
+        boolean needAlarmSummary = wantsAlarmSummary(userMessage);
+        String meterCtx = needMeterSummary ? getRecentMeterContext(directMeterId, directPanelTokens) : "";
+        String alarmCtx = needAlarmSummary ? getRecentAlarmContext() : "";
+        StringBuilder dbSb = new StringBuilder();
+        if (meterCtx != null && !meterCtx.trim().isEmpty()) dbSb.append("Meter: ").append(meterCtx);
+        if (alarmCtx != null && !alarmCtx.trim().isEmpty()) {
+            if (dbSb.length() > 0) dbSb.append("\n");
+            dbSb.append("Alarm: ").append(alarmCtx);
+        }
+        result.dbContext = dbSb.toString();
+
+        if (result.dbContext == null || result.dbContext.trim().isEmpty()) {
+            result.answer = "요청한 조회 결과를 찾지 못했습니다.";
+        } else if (result.dbContext.contains("unavailable")) {
+            result.answer = "현재 계측/알람 조회를 수행할 수 없습니다.";
+        } else if (needMeterSummary && !needAlarmSummary) {
+            if (result.dbContext.contains("no data")) {
+                result.answer = "요청한 계측 데이터가 없습니다.";
+            } else {
+                String userCtx = buildUserDbContext(result.dbContext);
+                result.answer = (userCtx == null || userCtx.trim().isEmpty())
+                    ? "최근 계측값을 조회했습니다."
+                    : userCtx;
+            }
+        } else if (!needMeterSummary && needAlarmSummary) {
+            result.answer = result.dbContext.contains("no recent alarm")
+                ? "최근 알람이 없습니다."
+                : "최근 알람을 조회했습니다.";
+        } else {
+            result.answer = "최근 계측값과 알람을 조회했습니다.";
+        }
+    }
+
+    if (result.answer == null || result.dbContext == null) {
+        return null;
+    }
+    return result;
+}
+
+private AgentExecutionContext buildExecutionContext(String userMessage, AgentRequestContext reqCtx, String model, String coderModel) {
+    AgentExecutionContext ctx = new AgentExecutionContext();
+    ctx.requestedMeterId = reqCtx.requestedMeterId;
+    ctx.requestedMeterScope = reqCtx.requestedMeterScope;
+    ctx.requestedMonth = reqCtx.requestedMonth;
+    ctx.requestedTopN = extractTopN(userMessage, 10, 50);
+    ctx.requestedPhase = reqCtx.requestedPhase;
+    ctx.requestedLinePair = reqCtx.requestedLinePair;
+    ctx.panelTokens = reqCtx.panelTokens;
+    ctx.needsMeter = wantsMeterSummary(userMessage);
+    ctx.needsAlarm = wantsAlarmSummary(userMessage);
+    ctx.needsFrequency = wantsMonthlyFrequencySummary(userMessage);
+    ctx.needsPerMeterPower = reqCtx.needsPerMeterPower;
+    ctx.needsMeterList = reqCtx.needsMeterList;
+    ctx.needsPhaseCurrent = reqCtx.needsPhaseCurrent;
+    ctx.needsPhaseVoltage = reqCtx.needsPhaseVoltage;
+    ctx.needsLineVoltage = reqCtx.needsLineVoltage;
+    ctx.needsHarmonic = reqCtx.needsHarmonic;
+    ctx.forceCoderFlow = coderModel.equals(routeModel(userMessage, model, coderModel));
+    ctx.needsDb = ctx.needsMeter || ctx.needsAlarm || ctx.needsFrequency || ctx.needsPerMeterPower ||
+        ctx.needsMeterList || ctx.needsPhaseCurrent || ctx.needsPhaseVoltage || ctx.needsLineVoltage || ctx.needsHarmonic;
+    return ctx;
+}
+
+private void applyClassifierHints(AgentExecutionContext ctx, String userMessage, String classifierRaw) {
+    Boolean cNeedsDb = extractJsonBoolField(classifierRaw, "needs_db");
+    Boolean cNeedsMeter = extractJsonBoolField(classifierRaw, "needs_meter");
+    Boolean cNeedsAlarm = extractJsonBoolField(classifierRaw, "needs_alarm");
+    Boolean cNeedsFrequency = extractJsonBoolField(classifierRaw, "needs_frequency");
+    Boolean cNeedsPower = extractJsonBoolField(classifierRaw, "needs_power_by_meter");
+    Boolean cNeedsMeterList = extractJsonBoolField(classifierRaw, "needs_meter_list");
+    Boolean cNeedsPhaseCurrent = extractJsonBoolField(classifierRaw, "needs_phase_current");
+    Boolean cNeedsPhaseVoltage = extractJsonBoolField(classifierRaw, "needs_phase_voltage");
+    Boolean cNeedsLineVoltage = extractJsonBoolField(classifierRaw, "needs_line_voltage");
+    Boolean cNeedsHarmonic = extractJsonBoolField(classifierRaw, "needs_harmonic");
+    Integer cMeterId = extractJsonIntField(classifierRaw, "meter_id");
+    Integer cMonth = extractJsonIntField(classifierRaw, "month");
+    String cPanel = extractJsonStringField(classifierRaw, "panel");
+    String cMeterScope = extractJsonStringField(classifierRaw, "meter_scope");
+    String cPhase = extractJsonStringField(classifierRaw, "phase");
+    String cLinePair = extractJsonStringField(classifierRaw, "line_pair");
+
+    if (cNeedsDb != null) ctx.needsDb = ctx.needsDb || cNeedsDb.booleanValue();
+    ctx.needsDb = ctx.needsDb || ctx.forceCoderFlow;
+    if (cNeedsMeter != null) ctx.needsMeter = ctx.needsMeter || cNeedsMeter.booleanValue();
+    if (cNeedsAlarm != null) ctx.needsAlarm = ctx.needsAlarm || cNeedsAlarm.booleanValue();
+    if (cNeedsFrequency != null) ctx.needsFrequency = ctx.needsFrequency || cNeedsFrequency.booleanValue();
+    if (cNeedsPower != null) ctx.needsPerMeterPower = ctx.needsPerMeterPower || cNeedsPower.booleanValue();
+    if (cNeedsMeterList != null) ctx.needsMeterList = ctx.needsMeterList || cNeedsMeterList.booleanValue();
+    if (cNeedsPhaseCurrent != null) ctx.needsPhaseCurrent = ctx.needsPhaseCurrent || cNeedsPhaseCurrent.booleanValue();
+    if (cNeedsPhaseVoltage != null) ctx.needsPhaseVoltage = ctx.needsPhaseVoltage || cNeedsPhaseVoltage.booleanValue();
+    if (cNeedsLineVoltage != null) ctx.needsLineVoltage = ctx.needsLineVoltage || cNeedsLineVoltage.booleanValue();
+    if (cNeedsHarmonic != null) ctx.needsHarmonic = ctx.needsHarmonic || cNeedsHarmonic.booleanValue();
+    if (ctx.needsMeterList && !wantsPerMeterPowerSummary(userMessage)) ctx.needsPerMeterPower = false;
+    if (ctx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) ctx.needsFrequency = false;
+    if (cMeterId != null) ctx.requestedMeterId = cMeterId;
+    if (cMonth != null && cMonth.intValue() >= 1 && cMonth.intValue() <= 12) ctx.requestedMonth = cMonth;
+    if ((ctx.panelTokens == null || ctx.panelTokens.isEmpty()) && cPanel != null && !cPanel.trim().isEmpty()) {
+        ctx.panelTokens = panelTokensFromRaw(cPanel);
+    }
+    if ((ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) && cMeterScope != null && !cMeterScope.trim().isEmpty()) {
+        ctx.requestedMeterScope = cMeterScope;
+    }
+    if ((ctx.requestedPhase == null || ctx.requestedPhase.trim().isEmpty()) && cPhase != null && !cPhase.trim().isEmpty()) {
+        ctx.requestedPhase = cPhase;
+    }
+    if ((ctx.requestedLinePair == null || ctx.requestedLinePair.trim().isEmpty()) && cLinePair != null && !cLinePair.trim().isEmpty()) {
+        ctx.requestedLinePair = cLinePair;
+    }
+    if (ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) {
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        if (scopeHints != null && !scopeHints.isEmpty()) {
+            ctx.requestedMeterScope = String.join(",", scopeHints);
+        }
+    }
+}
+
+private PlannerExecutionResult executePlannerAndLoadContexts(
+    AgentExecutionContext execCtx,
+    String userMessage,
+    String classifierRaw,
+    String schemaContext,
+    String ollamaUrl,
+    String coderModel,
+    int ollamaConnectTimeoutMs,
+    int ollamaReadTimeoutMs
+) throws Exception {
+    PlannerExecutionResult result = new PlannerExecutionResult();
+    if (!execCtx.needsDb) return result;
+
+    String coderPrompt =
+        "You are DB task planner. Return only one JSON object with keys: " +
+        "task(\"meter\"|\"alarm\"|\"both\"|\"none\"), needs_frequency(boolean), needs_power_by_meter(boolean), needs_meter_list(boolean), needs_phase_current(boolean), needs_phase_voltage(boolean), needs_line_voltage(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null), meter_scope(string|null), phase(string|null), line_pair(string|null). " +
+        "No markdown. No explanation.\n\n" +
+        "User: " + userMessage + "\n" +
+        "Classifier JSON: " + classifierRaw + "\n\n" +
+        "Schema Context:\n" + schemaContext;
+    String coderRaw = callOllamaOnce(ollamaUrl, coderModel, coderPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
+
+    String task = extractJsonStringField(coderRaw, "task");
+    Boolean planNeedsFrequency = extractJsonBoolField(coderRaw, "needs_frequency");
+    Boolean planNeedsPower = extractJsonBoolField(coderRaw, "needs_power_by_meter");
+    Boolean planNeedsMeterList = extractJsonBoolField(coderRaw, "needs_meter_list");
+    Boolean planNeedsPhaseCurrent = extractJsonBoolField(coderRaw, "needs_phase_current");
+    Boolean planNeedsPhaseVoltage = extractJsonBoolField(coderRaw, "needs_phase_voltage");
+    Boolean planNeedsLineVoltage = extractJsonBoolField(coderRaw, "needs_line_voltage");
+    Boolean planNeedsHarmonic = extractJsonBoolField(coderRaw, "needs_harmonic");
+    Integer planMeterId = extractJsonIntField(coderRaw, "meter_id");
+    Integer planMonth = extractJsonIntField(coderRaw, "month");
+    String planPanel = extractJsonStringField(coderRaw, "panel");
+    String planMeterScope = extractJsonStringField(coderRaw, "meter_scope");
+    String planPhase = extractJsonStringField(coderRaw, "phase");
+    String planLinePair = extractJsonStringField(coderRaw, "line_pair");
+    boolean runMeter = execCtx.needsMeter;
+    boolean runAlarm = execCtx.needsAlarm;
+    boolean runFrequency = execCtx.needsFrequency;
+    boolean runPower = execCtx.needsPerMeterPower;
+    boolean runMeterList = execCtx.needsMeterList;
+    boolean runPhaseCurrent = execCtx.needsPhaseCurrent;
+    boolean runPhaseVoltage = execCtx.needsPhaseVoltage;
+    boolean runLineVoltage = execCtx.needsLineVoltage;
+    boolean runHarmonic = execCtx.needsHarmonic;
+
+    if (task != null) {
+        String t = task.trim().toLowerCase(java.util.Locale.ROOT);
+        if ("meter".equals(t)) { runMeter = true; runAlarm = false; }
+        else if ("alarm".equals(t)) { runMeter = false; runAlarm = true; }
+        else if ("both".equals(t)) { runMeter = true; runAlarm = true; }
+        else if ("none".equals(t)) { runMeter = false; runAlarm = false; }
+    }
+    if (execCtx.needsFrequency && !wantsMeterSummary(userMessage)) runMeter = false;
+    if (execCtx.needsFrequency && !wantsAlarmSummary(userMessage)) runAlarm = false;
+    if (execCtx.needsPerMeterPower && !wantsMeterSummary(userMessage)) runMeter = false;
+    if (execCtx.needsPerMeterPower && !wantsAlarmSummary(userMessage)) runAlarm = false;
+    if (execCtx.needsHarmonic && !wantsMeterSummary(userMessage)) runMeter = false;
+    if (execCtx.needsHarmonic && !wantsAlarmSummary(userMessage)) runAlarm = false;
+    if (execCtx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
+    if (planMeterId != null) execCtx.requestedMeterId = planMeterId;
+    if (planMonth != null && planMonth.intValue() >= 1 && planMonth.intValue() <= 12) execCtx.requestedMonth = planMonth;
+    if (planNeedsFrequency != null) runFrequency = runFrequency || planNeedsFrequency.booleanValue();
+    if (planNeedsPower != null) runPower = runPower || planNeedsPower.booleanValue();
+    if (planNeedsMeterList != null) runMeterList = runMeterList || planNeedsMeterList.booleanValue();
+    if (planNeedsPhaseCurrent != null) runPhaseCurrent = runPhaseCurrent || planNeedsPhaseCurrent.booleanValue();
+    if (planNeedsPhaseVoltage != null) runPhaseVoltage = runPhaseVoltage || planNeedsPhaseVoltage.booleanValue();
+    if (planNeedsLineVoltage != null) runLineVoltage = runLineVoltage || planNeedsLineVoltage.booleanValue();
+    if (planNeedsHarmonic != null) runHarmonic = runHarmonic || planNeedsHarmonic.booleanValue();
+    if (runMeterList && !wantsPerMeterPowerSummary(userMessage)) runPower = false;
+    if (execCtx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
+    if ((execCtx.panelTokens == null || execCtx.panelTokens.isEmpty()) && planPanel != null && !planPanel.trim().isEmpty()) {
+        execCtx.panelTokens = panelTokensFromRaw(planPanel);
+    }
+    if ((execCtx.requestedMeterScope == null || execCtx.requestedMeterScope.trim().isEmpty()) && planMeterScope != null && !planMeterScope.trim().isEmpty()) {
+        execCtx.requestedMeterScope = planMeterScope;
+    }
+    if ((execCtx.requestedPhase == null || execCtx.requestedPhase.trim().isEmpty()) && planPhase != null && !planPhase.trim().isEmpty()) {
+        execCtx.requestedPhase = planPhase;
+    }
+    if ((execCtx.requestedLinePair == null || execCtx.requestedLinePair.trim().isEmpty()) && planLinePair != null && !planLinePair.trim().isEmpty()) {
+        execCtx.requestedLinePair = planLinePair;
+    }
+    if (execCtx.requestedMeterScope == null || execCtx.requestedMeterScope.trim().isEmpty()) {
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        if (scopeHints != null && !scopeHints.isEmpty()) {
+            execCtx.requestedMeterScope = String.join(",", scopeHints);
+        }
+    }
+
+    if (runMeter) result.meterCtx = getRecentMeterContext(execCtx.requestedMeterId, execCtx.panelTokens);
+    if (runAlarm) result.alarmCtx = getRecentAlarmContext();
+    if (runFrequency) result.frequencyCtx = getMonthlyAvgFrequencyContext(execCtx.requestedMeterId, execCtx.requestedMonth);
+    if (runPower) result.powerCtx = getPerMeterPowerContext();
+    if (runMeterList) result.meterListCtx = getMeterListContext(execCtx.requestedMeterScope, execCtx.requestedTopN);
+    if (runPhaseCurrent) result.phaseCurrentCtx = getPhaseCurrentContext(execCtx.requestedMeterId, execCtx.requestedPhase);
+    if (runPhaseVoltage) result.phaseVoltageCtx = getPhaseVoltageContext(execCtx.requestedMeterId, execCtx.requestedPhase);
+    if (runLineVoltage) result.lineVoltageCtx = getLineVoltageContext(execCtx.requestedMeterId, execCtx.requestedLinePair);
+    if (runHarmonic) result.harmonicCtx = getHarmonicContext(execCtx.requestedMeterId, execCtx.panelTokens);
+    if (!runMeter && !runAlarm && !runFrequency && !runPower && !runMeterList && !runPhaseCurrent && !runPhaseVoltage && !runLineVoltage && !runHarmonic && execCtx.forceCoderFlow) {
+        String coderAnswerPrompt =
+            "Answer the user's DB/SQL request directly. " +
+            "Use SQL Server syntax if SQL is requested. " +
+            "Return concise plain text, no markdown fences.\n\n" +
+            "User: " + userMessage + "\n\n" +
+            "Schema Context:\n" + schemaContext;
+        result.coderDraft = callOllamaOnce(ollamaUrl, coderModel, coderAnswerPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.2d);
+    } else if (!runMeter && !runAlarm && !runFrequency && !runPower && !runMeterList && !runPhaseCurrent && !runPhaseVoltage && !runLineVoltage && !runHarmonic) {
+        execCtx.needsDb = false;
+    }
+
+    return result;
+}
+
+private String buildDbContext(AgentExecutionContext execCtx, PlannerExecutionResult plannerResult, String userMessage) {
+    if (!execCtx.needsDb) return "";
+    if (execCtx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) {
+        plannerResult.frequencyCtx = "";
+    }
+    StringBuilder dbSb = new StringBuilder();
+    if (plannerResult.meterCtx != null && !plannerResult.meterCtx.trim().isEmpty()) dbSb.append("Meter: ").append(plannerResult.meterCtx);
+    if (plannerResult.alarmCtx != null && !plannerResult.alarmCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("Alarm: ").append(plannerResult.alarmCtx);
+    }
+    if (plannerResult.frequencyCtx != null && !plannerResult.frequencyCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("Frequency: ").append(plannerResult.frequencyCtx);
+    }
+    if (plannerResult.powerCtx != null && !plannerResult.powerCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("PowerByMeter: ").append(plannerResult.powerCtx);
+    }
+    if (plannerResult.meterListCtx != null && !plannerResult.meterListCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("MeterList: ").append(plannerResult.meterListCtx);
+    }
+    if (plannerResult.phaseCurrentCtx != null && !plannerResult.phaseCurrentCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("PhaseCurrent: ").append(plannerResult.phaseCurrentCtx);
+    }
+    if (plannerResult.phaseVoltageCtx != null && !plannerResult.phaseVoltageCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("PhaseVoltage: ").append(plannerResult.phaseVoltageCtx);
+    }
+    if (plannerResult.lineVoltageCtx != null && !plannerResult.lineVoltageCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("LineVoltage: ").append(plannerResult.lineVoltageCtx);
+    }
+    if (plannerResult.harmonicCtx != null && !plannerResult.harmonicCtx.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("Harmonic: ").append(plannerResult.harmonicCtx);
+    }
+    if (plannerResult.coderDraft != null && !plannerResult.coderDraft.trim().isEmpty()) {
+        if (dbSb.length() > 0) dbSb.append("\n");
+        dbSb.append("CoderDraft: ").append(plannerResult.coderDraft);
+    }
+    return dbSb.toString();
+}
+
+private SpecializedAnswerResult tryBuildSpecializedAnswer(AgentExecutionContext execCtx, PlannerExecutionResult plannerResult) {
+    if (execCtx.forceCoderFlow) return null;
+    SpecializedAnswerResult result = new SpecializedAnswerResult();
+    if (execCtx.needsHarmonic && plannerResult.harmonicCtx != null && !plannerResult.harmonicCtx.trim().isEmpty()) {
+        result.answer = buildHarmonicDirectAnswer(plannerResult.harmonicCtx, execCtx.requestedMeterId);
+    } else if (execCtx.needsFrequency && plannerResult.frequencyCtx != null && !plannerResult.frequencyCtx.trim().isEmpty()) {
+        result.answer = buildFrequencyDirectAnswer(plannerResult.frequencyCtx, execCtx.requestedMeterId, execCtx.requestedMonth);
+    } else if (execCtx.needsPerMeterPower && plannerResult.powerCtx != null && !plannerResult.powerCtx.trim().isEmpty()) {
+        result.answer = buildPerMeterPowerDirectAnswer(plannerResult.powerCtx);
+    } else if (execCtx.needsMeterList && plannerResult.meterListCtx != null && !plannerResult.meterListCtx.trim().isEmpty()) {
+        result.answer = buildUserDbContext(plannerResult.meterListCtx);
+        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "계측기 목록을 조회했습니다.";
+    } else if (execCtx.needsPhaseCurrent && plannerResult.phaseCurrentCtx != null && !plannerResult.phaseCurrentCtx.trim().isEmpty()) {
+        result.answer = buildUserDbContext(plannerResult.phaseCurrentCtx);
+        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전류를 조회했습니다.";
+    } else if (execCtx.needsPhaseVoltage && plannerResult.phaseVoltageCtx != null && !plannerResult.phaseVoltageCtx.trim().isEmpty()) {
+        result.answer = buildUserDbContext(plannerResult.phaseVoltageCtx);
+        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전압을 조회했습니다.";
+    } else if (execCtx.needsLineVoltage && plannerResult.lineVoltageCtx != null && !plannerResult.lineVoltageCtx.trim().isEmpty()) {
+        result.answer = buildUserDbContext(plannerResult.lineVoltageCtx);
+        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "선간전압을 조회했습니다.";
+    }
+    if (result.answer == null) return null;
+    return result;
 }
 
 private String buildSchemaContextFromDb() {
@@ -2788,32 +3473,17 @@ private boolean modelExistsInTagList(String tagJson, String modelName) {
 }
 
 private String callOllamaOnce(String ollamaUrl, String model, String prompt, int connectTimeoutMs, int readTimeoutMs, double temperature) throws Exception {
-    URL apiUrl = new URL(ollamaUrl + "/api/generate");
-    HttpURLConnection conn = (HttpURLConnection) apiUrl.openConnection();
-    conn.setRequestMethod("POST");
-    conn.setDoOutput(true);
-    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-    conn.setConnectTimeout(connectTimeoutMs);
-    conn.setReadTimeout(readTimeoutMs);
-
     String payload = "{\"model\":\"" + model + "\",\"prompt\":" + jsonEscape(prompt) + ",\"stream\":false,\"temperature\":" + temperature + "}";
-    try (OutputStream os = conn.getOutputStream()) {
-        byte[] input = payload.getBytes("utf-8");
-        os.write(input, 0, input.length);
-    }
-
-    int responseCode = conn.getResponseCode();
-    InputStream is = (responseCode >= 200 && responseCode < 400) ? conn.getInputStream() : conn.getErrorStream();
-    StringBuilder respBody = new StringBuilder();
-    try (BufferedReader br = new BufferedReader(new InputStreamReader(is, "utf-8"))) {
-        String line;
-        while ((line = br.readLine()) != null) {
-            respBody.append(line);
-        }
-    }
-    String body = respBody.toString();
-    if (responseCode < 200 || responseCode >= 400) {
-        throw new RuntimeException("Ollama error " + responseCode + ": " + clip(body, 300));
+    OllamaHttpResponse resp = callOllamaEndpoint(
+        ollamaUrl + "/api/generate",
+        "POST",
+        payload,
+        connectTimeoutMs,
+        readTimeoutMs
+    );
+    String body = resp.body == null ? "" : resp.body;
+    if (resp.statusCode < 200 || resp.statusCode >= 400) {
+        throw new RuntimeException("Ollama error " + resp.statusCode + ": " + clip(body, 300));
     }
 
     String responseText = extractJsonStringField(body, "response");
@@ -2994,218 +3664,14 @@ try {
 
 boolean isAdmin = isAdminRequest(request, application);
 
-Integer directMeterId = extractMeterId(userMessage);
-if (directMeterId == null) {
-    directMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
-}
-Integer directMonth = extractMonth(userMessage);
-Integer directTopN = extractTopN(userMessage, 10, 50);
-Integer directDays = extractDays(userMessage, 7, 90);
-Integer directExplicitDays = extractExplicitDays(userMessage, 90);
-TimeWindow directWindow = extractTimeWindow(userMessage);
-Double directHz = extractHzThreshold(userMessage);
-Double directPf = extractPfThreshold(userMessage);
-boolean directTripOnly = wantsTripAlarmOnly(userMessage);
-String directAlarmTypeToken = extractAlarmTypeToken(userMessage);
-if (directTripOnly && (directAlarmTypeToken == null || directAlarmTypeToken.trim().isEmpty())) {
-    directAlarmTypeToken = "TRIP";
-}
-String directAlarmAreaToken = extractAlarmAreaToken(userMessage);
-if (directAlarmAreaToken == null || directAlarmAreaToken.trim().isEmpty()) {
-    List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-    if (scopeHints != null && !scopeHints.isEmpty()) {
-        directAlarmAreaToken = String.join(",", scopeHints);
+DirectAnswerResult directResult = tryBuildDirectAnswer(userMessage, forceLlmOnly);
+if (directResult != null) {
+    int meterCount = countDistinctMeterIds(directResult.dbContext);
+    boolean skipMeterCountSuffix = directResult.dbContext.startsWith("[Alarm count]") || directResult.dbContext.startsWith("[Panel latest status]");
+    if (!skipMeterCountSuffix && meterCount > 0 && (directResult.answer == null || directResult.answer.indexOf('\n') < 0)) {
+        directResult.answer = directResult.answer + " (해당 계측기 " + meterCount + "개)";
     }
-}
-String directMeterScopeToken = extractMeterScopeToken(userMessage);
-if ((directMeterScopeToken == null || directMeterScopeToken.trim().isEmpty()) &&
-    directAlarmAreaToken != null && !directAlarmAreaToken.trim().isEmpty()) {
-    directMeterScopeToken = directAlarmAreaToken;
-}
-List<String> directPanelTokens = extractPanelTokens(userMessage);
-if (wantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
-    directPanelTokens = extractPanelTokensLoose(userMessage);
-}
-
-String directDbContext = null;
-String directAnswer = null;
-
-if (!forceLlmOnly && wantsVoltageAverageSummary(userMessage)) {
-    Timestamp fromTs = directWindow != null ? directWindow.fromTs : null;
-    Timestamp toTs = directWindow != null ? directWindow.toTs : null;
-    String periodLabel = directWindow != null ? directWindow.label : null;
-    Integer daysFallback = (directWindow == null ? directExplicitDays : null);
-    directDbContext = getVoltageAverageContext(directMeterId, directPanelTokens, fromTs, toTs, periodLabel, daysFallback);
-    directAnswer = buildVoltageAverageDirectAnswer(directDbContext, directMeterId);
-} else if (!forceLlmOnly && wantsMonthlyPowerStats(userMessage)) {
-    directDbContext = getMonthlyPowerStatsContext(directMeterId, directMonth);
-    directAnswer = directDbContext.contains("no data")
-        ? "요청한 월 전력 통계 데이터가 없습니다."
-        : "월 평균/최대 전력 통계를 조회했습니다.";
-} else if (!forceLlmOnly && wantsBuildingPowerTopN(userMessage)) {
-    directDbContext = getBuildingPowerTopNContext(directMonth, directTopN);
-    directAnswer = directDbContext.contains("no data")
-        ? "건물별 전력 TOP 데이터가 없습니다."
-        : "건물별 전력 TOP 조회 결과입니다.";
-} else if (!forceLlmOnly && wantsVoltagePhaseAngle(userMessage)) {
-    directDbContext = getVoltagePhaseAngleContext(directMeterId);
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty())
-        ? "전압 위상각을 조회했습니다."
-        : userCtx;
-} else if (!forceLlmOnly && wantsCurrentPhaseAngle(userMessage)) {
-    directDbContext = getCurrentPhaseAngleContext(directMeterId);
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty())
-        ? "전류 위상각을 조회했습니다."
-        : userCtx;
-} else if (!forceLlmOnly && wantsPhaseCurrentValue(userMessage)) {
-    directDbContext = getPhaseCurrentContext(directMeterId, extractPhaseLabel(userMessage));
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전류를 조회했습니다." : userCtx;
-} else if (!forceLlmOnly && wantsPhaseVoltageValue(userMessage)) {
-    directDbContext = getPhaseVoltageContext(directMeterId, extractPhaseLabel(userMessage));
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전압을 조회했습니다." : userCtx;
-} else if (!forceLlmOnly && wantsLineVoltageValue(userMessage)) {
-    directDbContext = getLineVoltageContext(directMeterId, extractLinePairLabel(userMessage));
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "선간전압을 조회했습니다." : userCtx;
-} else if (!forceLlmOnly && wantsMeterListSummary(userMessage)) {
-    directDbContext = getMeterListContext(directMeterScopeToken, directTopN);
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "계측기 목록을 조회했습니다." : userCtx;
-} else if (!forceLlmOnly && wantsPanelLatestStatus(userMessage)) {
-    directDbContext = getPanelLatestStatusContext(directPanelTokens, directTopN);
-    if (directDbContext.contains("no data")) {
-        directAnswer = "패널 최신 상태 데이터가 없습니다.";
-    } else {
-        String userCtx = buildUserDbContext(directDbContext);
-        directAnswer = (userCtx == null || userCtx.trim().isEmpty())
-            ? "패널 최신 상태를 조회했습니다."
-            : userCtx;
-    }
-} else if (!forceLlmOnly && wantsAlarmTypeSummary(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getAlarmTypeSummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directTripOnly, directTopN);
-    } else {
-        directDbContext = getAlarmTypeSummaryContext(directDays, null, null, null, directMeterId, directTripOnly, directTopN);
-    }
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 종류를 조회했습니다." : userCtx;
-} else if (!forceLlmOnly && wantsAlarmCountSummary(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
-    } else {
-        directDbContext = getAlarmCountContext(directDays, null, null, null, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
-    }
-    String userCtx = buildUserDbContext(directDbContext);
-    directAnswer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 건수를 조회했습니다." : userCtx;
-} else if (!forceLlmOnly && wantsAlarmSeveritySummary(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getAlarmSeveritySummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label);
-    } else {
-        directDbContext = getAlarmSeveritySummaryContext(directDays);
-    }
-    directAnswer = directDbContext.contains("no data")
-        ? "심각도별 알람 집계 데이터가 없습니다."
-        : "알람 심각도별 건수 요약입니다.";
-} else if (!forceLlmOnly && wantsOpenAlarms(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getOpenAlarmsContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
-    } else {
-        directDbContext = getOpenAlarmsContext(directTopN);
-    }
-    directAnswer = directDbContext.contains("none")
-        ? "현재 미해결 알람이 없습니다."
-        : "현재 미해결 알람 목록입니다.";
-} else if (!forceLlmOnly && wantsHarmonicExceed(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getHarmonicExceedListContext(null, null, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
-        directAnswer = directDbContext.contains("none")
-            ? "지정 기간 고조파 이상 계측기가 없습니다."
-            : "지정 기간 고조파 이상 계측기 목록입니다.";
-    } else {
-        directDbContext = getHarmonicExceedListContext(null, null, directTopN);
-        directAnswer = directDbContext.contains("none")
-            ? "고조파 이상 계측기가 없습니다."
-            : "고조파 이상 계측기 목록입니다.";
-    }
-} else if (!forceLlmOnly && wantsFrequencyOutlier(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getFrequencyOutlierListContext(directHz, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
-    } else {
-        directDbContext = getFrequencyOutlierListContext(directHz, directTopN);
-    }
-    directAnswer = directDbContext.contains("none")
-        ? "주파수 이상치가 없습니다."
-        : "주파수 이상치 목록입니다.";
-} else if (!forceLlmOnly && wantsVoltageUnbalanceTopN(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getVoltageUnbalanceTopNContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
-    } else {
-        directDbContext = getVoltageUnbalanceTopNContext(directTopN);
-    }
-    directAnswer = directDbContext.contains("no data")
-        ? "전압 불평형 데이터가 없습니다."
-        : "전압 불평형 상위 목록입니다.";
-} else if (!forceLlmOnly && wantsPowerFactorOutlier(userMessage)) {
-    if (directWindow != null) {
-        directDbContext = getPowerFactorOutlierListContext(directPf, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
-    } else {
-        directDbContext = getPowerFactorOutlierListContext(directPf, directTopN);
-    }
-    int pfNoSignalCount = directWindow != null
-        ? getPowerFactorNoSignalCount(directWindow.fromTs, directWindow.toTs)
-        : getPowerFactorNoSignalCount();
-    directAnswer = directDbContext.contains("none")
-        ? "역률 이상(유효신호 기준, 임계 미만) 계측기가 없습니다."
-        : "역률 이상(유효신호 기준, 임계 미만) 계측기 목록입니다.";
-    if (pfNoSignalCount >= 0) {
-        directAnswer = directAnswer + " (신호없음 " + pfNoSignalCount + "개 별도)";
-    }
-} else if (!forceLlmOnly && (wantsMeterSummary(userMessage) || wantsAlarmSummary(userMessage))) {
-    boolean needMeterSummary = wantsMeterSummary(userMessage);
-    boolean needAlarmSummary = wantsAlarmSummary(userMessage);
-    String meterCtx = needMeterSummary ? getRecentMeterContext(directMeterId, directPanelTokens) : "";
-    String alarmCtx = needAlarmSummary ? getRecentAlarmContext() : "";
-    StringBuilder dbSb = new StringBuilder();
-    if (meterCtx != null && !meterCtx.trim().isEmpty()) dbSb.append("Meter: ").append(meterCtx);
-    if (alarmCtx != null && !alarmCtx.trim().isEmpty()) {
-        if (dbSb.length() > 0) dbSb.append("\n");
-        dbSb.append("Alarm: ").append(alarmCtx);
-    }
-    directDbContext = dbSb.toString();
-
-    if (directDbContext == null || directDbContext.trim().isEmpty()) {
-        directAnswer = "요청한 조회 결과를 찾지 못했습니다.";
-    } else if (directDbContext.contains("unavailable")) {
-        directAnswer = "현재 계측/알람 조회를 수행할 수 없습니다.";
-    } else if (needMeterSummary && !needAlarmSummary) {
-        if (directDbContext.contains("no data")) {
-            directAnswer = "요청한 계측 데이터가 없습니다.";
-        } else {
-            String userCtx = buildUserDbContext(directDbContext);
-            directAnswer = (userCtx == null || userCtx.trim().isEmpty())
-                ? "최근 계측값을 조회했습니다."
-                : userCtx;
-        }
-    } else if (!needMeterSummary && needAlarmSummary) {
-        directAnswer = directDbContext.contains("no recent alarm")
-            ? "최근 알람이 없습니다."
-            : "최근 알람을 조회했습니다.";
-    } else {
-        directAnswer = "최근 계측값과 알람을 조회했습니다.";
-    }
-}
-
-if (directAnswer != null && directDbContext != null) {
-    int meterCount = countDistinctMeterIds(directDbContext);
-    boolean skipMeterCountSuffix = directDbContext.startsWith("[Alarm count]") || directDbContext.startsWith("[Panel latest status]");
-    if (!skipMeterCountSuffix && meterCount > 0 && (directAnswer == null || directAnswer.indexOf('\n') < 0)) {
-        directAnswer = directAnswer + " (해당 계측기 " + meterCount + "개)";
-    }
-    writeSuccessJson(out, response, directAnswer, directDbContext, isAdmin);
+    writeSuccessJson(out, response, directResult.answer, directResult.dbContext, isAdmin);
     return;
 }
 
@@ -3220,83 +3686,18 @@ if (forceRuleOnly) {
     return;
 }
 
-String ollamaUrl = System.getenv("OLLAMA_URL");
-if (ollamaUrl == null || ollamaUrl.isEmpty()) {
-    ollamaUrl = "http://localhost:11434";
-}
-ollamaUrl = normalizeOllamaUrl(ollamaUrl);
-
-String model = System.getenv("OLLAMA_MODEL");
-if (model == null || model.isEmpty()) {
-    model = "qwen2.5:14b";
-}
-String coderModel = System.getenv("OLLAMA_MODEL_CODER");
-if (coderModel == null || coderModel.isEmpty()) {
-    coderModel = "qwen2.5-coder:7b";
-}
-Properties modelConfig = loadAgentModelConfig(application);
-String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
-if (configuredOllamaUrl != null) ollamaUrl = configuredOllamaUrl;
-String configuredModel = trimToNull(modelConfig.getProperty("model"));
-String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
-if (configuredModel != null) model = configuredModel;
-if (configuredCoderModel != null) coderModel = configuredCoderModel;
-
-int ollamaConnectTimeoutMs = 5000;
-int ollamaReadTimeoutMs = 60000;
-Integer connectSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
-Integer readSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
-if (connectSec != null) {
-    int s = connectSec.intValue();
-    if (s < 1) s = 1;
-    if (s > 60) s = 60;
-    ollamaConnectTimeoutMs = s * 1000;
-}
-if (readSec != null) {
-    int s = readSec.intValue();
-    if (s < 3) s = 3;
-    if (s > 600) s = 600;
-    ollamaReadTimeoutMs = s * 1000;
-}
-String ttlMinutesRaw = trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes"));
-long prevTtlMs = schemaCacheTtlMs;
-long nextTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
-Integer ttlMin = parsePositiveInt(ttlMinutesRaw);
-if (ttlMin != null) {
-    int m = ttlMin.intValue();
-    if (m < 1) m = 1;
-    if (m > 1440) m = 1440;
-    nextTtlMs = m * 60L * 1000L;
-}
-schemaCacheTtlMs = nextTtlMs;
-if (prevTtlMs != nextTtlMs) {
-    schemaContextCacheAt = 0L;
-}
+AgentRuntimeConfig runtimeConfig = loadAgentRuntimeConfig(application);
+String ollamaUrl = runtimeConfig.ollamaUrl;
+String model = runtimeConfig.model;
+String coderModel = runtimeConfig.coderModel;
+int ollamaConnectTimeoutMs = runtimeConfig.ollamaConnectTimeoutMs;
+int ollamaReadTimeoutMs = runtimeConfig.ollamaReadTimeoutMs;
+applySchemaCacheTtl(runtimeConfig.schemaCacheTtlMs);
 
 try {
     String listStr = "";
     try {
-        URL listUrl = new URL(ollamaUrl + "/api/tags");
-        HttpURLConnection listConn = (HttpURLConnection) listUrl.openConnection();
-        listConn.setRequestMethod("GET");
-        listConn.setConnectTimeout(ollamaConnectTimeoutMs);
-        listConn.setReadTimeout(ollamaReadTimeoutMs);
-        int listCode = listConn.getResponseCode();
-
-        if (listCode != 200) {
-            response.setStatus(502);
-            out.print("{\"error\":\"Ollama unavailable\"}");
-            return;
-        }
-
-        StringBuilder listBody = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(listConn.getInputStream(), "utf-8"))) {
-            String l;
-            while ((l = br.readLine()) != null) {
-                listBody.append(l);
-            }
-        }
-        listStr = listBody.toString();
+        listStr = fetchOllamaTagList(ollamaUrl, ollamaConnectTimeoutMs, ollamaReadTimeoutMs);
 
         if (!modelExistsInTagList(listStr, model)) {
             response.setStatus(400);
@@ -3314,28 +3715,8 @@ try {
         return;
     }
 
-    Integer requestedMeterId = extractMeterId(userMessage);
-    if (requestedMeterId == null) {
-        requestedMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
-    }
-    String requestedMeterScope = extractMeterScopeToken(userMessage);
-    if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
-        requestedMeterScope = extractAlarmAreaToken(userMessage);
-    }
-    if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
-        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-        if (scopeHints != null && !scopeHints.isEmpty()) {
-            requestedMeterScope = String.join(",", scopeHints);
-        }
-    }
-    Integer requestedMonth = extractMonth(userMessage);
-    boolean needsPerMeterPower = wantsPerMeterPowerSummary(userMessage);
-    boolean needsMeterList = wantsMeterListSummary(userMessage);
-    boolean needsPhaseCurrent = wantsPhaseCurrentValue(userMessage);
-    boolean needsPhaseVoltage = wantsPhaseVoltageValue(userMessage);
-    boolean needsLineVoltage = wantsLineVoltageValue(userMessage);
-    boolean needsHarmonic = wantsHarmonicSummary(userMessage);
-    List<String> panelTokens = needsPerMeterPower ? new ArrayList<String>() : extractPanelTokens(userMessage);
+    AgentRequestContext reqCtx = buildAgentRequestContext(userMessage);
+    AgentExecutionContext execCtx = buildExecutionContext(userMessage, reqCtx, model, coderModel);
     String schemaContext = getSchemaContextCached();
 
     // Stage 1: qwen2.5:14b classifies whether DB lookup is required.
@@ -3345,264 +3726,29 @@ try {
         "No markdown. No explanation.\n\nUser: " + userMessage;
     String classifierRaw = callOllamaOnce(ollamaUrl, model, classifierPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
 
-    boolean needsMeter = wantsMeterSummary(userMessage);
-    boolean needsAlarm = wantsAlarmSummary(userMessage);
-    boolean needsFrequency = wantsMonthlyFrequencySummary(userMessage);
-    boolean forceCoderFlow = coderModel.equals(routeModel(userMessage, model, coderModel));
-    boolean needsDb = needsMeter || needsAlarm || needsFrequency || needsPerMeterPower || needsMeterList || needsPhaseCurrent || needsPhaseVoltage || needsLineVoltage || needsHarmonic;
-    Boolean cNeedsDb = extractJsonBoolField(classifierRaw, "needs_db");
-    Boolean cNeedsMeter = extractJsonBoolField(classifierRaw, "needs_meter");
-    Boolean cNeedsAlarm = extractJsonBoolField(classifierRaw, "needs_alarm");
-    Boolean cNeedsFrequency = extractJsonBoolField(classifierRaw, "needs_frequency");
-    Boolean cNeedsPower = extractJsonBoolField(classifierRaw, "needs_power_by_meter");
-    Boolean cNeedsMeterList = extractJsonBoolField(classifierRaw, "needs_meter_list");
-    Boolean cNeedsPhaseCurrent = extractJsonBoolField(classifierRaw, "needs_phase_current");
-    Boolean cNeedsPhaseVoltage = extractJsonBoolField(classifierRaw, "needs_phase_voltage");
-    Boolean cNeedsLineVoltage = extractJsonBoolField(classifierRaw, "needs_line_voltage");
-    Boolean cNeedsHarmonic = extractJsonBoolField(classifierRaw, "needs_harmonic");
-    Integer cMeterId = extractJsonIntField(classifierRaw, "meter_id");
-    Integer cMonth = extractJsonIntField(classifierRaw, "month");
-    String cPanel = extractJsonStringField(classifierRaw, "panel");
-    String cMeterScope = extractJsonStringField(classifierRaw, "meter_scope");
-    String cPhase = extractJsonStringField(classifierRaw, "phase");
-    String cLinePair = extractJsonStringField(classifierRaw, "line_pair");
-    if (cNeedsDb != null) needsDb = needsDb || cNeedsDb.booleanValue();
-    needsDb = needsDb || forceCoderFlow;
-    if (cNeedsMeter != null) needsMeter = needsMeter || cNeedsMeter.booleanValue();
-    if (cNeedsAlarm != null) needsAlarm = needsAlarm || cNeedsAlarm.booleanValue();
-    if (cNeedsFrequency != null) needsFrequency = needsFrequency || cNeedsFrequency.booleanValue();
-    if (cNeedsPower != null) needsPerMeterPower = needsPerMeterPower || cNeedsPower.booleanValue();
-    if (cNeedsMeterList != null) needsMeterList = needsMeterList || cNeedsMeterList.booleanValue();
-    if (cNeedsPhaseCurrent != null) needsPhaseCurrent = needsPhaseCurrent || cNeedsPhaseCurrent.booleanValue();
-    if (cNeedsPhaseVoltage != null) needsPhaseVoltage = needsPhaseVoltage || cNeedsPhaseVoltage.booleanValue();
-    if (cNeedsLineVoltage != null) needsLineVoltage = needsLineVoltage || cNeedsLineVoltage.booleanValue();
-    if (cNeedsHarmonic != null) needsHarmonic = needsHarmonic || cNeedsHarmonic.booleanValue();
-    if (needsMeterList && !wantsPerMeterPowerSummary(userMessage)) needsPerMeterPower = false;
-    if (needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) needsFrequency = false;
-    if (cMeterId != null) requestedMeterId = cMeterId;
-    if (cMonth != null && cMonth.intValue() >= 1 && cMonth.intValue() <= 12) requestedMonth = cMonth;
-    if ((panelTokens == null || panelTokens.isEmpty()) && cPanel != null && !cPanel.trim().isEmpty()) {
-        panelTokens = panelTokensFromRaw(cPanel);
-    }
-    if ((requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) && cMeterScope != null && !cMeterScope.trim().isEmpty()) {
-        requestedMeterScope = cMeterScope;
-    }
-    String requestedPhase = extractPhaseLabel(userMessage);
-    if ((requestedPhase == null || requestedPhase.trim().isEmpty()) && cPhase != null && !cPhase.trim().isEmpty()) {
-        requestedPhase = cPhase;
-    }
-    String requestedLinePair = extractLinePairLabel(userMessage);
-    if ((requestedLinePair == null || requestedLinePair.trim().isEmpty()) && cLinePair != null && !cLinePair.trim().isEmpty()) {
-        requestedLinePair = cLinePair;
-    }
-    if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
-        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-        if (scopeHints != null && !scopeHints.isEmpty()) {
-            requestedMeterScope = String.join(",", scopeHints);
-        }
-    }
+    applyClassifierHints(execCtx, userMessage, classifierRaw);
 
-    String meterCtx = "";
-    String alarmCtx = "";
-    String frequencyCtx = "";
-    String powerCtx = "";
-    String meterListCtx = "";
-    String phaseCurrentCtx = "";
-    String phaseVoltageCtx = "";
-    String lineVoltageCtx = "";
-    String harmonicCtx = "";
-    String dbContext = "";
-    String coderDraft = "";
+    PlannerExecutionResult plannerResult = executePlannerAndLoadContexts(
+        execCtx,
+        userMessage,
+        classifierRaw,
+        schemaContext,
+        ollamaUrl,
+        coderModel,
+        ollamaConnectTimeoutMs,
+        ollamaReadTimeoutMs
+    );
+    String dbContext = buildDbContext(execCtx, plannerResult, userMessage);
 
-    // Stage 2: qwen2.5-coder:7b interprets DB task (bounded task schema).
-    if (needsDb) {
-        String coderPrompt =
-            "You are DB task planner. Return only one JSON object with keys: " +
-            "task(\"meter\"|\"alarm\"|\"both\"|\"none\"), needs_frequency(boolean), needs_power_by_meter(boolean), needs_meter_list(boolean), needs_phase_current(boolean), needs_phase_voltage(boolean), needs_line_voltage(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null), meter_scope(string|null), phase(string|null), line_pair(string|null). " +
-            "No markdown. No explanation.\n\n" +
-            "User: " + userMessage + "\n" +
-            "Classifier JSON: " + classifierRaw + "\n\n" +
-            "Schema Context:\n" + schemaContext;
-        String coderRaw = callOllamaOnce(ollamaUrl, coderModel, coderPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
-
-        String task = extractJsonStringField(coderRaw, "task");
-        Boolean planNeedsFrequency = extractJsonBoolField(coderRaw, "needs_frequency");
-        Boolean planNeedsPower = extractJsonBoolField(coderRaw, "needs_power_by_meter");
-        Boolean planNeedsMeterList = extractJsonBoolField(coderRaw, "needs_meter_list");
-        Boolean planNeedsPhaseCurrent = extractJsonBoolField(coderRaw, "needs_phase_current");
-        Boolean planNeedsPhaseVoltage = extractJsonBoolField(coderRaw, "needs_phase_voltage");
-        Boolean planNeedsLineVoltage = extractJsonBoolField(coderRaw, "needs_line_voltage");
-        Boolean planNeedsHarmonic = extractJsonBoolField(coderRaw, "needs_harmonic");
-        Integer planMeterId = extractJsonIntField(coderRaw, "meter_id");
-        Integer planMonth = extractJsonIntField(coderRaw, "month");
-        String planPanel = extractJsonStringField(coderRaw, "panel");
-        String planMeterScope = extractJsonStringField(coderRaw, "meter_scope");
-        String planPhase = extractJsonStringField(coderRaw, "phase");
-        String planLinePair = extractJsonStringField(coderRaw, "line_pair");
-        boolean runMeter = needsMeter;
-        boolean runAlarm = needsAlarm;
-        boolean runFrequency = needsFrequency;
-        boolean runPower = needsPerMeterPower;
-        boolean runMeterList = needsMeterList;
-        boolean runPhaseCurrent = needsPhaseCurrent;
-        boolean runPhaseVoltage = needsPhaseVoltage;
-        boolean runLineVoltage = needsLineVoltage;
-        boolean runHarmonic = needsHarmonic;
-
-        if (task != null) {
-            String t = task.trim().toLowerCase(java.util.Locale.ROOT);
-            if ("meter".equals(t)) { runMeter = true; runAlarm = false; }
-            else if ("alarm".equals(t)) { runMeter = false; runAlarm = true; }
-            else if ("both".equals(t)) { runMeter = true; runAlarm = true; }
-            else if ("none".equals(t)) { runMeter = false; runAlarm = false; }
-        }
-        if (needsFrequency && !wantsMeterSummary(userMessage)) runMeter = false;
-        if (needsFrequency && !wantsAlarmSummary(userMessage)) runAlarm = false;
-        if (needsPerMeterPower && !wantsMeterSummary(userMessage)) runMeter = false;
-        if (needsPerMeterPower && !wantsAlarmSummary(userMessage)) runAlarm = false;
-        if (needsHarmonic && !wantsMeterSummary(userMessage)) runMeter = false;
-        if (needsHarmonic && !wantsAlarmSummary(userMessage)) runAlarm = false;
-        if (needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
-        if (planMeterId != null) requestedMeterId = planMeterId;
-        if (planMonth != null && planMonth.intValue() >= 1 && planMonth.intValue() <= 12) requestedMonth = planMonth;
-        if (planNeedsFrequency != null) runFrequency = runFrequency || planNeedsFrequency.booleanValue();
-        if (planNeedsPower != null) runPower = runPower || planNeedsPower.booleanValue();
-        if (planNeedsMeterList != null) runMeterList = runMeterList || planNeedsMeterList.booleanValue();
-        if (planNeedsPhaseCurrent != null) runPhaseCurrent = runPhaseCurrent || planNeedsPhaseCurrent.booleanValue();
-        if (planNeedsPhaseVoltage != null) runPhaseVoltage = runPhaseVoltage || planNeedsPhaseVoltage.booleanValue();
-        if (planNeedsLineVoltage != null) runLineVoltage = runLineVoltage || planNeedsLineVoltage.booleanValue();
-        if (planNeedsHarmonic != null) runHarmonic = runHarmonic || planNeedsHarmonic.booleanValue();
-        if (runMeterList && !wantsPerMeterPowerSummary(userMessage)) runPower = false;
-        if (needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
-        if ((panelTokens == null || panelTokens.isEmpty()) && planPanel != null && !planPanel.trim().isEmpty()) {
-            panelTokens = panelTokensFromRaw(planPanel);
-        }
-        if ((requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) && planMeterScope != null && !planMeterScope.trim().isEmpty()) {
-            requestedMeterScope = planMeterScope;
-        }
-        if ((requestedPhase == null || requestedPhase.trim().isEmpty()) && planPhase != null && !planPhase.trim().isEmpty()) {
-            requestedPhase = planPhase;
-        }
-        if ((requestedLinePair == null || requestedLinePair.trim().isEmpty()) && planLinePair != null && !planLinePair.trim().isEmpty()) {
-            requestedLinePair = planLinePair;
-        }
-        if (requestedMeterScope == null || requestedMeterScope.trim().isEmpty()) {
-            List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-            if (scopeHints != null && !scopeHints.isEmpty()) {
-                requestedMeterScope = String.join(",", scopeHints);
-            }
-        }
-
-        if (runMeter) meterCtx = getRecentMeterContext(requestedMeterId, panelTokens);
-        if (runAlarm) alarmCtx = getRecentAlarmContext();
-        if (runFrequency) frequencyCtx = getMonthlyAvgFrequencyContext(requestedMeterId, requestedMonth);
-        if (runPower) powerCtx = getPerMeterPowerContext();
-        if (runMeterList) meterListCtx = getMeterListContext(requestedMeterScope, directTopN);
-        if (runPhaseCurrent) phaseCurrentCtx = getPhaseCurrentContext(requestedMeterId, requestedPhase);
-        if (runPhaseVoltage) phaseVoltageCtx = getPhaseVoltageContext(requestedMeterId, requestedPhase);
-        if (runLineVoltage) lineVoltageCtx = getLineVoltageContext(requestedMeterId, requestedLinePair);
-        if (runHarmonic) harmonicCtx = getHarmonicContext(requestedMeterId, panelTokens);
-        if (!runMeter && !runAlarm && !runFrequency && !runPower && !runMeterList && !runPhaseCurrent && !runPhaseVoltage && !runLineVoltage && !runHarmonic && forceCoderFlow) {
-            String coderAnswerPrompt =
-                "Answer the user's DB/SQL request directly. " +
-                "Use SQL Server syntax if SQL is requested. " +
-                "Return concise plain text, no markdown fences.\n\n" +
-                "User: " + userMessage + "\n\n" +
-                "Schema Context:\n" + schemaContext;
-            coderDraft = callOllamaOnce(ollamaUrl, coderModel, coderAnswerPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.2d);
-        } else if (!runMeter && !runAlarm && !runFrequency && !runPower && !runMeterList && !runPhaseCurrent && !runPhaseVoltage && !runLineVoltage && !runHarmonic) {
-            needsDb = false;
-        }
-    }
-
-    if (needsDb) {
-        if (needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) {
-            frequencyCtx = "";
-        }
-        StringBuilder dbSb = new StringBuilder();
-        if (meterCtx != null && !meterCtx.trim().isEmpty()) dbSb.append("Meter: ").append(meterCtx);
-        if (alarmCtx != null && !alarmCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("Alarm: ").append(alarmCtx);
-        }
-        if (frequencyCtx != null && !frequencyCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("Frequency: ").append(frequencyCtx);
-        }
-        if (powerCtx != null && !powerCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("PowerByMeter: ").append(powerCtx);
-        }
-        if (meterListCtx != null && !meterListCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("MeterList: ").append(meterListCtx);
-        }
-        if (phaseCurrentCtx != null && !phaseCurrentCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("PhaseCurrent: ").append(phaseCurrentCtx);
-        }
-        if (phaseVoltageCtx != null && !phaseVoltageCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("PhaseVoltage: ").append(phaseVoltageCtx);
-        }
-        if (lineVoltageCtx != null && !lineVoltageCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("LineVoltage: ").append(lineVoltageCtx);
-        }
-        if (harmonicCtx != null && !harmonicCtx.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("Harmonic: ").append(harmonicCtx);
-        }
-        if (coderDraft != null && !coderDraft.trim().isEmpty()) {
-            if (dbSb.length() > 0) dbSb.append("\n");
-            dbSb.append("CoderDraft: ").append(coderDraft);
-        }
-        dbContext = dbSb.toString();
-    }
-
-    if (needsHarmonic && harmonicCtx != null && !harmonicCtx.trim().isEmpty() && !forceCoderFlow) {
-        String finalAnswer = buildHarmonicDirectAnswer(harmonicCtx, requestedMeterId);
-        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
-        return;
-    }
-    if (needsFrequency && frequencyCtx != null && !frequencyCtx.trim().isEmpty() && !forceCoderFlow) {
-        String finalAnswer = buildFrequencyDirectAnswer(frequencyCtx, requestedMeterId, requestedMonth);
-        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
-        return;
-    }
-    if (needsPerMeterPower && powerCtx != null && !powerCtx.trim().isEmpty() && !forceCoderFlow) {
-        String finalAnswer = buildPerMeterPowerDirectAnswer(powerCtx);
-        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
-        return;
-    }
-    if (needsMeterList && meterListCtx != null && !meterListCtx.trim().isEmpty() && !forceCoderFlow) {
-        String finalAnswer = buildUserDbContext(meterListCtx);
-        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "계측기 목록을 조회했습니다.";
-        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
-        return;
-    }
-    if (needsPhaseCurrent && phaseCurrentCtx != null && !phaseCurrentCtx.trim().isEmpty() && !forceCoderFlow) {
-        String finalAnswer = buildUserDbContext(phaseCurrentCtx);
-        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "상전류를 조회했습니다.";
-        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
-        return;
-    }
-    if (needsPhaseVoltage && phaseVoltageCtx != null && !phaseVoltageCtx.trim().isEmpty() && !forceCoderFlow) {
-        String finalAnswer = buildUserDbContext(phaseVoltageCtx);
-        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "상전압을 조회했습니다.";
-        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
-        return;
-    }
-    if (needsLineVoltage && lineVoltageCtx != null && !lineVoltageCtx.trim().isEmpty() && !forceCoderFlow) {
-        String finalAnswer = buildUserDbContext(lineVoltageCtx);
-        if (finalAnswer == null || finalAnswer.trim().isEmpty()) finalAnswer = "선간전압을 조회했습니다.";
-        writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
+    SpecializedAnswerResult specializedAnswer = tryBuildSpecializedAnswer(execCtx, plannerResult);
+    if (specializedAnswer != null) {
+        writeSuccessJson(out, response, specializedAnswer.answer, dbContext, isAdmin);
         return;
     }
 
     // Stage 3: qwen2.5:14b creates final user-facing answer.
     String finalPrompt;
-    if (needsDb && dbContext != null && !dbContext.isEmpty()) {
+    if (execCtx.needsDb && dbContext != null && !dbContext.isEmpty()) {
         finalPrompt =
             "You are an EPMS expert assistant. " +
             "Answer in Korean, concise, and grounded only on provided DB context. " +

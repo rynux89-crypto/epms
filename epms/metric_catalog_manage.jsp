@@ -3,23 +3,186 @@
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
 <%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/epms_html.jspf" %>
 <%!
-    private static String h(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value);
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '&': out.append("&amp;"); break;
-                case '<': out.append("&lt;"); break;
-                case '>': out.append("&gt;"); break;
-                case '"': out.append("&quot;"); break;
-                case '\'': out.append("&#39;"); break;
-                default: out.append(c);
+    private static class MetricCatalogRequest {
+        String action;
+        String metricKey;
+        String displayName;
+        String sourceType;
+        String newMetricKey;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String normalizeMetricKey(String value) {
+        String trimmed = trimToNull(value);
+        return trimmed == null ? null : trimmed.toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeSourceType(String value) {
+        String trimmed = trimToNull(value);
+        return trimmed == null ? "AI" : trimmed.toUpperCase(Locale.ROOT);
+    }
+
+    private static MetricCatalogRequest buildMetricCatalogRequest(javax.servlet.http.HttpServletRequest request) {
+        MetricCatalogRequest req = new MetricCatalogRequest();
+        req.action = trimToNull(request.getParameter("action"));
+        req.metricKey = normalizeMetricKey(request.getParameter("metric_key"));
+        req.displayName = request.getParameter("display_name");
+        req.sourceType = normalizeSourceType(request.getParameter("source_type"));
+        req.newMetricKey = normalizeMetricKey(request.getParameter("new_metric_key"));
+        return req;
+    }
+
+    private static String validateMetricCatalogRequest(MetricCatalogRequest req) {
+        if (req == null || req.action == null) return "요청이 올바르지 않습니다.";
+        if ("add".equals(req.action) || "update".equals(req.action) || "toggle".equals(req.action) || "delete".equals(req.action)) {
+            if (req.metricKey == null) {
+                return "add".equals(req.action) ? "metric_key를 입력하세요." : "metric_key가 없습니다.";
             }
         }
-        return out.toString();
+        if ("rename".equals(req.action)) {
+            if (req.metricKey == null || req.newMetricKey == null) {
+                return "기존/신규 metric_key를 모두 입력하세요.";
+            }
+        }
+        return null;
+    }
+
+    private static String handleAddMetricCatalog(Connection conn, MetricCatalogRequest req) {
+        String insSql =
+            "MERGE dbo.metric_catalog t " +
+            "USING (SELECT ? AS metric_key) s ON (t.metric_key = s.metric_key) " +
+            "WHEN MATCHED THEN UPDATE SET display_name=?, source_type=?, enabled=1, updated_at=SYSUTCDATETIME() " +
+            "WHEN NOT MATCHED THEN INSERT (metric_key, display_name, source_type, enabled, created_at, updated_at) VALUES (?, ?, ?, 1, SYSUTCDATETIME(), SYSUTCDATETIME());";
+        try (PreparedStatement ps = conn.prepareStatement(insSql)) {
+            ps.setString(1, req.metricKey);
+            ps.setString(2, req.displayName);
+            ps.setString(3, req.sourceType);
+            ps.setString(4, req.metricKey);
+            ps.setString(5, req.displayName);
+            ps.setString(6, req.sourceType);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleUpdateMetricCatalog(Connection conn, MetricCatalogRequest req) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE dbo.metric_catalog SET display_name=?, source_type=?, updated_at=SYSUTCDATETIME() WHERE metric_key=?")) {
+            ps.setString(1, req.displayName);
+            ps.setString(2, req.sourceType);
+            ps.setString(3, req.metricKey);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleRenameMetricCatalog(Connection conn, MetricCatalogRequest req) {
+        if (req.metricKey.equals(req.newMetricKey)) return "__NO_CHANGE__";
+
+        int fkCnt = 0;
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT COUNT(1) FROM sys.foreign_keys WHERE referenced_object_id = OBJECT_ID('dbo.metric_catalog')");
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) fkCnt = rs.getInt(1);
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+        if (fkCnt > 0) {
+            return "metric_catalog를 참조하는 FK가 있어 rename을 차단했습니다. FK 영향 검토 후 진행하세요.";
+        }
+
+        int dupCnt = 0;
+        try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(1) FROM dbo.metric_catalog WHERE metric_key = ?")) {
+            ps.setString(1, req.newMetricKey);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) dupCnt = rs.getInt(1);
+            }
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+        if (dupCnt > 0) {
+            return "이미 존재하는 metric_key 입니다: " + req.newMetricKey;
+        }
+
+        boolean oldAutoCommit = true;
+        try {
+            oldAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+
+            int existsOld = 0;
+            try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(1) FROM dbo.metric_catalog WHERE metric_key = ?")) {
+                ps.setString(1, req.metricKey);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) existsOld = rs.getInt(1);
+                }
+            }
+            if (existsOld == 0) throw new SQLException("기존 metric_key가 존재하지 않습니다: " + req.metricKey);
+
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE dbo.metric_catalog SET metric_key = ?, updated_at = SYSUTCDATETIME() WHERE metric_key = ?")) {
+                ps.setString(1, req.newMetricKey);
+                ps.setString(2, req.metricKey);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE dbo.alarm_rule SET metric_key = ?, updated_at = SYSUTCDATETIME() WHERE metric_key = ?")) {
+                ps.setString(1, req.newMetricKey);
+                ps.setString(2, req.metricKey);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement("UPDATE dbo.alarm_log SET metric_key = ? WHERE metric_key = ?")) {
+                ps.setString(1, req.newMetricKey);
+                ps.setString(2, req.metricKey);
+                ps.executeUpdate();
+            } catch (Exception ignore) {}
+            try (PreparedStatement ps = conn.prepareStatement("UPDATE dbo.alarm_log SET source_token = ? WHERE source_token = ?")) {
+                ps.setString(1, req.newMetricKey);
+                ps.setString(2, req.metricKey);
+                ps.executeUpdate();
+            } catch (Exception ignore) {}
+
+            conn.commit();
+            return null;
+        } catch (Exception ex) {
+            try { conn.rollback(); } catch (Exception ignore) {}
+            return ex.getMessage();
+        } finally {
+            try { conn.setAutoCommit(oldAutoCommit); } catch (Exception ignore) {}
+        }
+    }
+
+    private static String handleToggleMetricCatalog(Connection conn, MetricCatalogRequest req) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE dbo.metric_catalog SET enabled = CASE WHEN enabled=1 THEN 0 ELSE 1 END, updated_at=SYSUTCDATETIME() WHERE metric_key=?")) {
+            ps.setString(1, req.metricKey);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleDeleteMetricCatalog(Connection conn, MetricCatalogRequest req) {
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.metric_catalog WHERE metric_key=?")) {
+            ps.setString(1, req.metricKey);
+            ps.executeUpdate();
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
     }
 %>
 <%
@@ -46,166 +209,62 @@
         }
 
         if ("POST".equalsIgnoreCase(request.getMethod())) {
-            String action = request.getParameter("action");
-            if ("add".equals(action)) {
-                String key = request.getParameter("metric_key");
-                String name = request.getParameter("display_name");
-                String sourceType = request.getParameter("source_type");
-                if (key == null || key.trim().isEmpty()) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("metric_key를 입력하세요.", "UTF-8"));
+            MetricCatalogRequest formReq = buildMetricCatalogRequest(request);
+            String formErr = validateMetricCatalogRequest(formReq);
+            if (formErr != null) {
+                response.sendRedirect(self + "?err=" + URLEncoder.encode(formErr, "UTF-8"));
+                return;
+            }
+
+            if ("add".equals(formReq.action)) {
+                String saveErr = handleAddMetricCatalog(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
                     return;
-                }
-                String insSql =
-                    "MERGE dbo.metric_catalog t " +
-                    "USING (SELECT ? AS metric_key) s ON (t.metric_key = s.metric_key) " +
-                    "WHEN MATCHED THEN UPDATE SET display_name=?, source_type=?, enabled=1, updated_at=SYSUTCDATETIME() " +
-                    "WHEN NOT MATCHED THEN INSERT (metric_key, display_name, source_type, enabled, created_at, updated_at) VALUES (?, ?, ?, 1, SYSUTCDATETIME(), SYSUTCDATETIME());";
-                try (PreparedStatement ps = conn.prepareStatement(insSql)) {
-                    String mk = key.trim().toUpperCase(Locale.ROOT);
-                    String st = (sourceType == null || sourceType.trim().isEmpty()) ? "AI" : sourceType.trim().toUpperCase(Locale.ROOT);
-                    ps.setString(1, mk);
-                    ps.setString(2, name);
-                    ps.setString(3, st);
-                    ps.setString(4, mk);
-                    ps.setString(5, name);
-                    ps.setString(6, st);
-                    ps.executeUpdate();
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("지표키를 저장했습니다.", "UTF-8"));
                 return;
             }
 
-            if ("update".equals(action)) {
-                String key = request.getParameter("metric_key");
-                String name = request.getParameter("display_name");
-                String sourceType = request.getParameter("source_type");
-                if (key == null || key.trim().isEmpty()) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("metric_key가 없습니다.", "UTF-8"));
+            if ("update".equals(formReq.action)) {
+                String saveErr = handleUpdateMetricCatalog(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
                     return;
-                }
-                try (PreparedStatement ps = conn.prepareStatement(
-                        "UPDATE dbo.metric_catalog SET display_name=?, source_type=?, updated_at=SYSUTCDATETIME() WHERE metric_key=?")) {
-                    String st = (sourceType == null || sourceType.trim().isEmpty()) ? "AI" : sourceType.trim().toUpperCase(Locale.ROOT);
-                    ps.setString(1, name);
-                    ps.setString(2, st);
-                    ps.setString(3, key.trim().toUpperCase(Locale.ROOT));
-                    ps.executeUpdate();
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("지표키를 수정했습니다.", "UTF-8"));
                 return;
             }
 
-            if ("rename".equals(action)) {
-                String oldKey = request.getParameter("metric_key");
-                String newKey = request.getParameter("new_metric_key");
-                if (oldKey == null || oldKey.trim().isEmpty() || newKey == null || newKey.trim().isEmpty()) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("기존/신규 metric_key를 모두 입력하세요.", "UTF-8"));
-                    return;
-                }
-                oldKey = oldKey.trim().toUpperCase(Locale.ROOT);
-                newKey = newKey.trim().toUpperCase(Locale.ROOT);
-                if (oldKey.equals(newKey)) {
+            if ("rename".equals(formReq.action)) {
+                String saveErr = handleRenameMetricCatalog(conn, formReq);
+                if ("__NO_CHANGE__".equals(saveErr)) {
                     response.sendRedirect(self + "?msg=" + URLEncoder.encode("동일한 키입니다. 변경 사항이 없습니다.", "UTF-8"));
                     return;
                 }
-
-                // FK dependency check on metric_catalog table itself.
-                int fkCnt = 0;
-                try (PreparedStatement ps = conn.prepareStatement(
-                        "SELECT COUNT(1) FROM sys.foreign_keys WHERE referenced_object_id = OBJECT_ID('dbo.metric_catalog')");
-                     ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) fkCnt = rs.getInt(1);
-                }
-                if (fkCnt > 0) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("metric_catalog를 참조하는 FK가 있어 rename을 차단했습니다. FK 영향 검토 후 진행하세요.", "UTF-8"));
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
                     return;
                 }
-
-                // Duplicate check.
-                int dupCnt = 0;
-                try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(1) FROM dbo.metric_catalog WHERE metric_key = ?")) {
-                    ps.setString(1, newKey);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) dupCnt = rs.getInt(1);
-                    }
-                }
-                if (dupCnt > 0) {
-                    response.sendRedirect(self + "?err=" + URLEncoder.encode("이미 존재하는 metric_key 입니다: " + newKey, "UTF-8"));
-                    return;
-                }
-
-                boolean oldAutoCommit = conn.getAutoCommit();
-                try {
-                    conn.setAutoCommit(false);
-
-                    int existsOld = 0;
-                    try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(1) FROM dbo.metric_catalog WHERE metric_key = ?")) {
-                        ps.setString(1, oldKey);
-                        try (ResultSet rs = ps.executeQuery()) {
-                            if (rs.next()) existsOld = rs.getInt(1);
-                        }
-                    }
-                    if (existsOld == 0) throw new SQLException("기존 metric_key가 존재하지 않습니다: " + oldKey);
-
-                    try (PreparedStatement ps = conn.prepareStatement(
-                            "UPDATE dbo.metric_catalog SET metric_key = ?, updated_at = SYSUTCDATETIME() WHERE metric_key = ?")) {
-                        ps.setString(1, newKey);
-                        ps.setString(2, oldKey);
-                        ps.executeUpdate();
-                    }
-
-                    // Propagate to alarm_rule.
-                    try (PreparedStatement ps = conn.prepareStatement(
-                            "UPDATE dbo.alarm_rule SET metric_key = ?, updated_at = SYSUTCDATETIME() WHERE metric_key = ?")) {
-                        ps.setString(1, newKey);
-                        ps.setString(2, oldKey);
-                        ps.executeUpdate();
-                    }
-
-                    // Propagate to alarm_log metadata when optional columns exist.
-                    try (PreparedStatement ps = conn.prepareStatement("UPDATE dbo.alarm_log SET metric_key = ? WHERE metric_key = ?")) {
-                        ps.setString(1, newKey);
-                        ps.setString(2, oldKey);
-                        ps.executeUpdate();
-                    } catch (Exception ignore) {}
-                    try (PreparedStatement ps = conn.prepareStatement("UPDATE dbo.alarm_log SET source_token = ? WHERE source_token = ?")) {
-                        ps.setString(1, newKey);
-                        ps.setString(2, oldKey);
-                        ps.executeUpdate();
-                    } catch (Exception ignore) {}
-
-                    conn.commit();
-                } catch (Exception ex) {
-                    try { conn.rollback(); } catch (Exception ignore) {}
-                    throw ex;
-                } finally {
-                    try { conn.setAutoCommit(oldAutoCommit); } catch (Exception ignore) {}
-                }
-
-                response.sendRedirect(self + "?msg=" + URLEncoder.encode("metric_key를 변경했습니다: " + oldKey + " -> " + newKey, "UTF-8"));
+                response.sendRedirect(self + "?msg=" + URLEncoder.encode("metric_key를 변경했습니다: " + formReq.metricKey + " -> " + formReq.newMetricKey, "UTF-8"));
                 return;
             }
 
-            if ("toggle".equals(action)) {
-                String key = request.getParameter("metric_key");
-                if (key != null && !key.trim().isEmpty()) {
-                    try (PreparedStatement ps = conn.prepareStatement(
-                        "UPDATE dbo.metric_catalog SET enabled = CASE WHEN enabled=1 THEN 0 ELSE 1 END, updated_at=SYSUTCDATETIME() WHERE metric_key=?")) {
-                        ps.setString(1, key.trim().toUpperCase(Locale.ROOT));
-                        ps.executeUpdate();
-                    }
+            if ("toggle".equals(formReq.action)) {
+                String saveErr = handleToggleMetricCatalog(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
+                    return;
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("상태를 변경했습니다.", "UTF-8"));
                 return;
             }
 
-            if ("delete".equals(action)) {
-                String key = request.getParameter("metric_key");
-                if (key != null && !key.trim().isEmpty()) {
-                    try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.metric_catalog WHERE metric_key=?")) {
-                        ps.setString(1, key.trim().toUpperCase(Locale.ROOT));
-                        ps.executeUpdate();
-                    }
+            if ("delete".equals(formReq.action)) {
+                String saveErr = handleDeleteMetricCatalog(conn, formReq);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
+                    return;
                 }
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("지표키를 삭제했습니다.", "UTF-8"));
                 return;

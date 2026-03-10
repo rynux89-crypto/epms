@@ -1,23 +1,7 @@
 ﻿<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.sql.*, java.util.*, java.net.URLEncoder, java.text.SimpleDateFormat" %>
 <%@ include file="../includes/dbconn.jsp" %>
-<%!
-    private static String h(Object v) {
-        if (v == null) return "";
-        String s = String.valueOf(v);
-        StringBuilder b = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '&') b.append("&amp;");
-            else if (c == '<') b.append("&lt;");
-            else if (c == '>') b.append("&gt;");
-            else if (c == '"') b.append("&quot;");
-            else if (c == '\'') b.append("&#39;");
-            else b.append(c);
-        }
-        return b.toString();
-    }
-%>
+<%@ include file="../includes/epms_html.jspf" %>
 <%
     request.setCharacterEncoding("UTF-8");
 
