@@ -32,6 +32,18 @@ public final class AgentSupport {
         public String body;
     }
 
+    public enum QueryMode {
+        DEFAULT,
+        LLM_ONLY,
+        RULE_ONLY
+    }
+
+    public static final class ParsedQuery {
+        public QueryMode mode;
+        public String userMessage;
+        public boolean prefersNarrativeLlm;
+    }
+
     public static String trimToNull(String s) {
         return EpmsWebUtil.trimToNull(s);
     }
@@ -49,6 +61,42 @@ public final class AgentSupport {
 
     public static Integer parsePositiveInt(String s) {
         return EpmsWebUtil.parsePositiveInt(s);
+    }
+
+    public static ParsedQuery parseQuery(String rawMessage) {
+        ParsedQuery parsed = new ParsedQuery();
+        String message = trimToNull(rawMessage);
+        if (message == null) {
+            parsed.mode = QueryMode.DEFAULT;
+            parsed.userMessage = "";
+            parsed.prefersNarrativeLlm = false;
+            return parsed;
+        }
+
+        parsed.mode = QueryMode.DEFAULT;
+        parsed.userMessage = message.trim();
+        String lower = parsed.userMessage.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("/llm ")) {
+            parsed.mode = QueryMode.LLM_ONLY;
+            parsed.userMessage = parsed.userMessage.substring(5).trim();
+        } else if (lower.startsWith("/rule ")) {
+            parsed.mode = QueryMode.RULE_ONLY;
+            parsed.userMessage = parsed.userMessage.substring(6).trim();
+        }
+        parsed.prefersNarrativeLlm = prefersNarrativeLlm(parsed.userMessage);
+        return parsed;
+    }
+
+    public static boolean prefersNarrativeLlm(String userMessage) {
+        String m = normalizeIntent(userMessage);
+        boolean hasNarrativeIntent =
+            m.contains("해석") || m.contains("설명") || m.contains("요약")
+            || m.contains("보고서") || m.contains("분석") || m.contains("평가")
+            || m.contains("추론") || m.contains("진단") || m.contains("브리핑");
+        boolean hasCombinedIntent =
+            (m.contains("계측") || m.contains("상태") || m.contains("측정"))
+            && (m.contains("알람") || m.contains("경보"));
+        return hasNarrativeIntent && hasCombinedIntent;
     }
 
     public static Properties loadAgentModelConfig(ServletContext app) {
@@ -189,5 +237,12 @@ public final class AgentSupport {
             }
         }
         return body.toString();
+    }
+
+    private static String normalizeIntent(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
     }
 }

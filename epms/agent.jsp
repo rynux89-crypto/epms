@@ -168,12 +168,12 @@ private AgentRequestContext buildAgentRequestContext(String userMessage) {
     }
 
     ctx.requestedMonth = extractMonth(userMessage);
-    ctx.needsPerMeterPower = wantsPerMeterPowerSummary(userMessage);
-    ctx.needsMeterList = wantsMeterListSummary(userMessage);
-    ctx.needsPhaseCurrent = wantsPhaseCurrentValue(userMessage);
-    ctx.needsPhaseVoltage = wantsPhaseVoltageValue(userMessage);
-    ctx.needsLineVoltage = wantsLineVoltageValue(userMessage);
-    ctx.needsHarmonic = wantsHarmonicSummary(userMessage);
+    ctx.needsPerMeterPower = routedWantsPerMeterPowerSummary(userMessage);
+    ctx.needsMeterList = routedWantsMeterListSummary(userMessage);
+    ctx.needsPhaseCurrent = routedWantsPhaseCurrentValue(userMessage);
+    ctx.needsPhaseVoltage = routedWantsPhaseVoltageValue(userMessage);
+    ctx.needsLineVoltage = routedWantsLineVoltageValue(userMessage);
+    ctx.needsHarmonic = routedWantsHarmonicSummary(userMessage);
     ctx.panelTokens = ctx.needsPerMeterPower ? new ArrayList<String>() : extractPanelTokens(userMessage);
     ctx.requestedPhase = extractPhaseLabel(userMessage);
     ctx.requestedLinePair = extractLinePairLabel(userMessage);
@@ -182,6 +182,27 @@ private AgentRequestContext buildAgentRequestContext(String userMessage) {
 
 private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forceLlmOnly) throws Exception {
     if (forceLlmOnly) return null;
+
+    String directIntentText = normalizeForIntent(userMessage);
+    boolean directPfStandard =
+        (directIntentText.contains("\uC5ED\uB960") || directIntentText.contains("powerfactor") || directIntentText.contains("pf"))
+        && (directIntentText.contains("\uAE30\uC900") || directIntentText.contains("\uAE30\uC900\uCE58") || directIntentText.contains("\uD45C\uC900") || directIntentText.contains("standard"))
+        && directIntentText.contains("ieee");
+    boolean directTripOnly =
+        routedWantsTripAlarmOnly(userMessage)
+        || directIntentText.contains("\uD2B8\uB9BD")
+        || directIntentText.contains("trip")
+        || directIntentText.contains("\uD2B8\uB9BC");
+    boolean directAlarmCountIntent =
+        routedWantsAlarmCountSummary(userMessage)
+        || localWantsAlarmCountSummary(userMessage);
+    boolean directOpenAlarmsIntent =
+        routedWantsOpenAlarms(userMessage)
+        || localWantsOpenAlarms(userMessage);
+    boolean directOpenAlarmCountIntent =
+        routedWantsOpenAlarmCountSummary(userMessage)
+        || localWantsOpenAlarmCountSummary(userMessage)
+        || (directOpenAlarmsIntent && directAlarmCountIntent);
 
     Integer directMeterId = extractMeterId(userMessage);
     if (directMeterId == null) {
@@ -194,7 +215,6 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
     TimeWindow directWindow = extractTimeWindow(userMessage);
     Double directHz = extractHzThreshold(userMessage);
     Double directPf = extractPfThreshold(userMessage);
-    boolean directTripOnly = wantsTripAlarmOnly(userMessage);
     String directAlarmTypeToken = extractAlarmTypeToken(userMessage);
     if (directTripOnly && (directAlarmTypeToken == null || directAlarmTypeToken.trim().isEmpty())) {
         directAlarmTypeToken = "TRIP";
@@ -212,52 +232,77 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
         directMeterScopeToken = directAlarmAreaToken;
     }
     List<String> directPanelTokens = extractPanelTokens(userMessage);
-    if (wantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
+    if (routedWantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
         directPanelTokens = extractPanelTokensLoose(userMessage);
     }
 
     DirectAnswerResult result = new DirectAnswerResult();
-    if (wantsVoltageAverageSummary(userMessage)) {
+    if (directPfStandard) {
+        result.dbContext = "[PF standard] IEEE";
+        result.answer = buildPowerFactorStandardDirectAnswer(userMessage);
+    } else if (routedWantsVoltageAverageSummary(userMessage)) {
         Timestamp fromTs = directWindow != null ? directWindow.fromTs : null;
         Timestamp toTs = directWindow != null ? directWindow.toTs : null;
         String periodLabel = directWindow != null ? directWindow.label : null;
         Integer daysFallback = (directWindow == null ? directExplicitDays : null);
         result.dbContext = getVoltageAverageContext(directMeterId, directPanelTokens, fromTs, toTs, periodLabel, daysFallback);
         result.answer = buildVoltageAverageDirectAnswer(result.dbContext, directMeterId);
-    } else if (wantsMonthlyFrequencySummary(userMessage)) {
+    } else if (routedWantsMonthlyFrequencySummary(userMessage)) {
         result.dbContext = getMonthlyAvgFrequencyContext(directMeterId, directMonth);
         result.answer = buildFrequencyDirectAnswer(result.dbContext, directMeterId, directMonth);
-    } else if (wantsMonthlyPowerStats(userMessage)) {
+    } else if (routedWantsMonthlyPowerStats(userMessage)) {
         result.dbContext = getMonthlyPowerStatsContext(directMeterId, directMonth);
         result.answer = buildMonthlyPowerStatsDirectAnswer(result.dbContext);
-    } else if (wantsBuildingPowerTopN(userMessage)) {
+    } else if (routedWantsBuildingPowerTopN(userMessage)) {
         result.dbContext = getBuildingPowerTopNContext(directMonth, directTopN);
         result.answer = buildBuildingPowerTopDirectAnswer(result.dbContext);
-    } else if (wantsVoltagePhaseAngle(userMessage)) {
+    } else if (routedWantsVoltagePhaseAngle(userMessage)) {
         result.dbContext = getVoltagePhaseAngleContext(directMeterId);
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty())
             ? "전압 위상각을 조회했습니다."
             : userCtx;
-    } else if (wantsCurrentPhaseAngle(userMessage)) {
+    } else if (routedWantsReactiveEnergyValue(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getEnergyDeltaContext(directMeterId, directWindow.fromTs, directWindow.toTs, directWindow.label, true);
+            result.answer = buildEnergyDeltaDirectAnswer(result.dbContext, true);
+        } else {
+            result.dbContext = getLatestEnergyContext(directMeterId, directPanelTokens);
+            result.answer = buildEnergyValueDirectAnswer(result.dbContext, true);
+        }
+    } else if (routedWantsEnergyValue(userMessage)) {
+        if (directWindow != null) {
+            result.dbContext = getEnergyDeltaContext(directMeterId, directWindow.fromTs, directWindow.toTs, directWindow.label, false);
+            result.answer = buildEnergyDeltaDirectAnswer(result.dbContext, false);
+        } else {
+            result.dbContext = getLatestEnergyContext(directMeterId, directPanelTokens);
+            result.answer = buildEnergyValueDirectAnswer(result.dbContext, false);
+        }
+    } else if (routedWantsActivePowerValue(userMessage)) {
+        result.dbContext = getRecentMeterContext(directMeterId, directPanelTokens);
+        result.answer = buildPowerValueDirectAnswer(result.dbContext, false);
+    } else if (routedWantsReactivePowerValue(userMessage)) {
+        result.dbContext = getRecentMeterContext(directMeterId, directPanelTokens);
+        result.answer = buildPowerValueDirectAnswer(result.dbContext, true);
+    } else if (routedWantsCurrentPhaseAngle(userMessage)) {
         result.dbContext = getCurrentPhaseAngleContext(directMeterId);
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty())
             ? "전류 위상각을 조회했습니다."
             : userCtx;
-    } else if (wantsPhaseCurrentValue(userMessage)) {
+    } else if (routedWantsPhaseCurrentValue(userMessage)) {
         result.dbContext = getPhaseCurrentContext(directMeterId, extractPhaseLabel(userMessage));
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전류를 조회했습니다." : userCtx;
-    } else if (wantsPhaseVoltageValue(userMessage)) {
+    } else if (routedWantsPhaseVoltageValue(userMessage)) {
         result.dbContext = getPhaseVoltageContext(directMeterId, extractPhaseLabel(userMessage));
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전압을 조회했습니다." : userCtx;
-    } else if (wantsLineVoltageValue(userMessage)) {
+    } else if (routedWantsLineVoltageValue(userMessage)) {
         result.dbContext = getLineVoltageContext(directMeterId, extractLinePairLabel(userMessage));
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "선간전압을 조회했습니다." : userCtx;
-    } else if (wantsMeterCountSummary(userMessage)) {
+    } else if (routedWantsMeterCountSummary(userMessage)) {
         result.dbContext = getMeterCountContext(directMeterScopeToken);
         if (result.dbContext.contains("unavailable")) {
             result.answer = "현재 계측기 수를 조회할 수 없습니다.";
@@ -270,11 +315,11 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
                 ? ("현재 등록된 계측기는 총 " + count + "개입니다.")
                 : (scopeLabel + " 관련 계측기는 총 " + count + "개입니다.");
         }
-    } else if (wantsMeterListSummary(userMessage)) {
+    } else if (routedWantsMeterListSummary(userMessage)) {
         result.dbContext = getMeterListContext(directMeterScopeToken, directTopN);
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "계측기 목록을 조회했습니다." : userCtx;
-    } else if (wantsBuildingCountSummary(userMessage)) {
+    } else if (routedWantsBuildingCountSummary(userMessage)) {
         result.dbContext = getBuildingCountContext();
         if (result.dbContext.contains("unavailable")) {
             result.answer = "현재 건물 수를 조회할 수 없습니다.";
@@ -283,7 +328,7 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
             int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
             result.answer = "현재 등록된 건물은 총 " + count + "개입니다.";
         }
-    } else if (wantsUsageTypeCountSummary(userMessage)) {
+    } else if (routedWantsUsageTypeCountSummary(userMessage)) {
         result.dbContext = getUsageTypeCountContext();
         if (result.dbContext.contains("unavailable")) {
             result.answer = "현재 용도 수를 조회할 수 없습니다.";
@@ -292,7 +337,7 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
             int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
             result.answer = "현재 등록된 용도는 총 " + count + "개입니다.";
         }
-    } else if (wantsPanelCountSummary(userMessage)) {
+    } else if (routedWantsPanelCountSummary(userMessage)) {
         result.dbContext = getPanelCountContext(directMeterScopeToken);
         if (result.dbContext.contains("unavailable")) {
             result.answer = "현재 패널 수를 조회할 수 없습니다.";
@@ -305,7 +350,7 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
                 ? ("현재 등록된 패널은 총 " + count + "개입니다.")
                 : (scopeLabel + " 관련 패널은 총 " + count + "개입니다.");
         }
-    } else if (wantsPanelLatestStatus(userMessage)) {
+    } else if (routedWantsPanelLatestStatus(userMessage)) {
         result.dbContext = getPanelLatestStatusContext(directPanelTokens, directTopN);
         if (result.dbContext.contains("no data")) {
             result.answer = "패널 최신 상태 데이터가 없습니다.";
@@ -315,14 +360,14 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
                 ? "패널 최신 상태를 조회했습니다."
                 : userCtx;
         }
-    } else if (wantsAlarmTypeSummary(userMessage)) {
+    } else if (routedWantsAlarmTypeSummary(userMessage)) {
         if (directWindow != null) {
             result.dbContext = getAlarmTypeSummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directTripOnly, directTopN);
         } else {
             result.dbContext = getAlarmTypeSummaryContext(directDays, null, null, null, directMeterId, directTripOnly, directTopN);
         }
         result.answer = buildAlarmTypeDirectAnswer(result.dbContext);
-    } else if (wantsOpenAlarmCountSummary(userMessage)) {
+    } else if (directOpenAlarmCountIntent) {
         result.dbContext = getOpenAlarmCountContext(
             directWindow != null ? directWindow.fromTs : null,
             directWindow != null ? directWindow.toTs : null,
@@ -345,14 +390,14 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
                 ? ("현재 " + subject + "은 총 " + count + "건입니다.")
                 : (scopeLabel + " " + subject + "은 총 " + count + "건입니다.");
         }
-    } else if (wantsAlarmSeveritySummary(userMessage)) {
+    } else if (routedWantsAlarmSeveritySummary(userMessage)) {
         if (directWindow != null) {
             result.dbContext = getAlarmSeveritySummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label);
         } else {
             result.dbContext = getAlarmSeveritySummaryContext(directDays);
         }
         result.answer = buildAlarmSeverityDirectAnswer(result.dbContext);
-    } else if (wantsAlarmCountSummary(userMessage)) {
+    } else if (directAlarmCountIntent) {
         if (directWindow != null) {
             result.dbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
         } else {
@@ -360,35 +405,35 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
         }
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 건수를 조회했습니다." : userCtx;
-    } else if (wantsOpenAlarms(userMessage)) {
+    } else if (directOpenAlarmsIntent) {
         if (directWindow != null) {
             result.dbContext = getOpenAlarmsContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
         } else {
             result.dbContext = getOpenAlarmsContext(directTopN);
         }
         result.answer = buildOpenAlarmsDirectAnswer(result.dbContext);
-    } else if (wantsHarmonicExceed(userMessage)) {
+    } else if (routedWantsHarmonicExceed(userMessage)) {
         if (directWindow != null) {
             result.dbContext = getHarmonicExceedListContext(null, null, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
         } else {
             result.dbContext = getHarmonicExceedListContext(null, null, directTopN);
         }
         result.answer = buildHarmonicExceedDirectAnswer(result.dbContext);
-    } else if (wantsFrequencyOutlier(userMessage)) {
+    } else if (routedWantsFrequencyOutlier(userMessage)) {
         if (directWindow != null) {
             result.dbContext = getFrequencyOutlierListContext(directHz, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
         } else {
             result.dbContext = getFrequencyOutlierListContext(directHz, directTopN);
         }
         result.answer = buildFrequencyOutlierDirectAnswer(result.dbContext);
-    } else if (wantsVoltageUnbalanceTopN(userMessage)) {
+    } else if (routedWantsVoltageUnbalanceTopN(userMessage)) {
         if (directWindow != null) {
             result.dbContext = getVoltageUnbalanceTopNContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
         } else {
             result.dbContext = getVoltageUnbalanceTopNContext(directTopN);
         }
         result.answer = buildVoltageUnbalanceTopDirectAnswer(result.dbContext);
-    } else if (wantsPowerFactorOutlier(userMessage)) {
+    } else if (routedWantsPowerFactorOutlier(userMessage)) {
         if (directWindow != null) {
             result.dbContext = getPowerFactorOutlierListContext(directPf, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
         } else {
@@ -398,9 +443,12 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
             ? getPowerFactorNoSignalCount(directWindow.fromTs, directWindow.toTs)
             : getPowerFactorNoSignalCount();
         result.answer = buildPowerFactorOutlierDirectAnswer(result.dbContext, pfNoSignalCount);
-    } else if (wantsMeterSummary(userMessage) || wantsAlarmSummary(userMessage)) {
-        boolean needMeterSummary = wantsMeterSummary(userMessage);
-        boolean needAlarmSummary = wantsAlarmSummary(userMessage);
+    } else if (routedWantsHarmonicSummary(userMessage) && !routedWantsHarmonicExceed(userMessage)) {
+        result.dbContext = getHarmonicContext(directMeterId, directPanelTokens);
+        result.answer = buildHarmonicDirectAnswer(result.dbContext, directMeterId);
+    } else if (routedWantsMeterSummary(userMessage) || routedWantsAlarmSummary(userMessage)) {
+        boolean needMeterSummary = routedWantsMeterSummary(userMessage);
+        boolean needAlarmSummary = routedWantsAlarmSummary(userMessage);
         String meterCtx = needMeterSummary ? getRecentMeterContext(directMeterId, directPanelTokens) : "";
         String alarmCtx = needAlarmSummary ? getRecentAlarmContext() : "";
         StringBuilder dbSb = new StringBuilder();
@@ -440,6 +488,62 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
     return result;
 }
 
+private DirectAnswerResult tryBuildCriticalDirectAnswer(String userMessage, boolean forceLlmOnly) throws Exception {
+    if (forceLlmOnly) return null;
+
+    if (localWantsPowerFactorStandard(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = "[PF standard] IEEE";
+        result.answer = buildPowerFactorStandardDirectAnswer(userMessage);
+        return result;
+    }
+
+    if (localWantsOpenAlarmCountSummary(userMessage)) {
+        String intentText = normalizeForIntent(userMessage);
+        boolean tripOnly = localWantsTripAlarmOnly(userMessage);
+        String alarmTypeToken = tripOnly ? "TRIP" : extractAlarmTypeToken(userMessage);
+        String alarmAreaToken = extractAlarmAreaToken(userMessage);
+        if (alarmAreaToken == null || alarmAreaToken.trim().isEmpty()) {
+            List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+            if (scopeHints != null && !scopeHints.isEmpty()) {
+                alarmAreaToken = String.join(",", scopeHints);
+            }
+        }
+        TimeWindow directWindow = extractTimeWindow(userMessage);
+        Integer meterId = extractMeterId(userMessage);
+        if (meterId == null) {
+            meterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
+        }
+
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = getOpenAlarmCountContext(
+            directWindow != null ? directWindow.fromTs : null,
+            directWindow != null ? directWindow.toTs : null,
+            directWindow != null ? directWindow.label : null,
+            meterId,
+            alarmTypeToken,
+            alarmAreaToken
+        );
+        if (result.dbContext.contains("unavailable")) {
+            result.answer = "현재 열린 알람 수를 조회할 수 없습니다.";
+        } else {
+            java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(result.dbContext);
+            int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
+            java.util.regex.Matcher tm = java.util.regex.Pattern.compile("type=([^;]+)").matcher(result.dbContext);
+            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(result.dbContext);
+            String typeLabel = tm.find() ? trimToNull(tm.group(1)) : null;
+            String scopeLabel = sm.find() ? trimToNull(sm.group(1)) : null;
+            String subject = (typeLabel == null || typeLabel.isEmpty()) ? "열린 알람" : ("열린 " + typeLabel + " 알람");
+            result.answer = (scopeLabel == null || scopeLabel.isEmpty())
+                ? ("현재 " + subject + "은 총 " + count + "건입니다.")
+                : (scopeLabel + " " + subject + "은 총 " + count + "건입니다.");
+        }
+        return result;
+    }
+
+    return null;
+}
+
 private AgentExecutionContext buildExecutionContext(String userMessage, AgentRequestContext reqCtx, String model, String coderModel) {
     AgentExecutionContext ctx = new AgentExecutionContext();
     ctx.requestedMeterId = reqCtx.requestedMeterId;
@@ -449,9 +553,9 @@ private AgentExecutionContext buildExecutionContext(String userMessage, AgentReq
     ctx.requestedPhase = reqCtx.requestedPhase;
     ctx.requestedLinePair = reqCtx.requestedLinePair;
     ctx.panelTokens = reqCtx.panelTokens;
-    ctx.needsMeter = wantsMeterSummary(userMessage);
-    ctx.needsAlarm = wantsAlarmSummary(userMessage);
-    ctx.needsFrequency = wantsMonthlyFrequencySummary(userMessage);
+    ctx.needsMeter = routedWantsMeterSummary(userMessage);
+    ctx.needsAlarm = routedWantsAlarmSummary(userMessage);
+    ctx.needsFrequency = routedWantsMonthlyFrequencySummary(userMessage);
     ctx.needsPerMeterPower = reqCtx.needsPerMeterPower;
     ctx.needsMeterList = reqCtx.needsMeterList;
     ctx.needsPhaseCurrent = reqCtx.needsPhaseCurrent;
@@ -493,8 +597,8 @@ private void applyClassifierHints(AgentExecutionContext ctx, String userMessage,
     if (cNeedsPhaseVoltage != null) ctx.needsPhaseVoltage = ctx.needsPhaseVoltage || cNeedsPhaseVoltage.booleanValue();
     if (cNeedsLineVoltage != null) ctx.needsLineVoltage = ctx.needsLineVoltage || cNeedsLineVoltage.booleanValue();
     if (cNeedsHarmonic != null) ctx.needsHarmonic = ctx.needsHarmonic || cNeedsHarmonic.booleanValue();
-    if (ctx.needsMeterList && !wantsPerMeterPowerSummary(userMessage)) ctx.needsPerMeterPower = false;
-    if (ctx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) ctx.needsFrequency = false;
+    if (ctx.needsMeterList && !routedWantsPerMeterPowerSummary(userMessage)) ctx.needsPerMeterPower = false;
+    if (ctx.needsHarmonic && !routedWantsMonthlyFrequencySummary(userMessage)) ctx.needsFrequency = false;
     if (cMeterId != null) ctx.requestedMeterId = cMeterId;
     if (cMonth != null && cMonth.intValue() >= 1 && cMonth.intValue() <= 12) ctx.requestedMonth = cMonth;
     if ((ctx.panelTokens == null || ctx.panelTokens.isEmpty()) && cPanel != null && !cPanel.trim().isEmpty()) {
@@ -570,13 +674,13 @@ private PlannerExecutionResult executePlannerAndLoadContexts(
         else if ("both".equals(t)) { runMeter = true; runAlarm = true; }
         else if ("none".equals(t)) { runMeter = false; runAlarm = false; }
     }
-    if (execCtx.needsFrequency && !wantsMeterSummary(userMessage)) runMeter = false;
-    if (execCtx.needsFrequency && !wantsAlarmSummary(userMessage)) runAlarm = false;
-    if (execCtx.needsPerMeterPower && !wantsMeterSummary(userMessage)) runMeter = false;
-    if (execCtx.needsPerMeterPower && !wantsAlarmSummary(userMessage)) runAlarm = false;
-    if (execCtx.needsHarmonic && !wantsMeterSummary(userMessage)) runMeter = false;
-    if (execCtx.needsHarmonic && !wantsAlarmSummary(userMessage)) runAlarm = false;
-    if (execCtx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
+    if (execCtx.needsFrequency && !routedWantsMeterSummary(userMessage)) runMeter = false;
+    if (execCtx.needsFrequency && !routedWantsAlarmSummary(userMessage)) runAlarm = false;
+    if (execCtx.needsPerMeterPower && !routedWantsMeterSummary(userMessage)) runMeter = false;
+    if (execCtx.needsPerMeterPower && !routedWantsAlarmSummary(userMessage)) runAlarm = false;
+    if (execCtx.needsHarmonic && !routedWantsMeterSummary(userMessage)) runMeter = false;
+    if (execCtx.needsHarmonic && !routedWantsAlarmSummary(userMessage)) runAlarm = false;
+    if (execCtx.needsHarmonic && !routedWantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
     if (planMeterId != null) execCtx.requestedMeterId = planMeterId;
     if (planMonth != null && planMonth.intValue() >= 1 && planMonth.intValue() <= 12) execCtx.requestedMonth = planMonth;
     if (planNeedsFrequency != null) runFrequency = runFrequency || planNeedsFrequency.booleanValue();
@@ -586,8 +690,8 @@ private PlannerExecutionResult executePlannerAndLoadContexts(
     if (planNeedsPhaseVoltage != null) runPhaseVoltage = runPhaseVoltage || planNeedsPhaseVoltage.booleanValue();
     if (planNeedsLineVoltage != null) runLineVoltage = runLineVoltage || planNeedsLineVoltage.booleanValue();
     if (planNeedsHarmonic != null) runHarmonic = runHarmonic || planNeedsHarmonic.booleanValue();
-    if (runMeterList && !wantsPerMeterPowerSummary(userMessage)) runPower = false;
-    if (execCtx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
+    if (runMeterList && !routedWantsPerMeterPowerSummary(userMessage)) runPower = false;
+    if (execCtx.needsHarmonic && !routedWantsMonthlyFrequencySummary(userMessage)) runFrequency = false;
     if ((execCtx.panelTokens == null || execCtx.panelTokens.isEmpty()) && planPanel != null && !planPanel.trim().isEmpty()) {
         execCtx.panelTokens = panelTokensFromRaw(planPanel);
     }
@@ -633,7 +737,7 @@ private PlannerExecutionResult executePlannerAndLoadContexts(
 
 private String buildDbContext(AgentExecutionContext execCtx, PlannerExecutionResult plannerResult, String userMessage) {
     if (!execCtx.needsDb) return "";
-    if (execCtx.needsHarmonic && !wantsMonthlyFrequencySummary(userMessage)) {
+    if (execCtx.needsHarmonic && !routedWantsMonthlyFrequencySummary(userMessage)) {
         plannerResult.frequencyCtx = "";
     }
     StringBuilder dbSb = new StringBuilder();
@@ -680,24 +784,69 @@ private String buildDbContext(AgentExecutionContext execCtx, PlannerExecutionRes
 private SpecializedAnswerResult tryBuildSpecializedAnswer(AgentExecutionContext execCtx, PlannerExecutionResult plannerResult) {
     if (execCtx.forceCoderFlow) return null;
     SpecializedAnswerResult result = new SpecializedAnswerResult();
-    if (execCtx.needsHarmonic && plannerResult.harmonicCtx != null && !plannerResult.harmonicCtx.trim().isEmpty()) {
-        result.answer = buildHarmonicDirectAnswer(plannerResult.harmonicCtx, execCtx.requestedMeterId);
-    } else if (execCtx.needsFrequency && plannerResult.frequencyCtx != null && !plannerResult.frequencyCtx.trim().isEmpty()) {
-        result.answer = buildFrequencyDirectAnswer(plannerResult.frequencyCtx, execCtx.requestedMeterId, execCtx.requestedMonth);
-    } else if (execCtx.needsPerMeterPower && plannerResult.powerCtx != null && !plannerResult.powerCtx.trim().isEmpty()) {
-        result.answer = buildPerMeterPowerDirectAnswer(plannerResult.powerCtx);
-    } else if (execCtx.needsMeterList && plannerResult.meterListCtx != null && !plannerResult.meterListCtx.trim().isEmpty()) {
-        result.answer = buildUserDbContext(plannerResult.meterListCtx);
-        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "계측기 목록을 조회했습니다.";
-    } else if (execCtx.needsPhaseCurrent && plannerResult.phaseCurrentCtx != null && !plannerResult.phaseCurrentCtx.trim().isEmpty()) {
-        result.answer = buildUserDbContext(plannerResult.phaseCurrentCtx);
-        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전류를 조회했습니다.";
-    } else if (execCtx.needsPhaseVoltage && plannerResult.phaseVoltageCtx != null && !plannerResult.phaseVoltageCtx.trim().isEmpty()) {
-        result.answer = buildUserDbContext(plannerResult.phaseVoltageCtx);
-        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전압을 조회했습니다.";
-    } else if (execCtx.needsLineVoltage && plannerResult.lineVoltageCtx != null && !plannerResult.lineVoltageCtx.trim().isEmpty()) {
-        result.answer = buildUserDbContext(plannerResult.lineVoltageCtx);
-        if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "선간전압을 조회했습니다.";
+    Object delegated = invokeAgentSpecializedHelper(
+        "select",
+        new Class<?>[] {
+            boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class,
+            String.class, String.class, String.class, String.class, String.class, String.class, String.class
+        },
+        new Object[] {
+            Boolean.valueOf(execCtx.forceCoderFlow),
+            Boolean.valueOf(execCtx.needsHarmonic),
+            Boolean.valueOf(execCtx.needsFrequency),
+            Boolean.valueOf(execCtx.needsPerMeterPower),
+            Boolean.valueOf(execCtx.needsMeterList),
+            Boolean.valueOf(execCtx.needsPhaseCurrent),
+            Boolean.valueOf(execCtx.needsPhaseVoltage),
+            Boolean.valueOf(execCtx.needsLineVoltage),
+            plannerResult.harmonicCtx,
+            plannerResult.frequencyCtx,
+            plannerResult.powerCtx,
+            plannerResult.meterListCtx,
+            plannerResult.phaseCurrentCtx,
+            plannerResult.phaseVoltageCtx,
+            plannerResult.lineVoltageCtx
+        }
+    );
+    if (delegated != null) {
+        try {
+            Class<?> cls = delegated.getClass();
+            String type = (String) cls.getField("type").get(delegated);
+            String context = (String) cls.getField("context").get(delegated);
+            String fallbackText = (String) cls.getField("fallbackText").get(delegated);
+            if ("harmonic".equals(type)) {
+                result.answer = buildHarmonicDirectAnswer(context, execCtx.requestedMeterId);
+            } else if ("frequency".equals(type)) {
+                result.answer = buildFrequencyDirectAnswer(context, execCtx.requestedMeterId, execCtx.requestedMonth);
+            } else if ("power".equals(type)) {
+                result.answer = buildPerMeterPowerDirectAnswer(context);
+            } else if ("meter_list".equals(type) || "phase_current".equals(type) || "phase_voltage".equals(type) || "line_voltage".equals(type)) {
+                result.answer = buildUserDbContext(context);
+                if (result.answer == null || result.answer.trim().isEmpty()) result.answer = fallbackText;
+            }
+        } catch (Throwable ignore) {
+        }
+    }
+    if (result.answer == null) {
+        if (execCtx.needsHarmonic && plannerResult.harmonicCtx != null && !plannerResult.harmonicCtx.trim().isEmpty()) {
+            result.answer = buildHarmonicDirectAnswer(plannerResult.harmonicCtx, execCtx.requestedMeterId);
+        } else if (execCtx.needsFrequency && plannerResult.frequencyCtx != null && !plannerResult.frequencyCtx.trim().isEmpty()) {
+            result.answer = buildFrequencyDirectAnswer(plannerResult.frequencyCtx, execCtx.requestedMeterId, execCtx.requestedMonth);
+        } else if (execCtx.needsPerMeterPower && plannerResult.powerCtx != null && !plannerResult.powerCtx.trim().isEmpty()) {
+            result.answer = buildPerMeterPowerDirectAnswer(plannerResult.powerCtx);
+        } else if (execCtx.needsMeterList && plannerResult.meterListCtx != null && !plannerResult.meterListCtx.trim().isEmpty()) {
+            result.answer = buildUserDbContext(plannerResult.meterListCtx);
+            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "계측기 목록을 조회했습니다.";
+        } else if (execCtx.needsPhaseCurrent && plannerResult.phaseCurrentCtx != null && !plannerResult.phaseCurrentCtx.trim().isEmpty()) {
+            result.answer = buildUserDbContext(plannerResult.phaseCurrentCtx);
+            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전류를 조회했습니다.";
+        } else if (execCtx.needsPhaseVoltage && plannerResult.phaseVoltageCtx != null && !plannerResult.phaseVoltageCtx.trim().isEmpty()) {
+            result.answer = buildUserDbContext(plannerResult.phaseVoltageCtx);
+            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전압을 조회했습니다.";
+        } else if (execCtx.needsLineVoltage && plannerResult.lineVoltageCtx != null && !plannerResult.lineVoltageCtx.trim().isEmpty()) {
+            result.answer = buildUserDbContext(plannerResult.lineVoltageCtx);
+            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "선간전압을 조회했습니다.";
+        }
     }
     if (result.answer == null) return null;
     return result;
@@ -929,268 +1078,244 @@ private List<String> findScopeTokensFromMeterMaster(String userMessage, int maxT
     return out;
 }
 
-private boolean wantsMeterSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean meterWord = m.contains("meter") || m.contains("미터") || m.contains("계측기");
-    boolean meterIntentWord =
-        m.contains("최근계측") || m.contains("최신계측")
-        || m.contains("최근측정") || m.contains("최신측정")
-        || m.contains("계측값") || m.contains("measurement") || m.contains("실시간상태")
-        || m.contains("현재상태")
-        || m.contains("전압값") || m.contains("전류값")
-        || m.contains("역률") || m.contains("전력값") || m.contains("kw");
-    boolean electricalWord =
-        m.contains("전압") || m.contains("voltage")
-        || m.contains("전류") || m.contains("current")
-        || m.contains("전력") || m.contains("power")
-        || m.contains("역률") || m.contains("pf");
-    boolean recentWord =
-        m.contains("최근") || m.contains("최신") || m.contains("실시간")
-        || m.contains("current") || m.contains("latest");
-    boolean statusWord = m.contains("상태") || m.contains("status");
-    boolean hasMeterCode = m.matches(".*[a-z]{2,}_[a-z0-9_\\-]{2,}.*");
-    boolean askForm = m.endsWith("?") || m.endsWith("는?") || m.endsWith("은?");
-    boolean sqlLike = m.contains("select") || m.contains("where") || m.contains("join")
-        || m.contains("query") || m.contains("sql") || m.contains("테이블") || m.contains("컬럼");
-    if (sqlLike) return false;
-    if (hasMeterCode && (statusWord || askForm)) return true;
-    if (meterWord && statusWord) return true;
-    if (meterWord && electricalWord) return true;
-    if (electricalWord && recentWord && (m.contains("계측기") || meterWord)) return true;
-    return meterIntentWord || (meterWord && (m.contains("값") || m.contains("value") || m.contains("status") || m.contains("상태")));
+private boolean routedWantsMeterSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsMeterSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsAlarmSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasAlarmWord = m.contains("알람") || m.contains("경보") || m.contains("alarm") || m.contains("alert");
-    boolean hasSummaryIntent = m.contains("최근") || m.contains("최신") || m.contains("요약")
-        || m.contains("보여") || m.contains("알려") || m.contains("목록") || m.contains("같이");
-    return m.contains("최근알람") || m.contains("최신알람")
-        || m.contains("알람요약") || m.contains("경보요약")
-        || m.contains("alarm") || m.contains("alert")
-        || m.contains("이상내역")
-        || (hasAlarmWord && hasSummaryIntent);
+private boolean routedWantsAlarmSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsAlarmSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsMonthlyFrequencySummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasFrequency = m.contains("주파수") || m.contains("frequency") || m.contains("hz");
-    boolean hasAverage = m.contains("평균") || m.contains("avg") || m.contains("mean");
-    boolean hasPeriod = m.contains("월") || m.contains("month");
-    return hasFrequency && (hasAverage || hasPeriod);
+private boolean routedWantsMonthlyFrequencySummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsMonthlyFrequencySummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsVoltageAverageSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasVoltage = m.contains("전압") || m.contains("voltage");
-    boolean hasAvg = m.contains("평균") || m.contains("avg") || m.contains("mean");
-    boolean hasDate = m.matches(".*[0-9]{4}[-./][0-9]{1,2}[-./][0-9]{1,2}.*");
-    boolean hasPeriod = m.contains("오늘") || m.contains("어제") || m.contains("이번주") || m.contains("금주")
-        || m.contains("이번달") || m.contains("금월") || m.contains("올해") || m.contains("금년")
-        || m.contains("일주일") || m.contains("1주") || m.contains("최근7일")
-        || m.contains("월") || m.contains("year") || m.contains("week") || m.contains("month")
-        || m.matches(".*[0-9]+일.*") || hasDate;
-    return hasVoltage && hasAvg && hasPeriod;
+private boolean routedWantsPerMeterPowerSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsPerMeterPowerSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsVoltagePhaseAngle(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasVoltage = m.contains("전압") || m.contains("voltage");
-    boolean hasPhase = m.contains("위상각") || m.contains("phaseangle") || m.contains("phase");
-    return hasVoltage && hasPhase;
+private boolean routedWantsHarmonicSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsHarmonicSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsCurrentPhaseAngle(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasCurrent = m.contains("전류") || m.contains("current");
-    boolean hasPhase = m.contains("위상각") || m.contains("phaseangle") || m.contains("phase");
-    return hasCurrent && hasPhase;
+private boolean routedWantsMeterListSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsMeterListSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsPhaseCurrentValue(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasCurrent = m.contains("전류") || m.contains("current");
-    boolean hasPhase = m.contains("a상") || m.contains("b상") || m.contains("c상")
-        || m.contains("r상") || m.contains("s상") || m.contains("t상");
-    return hasCurrent && hasPhase;
+private boolean routedWantsMeterCountSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsMeterCountSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsPhaseVoltageValue(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasVoltage = m.contains("전압") || m.contains("voltage");
-    boolean hasPhase = m.contains("a상") || m.contains("b상") || m.contains("c상")
-        || m.contains("r상") || m.contains("s상") || m.contains("t상");
-    return hasVoltage && hasPhase;
+private boolean routedWantsPanelCountSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsPanelCountSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
 }
 
-private boolean wantsLineVoltageValue(String userMessage) {
+private boolean routedWantsBuildingCountSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsBuildingCountSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsUsageTypeCountSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsUsageTypeCountSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsAlarmSeveritySummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsAlarmSeveritySummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsAlarmTypeSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsAlarmTypeSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsAlarmCountSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsAlarmCountSummary", userMessage);
+    return (delegated != null ? delegated.booleanValue() : false) || localWantsAlarmCountSummary(userMessage);
+}
+
+private boolean routedWantsOpenAlarms(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsOpenAlarms", userMessage);
+    return (delegated != null ? delegated.booleanValue() : false) || localWantsOpenAlarms(userMessage);
+}
+
+private boolean routedWantsOpenAlarmCountSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsOpenAlarmCountSummary", userMessage);
+    return (delegated != null ? delegated.booleanValue() : false) || localWantsOpenAlarmCountSummary(userMessage);
+}
+
+private boolean routedWantsBuildingPowerTopN(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsBuildingPowerTopN", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsPanelLatestStatus(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsPanelLatestStatus", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsHarmonicExceed(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsHarmonicExceed", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsFrequencyOutlier(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsFrequencyOutlier", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsVoltageUnbalanceTopN(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsVoltageUnbalanceTopN", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsPowerFactorOutlier(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsPowerFactorOutlier", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsVoltageAverageSummary(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsVoltageAverageSummary", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsVoltagePhaseAngle(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsVoltagePhaseAngle", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsCurrentPhaseAngle(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsCurrentPhaseAngle", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsPhaseCurrentValue(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsPhaseCurrentValue", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsActivePowerValue(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsActivePowerValue", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsReactivePowerValue(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsReactivePowerValue", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsEnergyValue(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsEnergyValue", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsReactiveEnergyValue(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsReactiveEnergyValue", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsPhaseVoltageValue(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsPhaseVoltageValue", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsLineVoltageValue(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsLineVoltageValue", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsMonthlyPowerStats(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsMonthlyPowerStats", userMessage);
+    return delegated != null ? delegated.booleanValue() : false;
+}
+
+private boolean routedWantsPowerFactorStandard(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsPowerFactorStandard", userMessage);
+    return (delegated != null ? delegated.booleanValue() : false) || localWantsPowerFactorStandard(userMessage);
+}
+
+private boolean routedWantsTripAlarmOnly(String userMessage) {
+    Boolean delegated = invokeAgentQueryRouterBoolean("wantsTripAlarmOnly", userMessage);
+    return (delegated != null ? delegated.booleanValue() : false) || localWantsTripAlarmOnly(userMessage);
+}
+
+private boolean localWantsAlarmCountSummary(String userMessage) {
     String m = normalizeForIntent(userMessage);
-    boolean hasVoltage = m.contains("전압") || m.contains("voltage");
-    boolean hasLine = m.contains("선간") || m.contains("linevoltage")
-        || m.contains("vab") || m.contains("vbc") || m.contains("vca")
-        || m.contains("ab상") || m.contains("bc상") || m.contains("ca상");
-    return hasVoltage && hasLine;
+    boolean hasAlarm = m.contains("\uC54C\uB78C") || m.contains("\uACBD\uBCF4") || m.contains("alarm");
+    boolean hasCount = m.contains("\uAC74\uC218") || m.contains("\uAC1C\uC218") || m.contains("\uAC2F\uC218")
+        || m.contains("count") || m.contains("\uBA87\uAC74") || m.contains("\uBA87\uAC1C")
+        || m.contains("\uC218\uB97C\uC54C\uB824") || m.contains("\uC218\uB97C\uBCF4\uC5EC");
+    boolean hasOccurred = m.contains("\uBC1C\uC0DD");
+    return hasAlarm && (hasCount || hasOccurred || m.endsWith("\uC218\uB294?") || m.endsWith("\uC218?"));
+}
+
+private boolean localWantsOpenAlarms(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasOpen = m.contains("\uBBF8\uD574\uACB0") || m.contains("\uC5F4\uB9B0") || m.contains("open");
+    boolean hasAlarm = m.contains("\uC54C\uB78C") || m.contains("\uACBD\uBCF4") || m.contains("alarm");
+    return hasOpen && hasAlarm;
+}
+
+private boolean localWantsOpenAlarmCountSummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasOpen = m.contains("\uBBF8\uD574\uACB0") || m.contains("\uC5F4\uB9B0") || m.contains("open");
+    return hasOpen && localWantsAlarmCountSummary(userMessage);
+}
+
+private boolean localWantsPowerFactorStandard(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasPf = m.contains("\uC5ED\uB960") || m.contains("powerfactor") || m.contains("pf");
+    boolean hasStandard = m.contains("\uAE30\uC900") || m.contains("\uAE30\uC900\uCE58") || m.contains("\uD45C\uC900") || m.contains("standard");
+    boolean hasIeee = m.contains("ieee");
+    return hasPf && hasStandard && hasIeee;
+}
+
+private boolean localWantsTripAlarmOnly(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    return m.contains("\uD2B8\uB9BD") || m.contains("trip") || m.contains("\uD2B8\uB9BC");
+}
+
+private String buildPowerFactorStandardDirectAnswer(String userMessage) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildPowerFactorStandardDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { userMessage }
+    );
+    if (delegated != null) return delegated;
+    String m = normalizeForIntent(userMessage);
+    if (m.contains("ieee")) {
+        return "IEEE에는 모든 설비에 공통으로 적용되는 단일 역률 최소 기준치가 명시돼 있다고 보기 어렵습니다. 실무에서는 보통 0.9 이상을 최소 관리 기준으로 보고, 운영 목표는 0.95 이상으로 두는 경우가 많습니다.";
+    }
+    return "역률 기준은 적용 규정과 계약 조건에 따라 달라질 수 있지만, 실무에서는 보통 0.9 이상을 최소 관리 기준으로 보고 0.95 이상을 목표로 관리하는 경우가 많습니다.";
 }
 
 private String extractPhaseLabel(String userMessage) {
-    if (userMessage == null) return null;
-    String m = normalizeForIntent(userMessage);
-    if (m.contains("a상") || m.contains("r상")) return "A";
-    if (m.contains("b상") || m.contains("s상")) return "B";
-    if (m.contains("c상") || m.contains("t상")) return "C";
-    return null;
+    Object delegated = invokeAgentQueryParser("extractPhaseLabel", new Class<?>[] { String.class }, new Object[] { userMessage });
+    return delegated instanceof String ? (String) delegated : null;
 }
 
 private String extractLinePairLabel(String userMessage) {
-    if (userMessage == null) return null;
-    String m = normalizeForIntent(userMessage);
-    if (m.contains("vab") || m.contains("ab상") || m.contains("a-b") || m.contains("rs") || m.contains("r-s")) return "AB";
-    if (m.contains("vbc") || m.contains("bc상") || m.contains("b-c") || m.contains("st") || m.contains("s-t")) return "BC";
-    if (m.contains("vca") || m.contains("ca상") || m.contains("c-a") || m.contains("tr") || m.contains("t-r")) return "CA";
-    return null;
-}
-
-private boolean wantsPerMeterPowerSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean meterScope = m.contains("각계측기") || m.contains("모든계측기") || m.contains("계측기별")
-        || (m.contains("각") && m.contains("계측기")) || (m.contains("all") && m.contains("meter"));
-    boolean powerWord = m.contains("전력량") || m.contains("전력") || m.contains("사용전력")
-        || m.contains("kw") || m.contains("kwh") || m.contains("power");
-    return meterScope && powerWord;
-}
-
-private boolean wantsHarmonicSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    return m.contains("고조파") || m.contains("harmonic") || m.contains("thd");
-}
-
-private boolean wantsMonthlyPowerStats(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasMonth = m.contains("월") || m.contains("달") || m.contains("month") || m.contains("thismonth");
-    boolean hasPower = m.contains("전력") || m.contains("kw") || m.contains("power");
-    boolean hasStat = m.contains("평균") || m.contains("최대") || m.contains("max") || m.contains("avg");
-    return hasMonth && hasPower && hasStat;
-}
-
-private boolean wantsBuildingPowerTopN(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasBuilding = m.contains("건물") || m.contains("building");
-    boolean hasPower = m.contains("전력") || m.contains("전력량") || m.contains("사용전력")
-        || m.contains("kw") || m.contains("kwh") || m.contains("power");
-    boolean hasTop = m.contains("top") || m.contains("상위") || m.matches(".*[0-9]+개.*");
-    boolean hasListIntent = m.contains("별") || m.contains("비교") || m.contains("목록") || m.contains("보여");
-    return hasBuilding && hasPower && (hasTop || hasListIntent || m.endsWith("은?") || m.endsWith("?"));
-}
-
-private boolean wantsPanelLatestStatus(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasPanel = m.contains("패널") || m.contains("panel") || m.contains("판넬") || m.contains("계열");
-    boolean hasStatus = m.contains("상태") || m.contains("status");
-    boolean hasPanelCode = m.matches(".*(mdb|vcb|acb)[a-z0-9_\\-]*.*");
-    boolean hasMeterScope = m.contains("계측기") || m.contains("meter");
-    if (hasMeterScope && !hasPanel) return false;
-    return (hasPanel || hasPanelCode) && hasStatus;
-}
-
-private boolean wantsAlarmSeveritySummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    return (m.contains("알람") || m.contains("alarm")) &&
-        (m.contains("심각도") || m.contains("severity")) &&
-        (m.contains("건수") || m.contains("요약") || m.contains("count")
-            || m.contains("수는") || m.contains("수알려") || m.contains("수를알려")
-            || m.matches(".*심각도.*알람.*수.*") || m.matches(".*알람.*심각도.*수.*"));
-}
-
-private boolean wantsAlarmTypeSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasAlarm = m.contains("알람") || m.contains("alarm") || m.contains("경보");
-    boolean hasType = m.contains("종류") || m.contains("유형") || m.contains("타입")
-        || m.contains("type") || m.contains("무슨알람") || m.contains("어떤알람");
-    boolean hasSeverity = m.contains("심각도") || m.contains("severity");
-    return hasAlarm && hasType && !hasSeverity;
-}
-
-private boolean wantsAlarmCountSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasAlarm = m.contains("알람") || m.contains("alarm") || m.contains("경보");
-    boolean hasCount = m.contains("건수") || m.contains("개수") || m.contains("갯수") || m.contains("count")
-        || m.contains("몇건") || m.contains("몇개")
-        || m.contains("알람의수") || m.contains("수는") || m.contains("수알려")
-        || m.contains("수를알려") || m.contains("수를보여")
-        || m.matches(".*알람.*수.*알려.*") || m.endsWith("수");
-    boolean hasOccurred = m.contains("발생") || m.contains("trigger");
-    return hasAlarm && (hasCount || hasOccurred || m.endsWith("수는?") || m.endsWith("수?"));
-}
-
-private boolean wantsTripAlarmOnly(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    return m.contains("트립") || m.contains("trip") || m.contains("트림");
+    Object delegated = invokeAgentQueryParser("extractLinePairLabel", new Class<?>[] { String.class }, new Object[] { userMessage });
+    return delegated instanceof String ? (String) delegated : null;
 }
 
 private String extractAlarmTypeToken(String userMessage) {
-    if (userMessage == null) return null;
-    if (wantsTripAlarmOnly(userMessage)) return "TRIP";
-    String src = userMessage.trim();
-    java.util.regex.Matcher m1 = java.util.regex.Pattern
-        .compile("([A-Za-z][A-Za-z0-9_\\-]{1,15})\\s*알람", java.util.regex.Pattern.CASE_INSENSITIVE)
-        .matcher(src);
-    if (m1.find()) return m1.group(1).toUpperCase(java.util.Locale.ROOT);
-    java.util.regex.Matcher m2 = java.util.regex.Pattern
-        .compile("알람\\s*([A-Za-z][A-Za-z0-9_\\-]{1,15})", java.util.regex.Pattern.CASE_INSENSITIVE)
-        .matcher(src);
-    if (m2.find()) return m2.group(1).toUpperCase(java.util.Locale.ROOT);
-    return null;
+    Object delegated = invokeAgentQueryParser("extractAlarmTypeToken", new Class<?>[] { String.class }, new Object[] { userMessage });
+    return delegated instanceof String ? (String) delegated : null;
 }
 
 private String extractAlarmAreaToken(String userMessage) {
-    if (userMessage == null) return null;
-    String src = userMessage.trim();
-    java.util.regex.Matcher m0 = java.util.regex.Pattern
-        .compile("(.+?)\\s*(?:과|와)?\\s*관련된\\s*계측기")
-        .matcher(src);
-    if (m0.find()) {
-        String token0 = trimToNull(m0.group(1));
-        if (token0 != null) {
-            token0 = token0.replaceAll("[\"'`]", "").trim();
-            String n0 = normalizeForIntent(token0);
-            if (token0.length() >= 2
-                && !n0.contains("ocr")
-                && !n0.contains("trip")
-                && !n0.contains("트립")
-                && !n0.contains("트림")) {
-                return token0;
-            }
-        }
-    }
-    java.util.regex.Matcher m00 = java.util.regex.Pattern
-        .compile("(.+?)\\s*계측기\\s*의\\s*알람")
-        .matcher(src);
-    if (m00.find()) {
-        String token00 = trimToNull(m00.group(1));
-        if (token00 != null) {
-            token00 = token00.replaceAll("[\"'`]", "").trim();
-            String n00 = normalizeForIntent(token00);
-            if (token00.length() >= 2
-                && !n00.contains("ocr")
-                && !n00.contains("trip")
-                && !n00.contains("트립")
-                && !n00.contains("트림")) {
-                return token00;
-            }
-        }
-    }
-    java.util.regex.Matcher m = java.util.regex.Pattern
-        .compile("(.+?)\\s*의\\s*알람")
-        .matcher(src);
-    if (!m.find()) return null;
-    String token = trimToNull(m.group(1));
-    if (token == null) return null;
-    token = token.replaceAll("[\"'`]", "").trim();
-    if (token.length() < 2) return null;
-    String n = normalizeForIntent(token);
-    if (n.contains("ocr") || n.contains("trip") || n.contains("트립") || n.contains("트림")) return null;
-    if (n.contains("계측기") || n.contains("meter")) return null;
-    return token;
+    Object delegated = invokeAgentQueryParser("extractAlarmAreaToken", new Class<?>[] { String.class }, new Object[] { userMessage });
+    return delegated instanceof String ? (String) delegated : null;
 }
 
 private List<String> splitAlarmAreaTokens(String areaToken) {
@@ -1214,84 +1339,202 @@ private List<String> splitAlarmAreaTokens(String areaToken) {
     return out;
 }
 
-private boolean wantsMeterListSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasList = m.contains("리스트") || m.contains("목록") || m.contains("list");
-    boolean hasMeter = m.contains("계측기") || m.contains("미터") || m.contains("meter") || m.contains("게츠기");
-    boolean hasScoped = m.contains("관련된") || m.contains("의");
-    boolean askMeter =
-        (hasMeter && (m.endsWith("는?") || m.endsWith("은?") || m.endsWith("?"))) ||
-        m.contains("계측기는") || m.contains("계측기?") ||
-        m.contains("미터는") || m.contains("meter?");
-    return (hasList && (hasMeter || hasScoped)) || (hasMeter && hasScoped && askMeter);
-}
-
-private boolean wantsMeterCountSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasMeter = m.contains("계측기") || m.contains("미터") || m.contains("meter") || m.contains("게츠기");
-    boolean hasCount =
-        m.contains("몇개") || m.contains("몇개야") || m.contains("개수") ||
-        m.contains("갯수") || m.contains("수는") || m.contains("수알려") ||
-        m.contains("수를알려") || m.contains("수를보여") || m.contains("총개수") ||
-        m.contains("count") || m.contains("몇대") || m.contains("총몇") ||
-        m.matches(".*계측기.*수.*알려.*") || m.matches(".*meter.*count.*");
-    boolean hasList = m.contains("리스트") || m.contains("목록") || m.contains("list");
-    return hasMeter && hasCount && !hasList;
-}
-
-private boolean wantsPanelCountSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasPanel = m.contains("패널") || m.contains("판넬") || m.contains("panel");
-    boolean hasCount =
-        m.contains("몇개") || m.contains("몇개야") || m.contains("개수") ||
-        m.contains("갯수") || m.contains("수는") || m.contains("수알려") ||
-        m.contains("수를알려") || m.contains("수를보여") || m.contains("총개수") ||
-        m.contains("count") || m.contains("몇개패널") || m.matches(".*패널.*수.*알려.*");
-    boolean hasStatus = m.contains("상태") || m.contains("status");
-    return hasPanel && hasCount && !hasStatus;
-}
-
-private boolean wantsBuildingCountSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasBuilding = m.contains("건물") || m.contains("building");
-    boolean hasCount =
-        m.contains("몇개") || m.contains("몇개야") || m.contains("개수") ||
-        m.contains("갯수") || m.contains("수는") || m.contains("수알려") ||
-        m.contains("수를알려") || m.contains("수를보여") || m.contains("총개수") ||
-        m.contains("count") || m.matches(".*건물.*수.*알려.*");
-    return hasBuilding && hasCount;
-}
-
-private boolean wantsUsageTypeCountSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasUsage = m.contains("용도") || m.contains("사용처") || m.contains("usage");
-    boolean hasCount =
-        m.contains("몇개") || m.contains("몇개야") || m.contains("개수") ||
-        m.contains("갯수") || m.contains("수는") || m.contains("수알려") ||
-        m.contains("수를알려") || m.contains("수를보여") || m.contains("총개수") ||
-        m.contains("count") || m.matches(".*용도.*수.*알려.*") || m.matches(".*사용처.*수.*알려.*");
-    return hasUsage && hasCount;
-}
-
 private String extractMeterScopeToken(String userMessage) {
-    if (userMessage == null) return null;
-    String src = userMessage.trim();
-    java.util.regex.Matcher m0 = java.util.regex.Pattern
-        .compile("(.+?)\\s*(?:과|와)?\\s*관련된\\s*(?:계측기|게츠기|미터)")
-        .matcher(src);
-    if (m0.find()) return trimToNull(m0.group(1));
-    java.util.regex.Matcher m1 = java.util.regex.Pattern
-        .compile("(.+?)\\s*(?:계측기|게츠기|미터)\\s*(?:리스트|목록)")
-        .matcher(src);
-    if (m1.find()) return trimToNull(m1.group(1));
-    java.util.regex.Matcher m2 = java.util.regex.Pattern
-        .compile("(.+?)\\s*의\\s*(?:계측기|게츠기|미터)")
-        .matcher(src);
-    if (m2.find()) return trimToNull(m2.group(1));
+    Object delegated = invokeAgentQueryParser("extractMeterScopeToken", new Class<?>[] { String.class }, new Object[] { userMessage });
+    return delegated instanceof String ? (String) delegated : null;
+}
+
+private String invokeAgentDbTool(String methodName, Class<?>[] argTypes, Object[] args) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentDbTools");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        Object out = m.invoke(null, args);
+        return out == null ? null : String.valueOf(out);
+    } catch (Throwable ignore) {
+    }
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentDbToolsCompat");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        Object out = m.invoke(null, args);
+        return out == null ? null : String.valueOf(out);
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
+private Object invokeAgentQueryParser(String methodName, Class<?>[] argTypes, Object[] args) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentQueryParser");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        return m.invoke(null, args);
+    } catch (Throwable ignore) {
+    }
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentQueryParserCompat");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        return m.invoke(null, args);
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
+private Boolean invokeAgentQueryRouterBoolean(String methodName, String userMessage) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentQueryRouter");
+        java.lang.reflect.Method m = cls.getMethod(methodName, String.class);
+        Object out = m.invoke(null, userMessage);
+        if (out instanceof Boolean) return (Boolean) out;
+    } catch (Throwable ignore) {
+    }
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentQueryRouterCompat");
+        java.lang.reflect.Method m = cls.getMethod(methodName, String.class);
+        Object out = m.invoke(null, userMessage);
+        if (out instanceof Boolean) return (Boolean) out;
+    } catch (Throwable ignore) {
+    }
     return null;
 }
 
+private Object invokeAgentSpecializedHelper(String methodName, Class<?>[] argTypes, Object[] args) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentSpecializedAnswerHelper");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        return m.invoke(null, args);
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
+private Object invokeAgentResponseFlowHelper(String methodName, Class<?>[] argTypes, Object[] args) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentResponseFlowHelper");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        return m.invoke(null, args);
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
+private Object invokeAgentOutputHelper(String methodName, Class<?>[] argTypes, Object[] args) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentOutputHelper");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        return m.invoke(null, args);
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
+private Object invokeAgentJsonHelper(String methodName, Class<?>[] argTypes, Object[] args) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentJsonHelper");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        return m.invoke(null, args);
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
+private boolean shouldBypassDirect(boolean forceLlmOnly, boolean preferNarrativeLlm) {
+    Object delegated = invokeAgentResponseFlowHelper(
+        "shouldBypassDirect",
+        new Class<?>[] { boolean.class, boolean.class },
+        new Object[] { Boolean.valueOf(forceLlmOnly), Boolean.valueOf(preferNarrativeLlm) }
+    );
+    return delegated instanceof Boolean
+        ? ((Boolean) delegated).booleanValue()
+        : (forceLlmOnly || preferNarrativeLlm);
+}
+
+private boolean shouldBypassSpecialized(boolean forceLlmOnly, boolean preferNarrativeLlm) {
+    Object delegated = invokeAgentResponseFlowHelper(
+        "shouldBypassSpecialized",
+        new Class<?>[] { boolean.class, boolean.class },
+        new Object[] { Boolean.valueOf(forceLlmOnly), Boolean.valueOf(preferNarrativeLlm) }
+    );
+    return delegated instanceof Boolean
+        ? ((Boolean) delegated).booleanValue()
+        : (forceLlmOnly || preferNarrativeLlm);
+}
+
+private String finalizeDirectAnswer(String answer, String dbContext, int meterCount) {
+    Object delegated = invokeAgentResponseFlowHelper(
+        "finalizeDirectAnswer",
+        new Class<?>[] { String.class, String.class, int.class },
+        new Object[] { answer, dbContext, Integer.valueOf(meterCount) }
+    );
+    if (delegated instanceof String) return (String) delegated;
+    boolean skipMeterCountSuffix = dbContext.startsWith("[Alarm count]") || dbContext.startsWith("[Panel latest status]");
+    if (!skipMeterCountSuffix && meterCount > 0 && (answer == null || answer.indexOf('\n') < 0)) {
+        return answer + " (해당 계측기 " + meterCount + "개)";
+    }
+    return answer;
+}
+
+private String getRuleOnlyFallbackMessage() {
+    Object delegated = invokeAgentResponseFlowHelper("buildRuleOnlyFallbackMessage", new Class<?>[0], new Object[0]);
+    return delegated instanceof String
+        ? (String) delegated
+        : "RULE 모드: 직접 규칙에 매칭된 결과가 없습니다. 같은 질문을 /llm 으로 시도해 주세요.";
+}
+
+private String buildFinalPrompt(boolean needsDb, String userMessage, String dbContext) {
+    Object delegated = invokeAgentResponseFlowHelper(
+        "buildFinalPrompt",
+        new Class<?>[] { boolean.class, String.class, String.class },
+        new Object[] { Boolean.valueOf(needsDb), userMessage, dbContext }
+    );
+    if (delegated instanceof String) return (String) delegated;
+    if (needsDb && dbContext != null && !dbContext.isEmpty()) {
+        return
+            "You are an EPMS expert assistant. " +
+            "Answer in Korean, concise, and grounded only on provided DB context. " +
+            "If context indicates no signal, clearly say no signal.\n\n" +
+            "User: " + userMessage + "\n\nDB Context:\n" + dbContext;
+    }
+    return
+        "You are an EPMS expert assistant. " +
+        "Answer in Korean briefly and accurately.\n\nUser: " + userMessage;
+}
+
+private String buildSuccessJsonPayload(String finalAnswer, String rawDbContext, String userDbContext, boolean isAdmin) {
+    Object delegated = invokeAgentOutputHelper(
+        "buildSuccessJson",
+        new Class<?>[] { String.class, String.class, String.class, boolean.class },
+        new Object[] { finalAnswer, rawDbContext, userDbContext, Boolean.valueOf(isAdmin) }
+    );
+    return delegated instanceof String ? (String) delegated : null;
+}
+
+private String buildErrorJsonPayload(String errorMessage) {
+    Object delegated = invokeAgentOutputHelper(
+        "buildErrorJson",
+        new Class<?>[] { String.class },
+        new Object[] { errorMessage }
+    );
+    if (delegated instanceof String) return (String) delegated;
+    return "{\"error\":" + jsonEscape(errorMessage) + "}";
+}
+
+private String invokeAgentAnswerFormatter(String methodName, Class<?>[] argTypes, Object[] args) {
+    try {
+        Class<?> cls = Class.forName("epms.util.AgentAnswerFormatter");
+        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
+        Object out = m.invoke(null, args);
+        return out == null ? null : String.valueOf(out);
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
 private String getMeterListContext(String scopeToken, Integer topN) {
+    String delegated = invokeAgentDbTool("getMeterListContext", new Class<?>[] { String.class, Integer.class }, new Object[] { scopeToken, topN });
+    if (delegated != null) return delegated;
+    return localGetMeterListContext(scopeToken, topN);
+}
+
+private String localGetMeterListContext(String scopeToken, Integer topN) {
     List<String> tokens = splitAlarmAreaTokens(scopeToken);
     int n = topN != null ? topN.intValue() : 20;
     if (n < 1) n = 20;
@@ -1340,6 +1583,12 @@ private String getMeterListContext(String scopeToken, Integer topN) {
 }
 
 private String getMeterCountContext(String scopeToken) {
+    String delegated = invokeAgentDbTool("getMeterCountContext", new Class<?>[] { String.class }, new Object[] { scopeToken });
+    if (delegated != null) return delegated;
+    return localGetMeterCountContext(scopeToken);
+}
+
+private String localGetMeterCountContext(String scopeToken) {
     List<String> tokens = splitAlarmAreaTokens(scopeToken);
     StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM dbo.meters WHERE 1=1 ");
     for (int i = 0; i < tokens.size(); i++) {
@@ -1371,6 +1620,12 @@ private String getMeterCountContext(String scopeToken) {
 }
 
 private String getPanelCountContext(String scopeToken) {
+    String delegated = invokeAgentDbTool("getPanelCountContext", new Class<?>[] { String.class }, new Object[] { scopeToken });
+    if (delegated != null) return delegated;
+    return localGetPanelCountContext(scopeToken);
+}
+
+private String localGetPanelCountContext(String scopeToken) {
     List<String> tokens = splitAlarmAreaTokens(scopeToken);
     StringBuilder sql = new StringBuilder(
         "SELECT COUNT(DISTINCT NULLIF(LTRIM(RTRIM(ISNULL(panel_name,''))), '')) FROM dbo.meters WHERE LTRIM(RTRIM(ISNULL(panel_name,''))) <> '' "
@@ -1404,6 +1659,12 @@ private String getPanelCountContext(String scopeToken) {
 }
 
 private String getBuildingCountContext() {
+    String delegated = invokeAgentDbTool("getBuildingCountContext", new Class<?>[0], new Object[0]);
+    if (delegated != null) return delegated;
+    return localGetBuildingCountContext();
+}
+
+private String localGetBuildingCountContext() {
     String sql = "SELECT COUNT(DISTINCT NULLIF(LTRIM(RTRIM(ISNULL(building_name,''))), '')) FROM dbo.meters WHERE LTRIM(RTRIM(ISNULL(building_name,''))) <> ''";
     try (Connection conn = openDbConnection();
          PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -1418,6 +1679,12 @@ private String getBuildingCountContext() {
 }
 
 private String getUsageTypeCountContext() {
+    String delegated = invokeAgentDbTool("getUsageTypeCountContext", new Class<?>[0], new Object[0]);
+    if (delegated != null) return delegated;
+    return localGetUsageTypeCountContext();
+}
+
+private String localGetUsageTypeCountContext() {
     String sql = "SELECT COUNT(DISTINCT NULLIF(LTRIM(RTRIM(ISNULL(usage_type,''))), '')) FROM dbo.meters WHERE LTRIM(RTRIM(ISNULL(usage_type,''))) <> ''";
     try (Connection conn = openDbConnection();
          PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -1431,60 +1698,9 @@ private String getUsageTypeCountContext() {
     }
 }
 
-private boolean wantsOpenAlarms(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    return (m.contains("미해결") || m.contains("열린") || m.contains("open")) &&
-        (m.contains("알람") || m.contains("alarm"));
-}
-
-private boolean wantsOpenAlarmCountSummary(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasOpen = m.contains("미해결") || m.contains("열린") || m.contains("open");
-    boolean hasAlarm = m.contains("알람") || m.contains("alarm") || m.contains("경보");
-    boolean hasCount = m.contains("건수") || m.contains("개수") || m.contains("갯수") || m.contains("count")
-        || m.contains("몇건") || m.contains("몇개")
-        || m.contains("수는") || m.contains("수알려") || m.contains("수를알려") || m.contains("수를보여");
-    return hasOpen && hasAlarm && hasCount;
-}
-
-private boolean wantsHarmonicExceed(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasHarmonic = m.contains("고조파") || m.contains("harmonic") || m.contains("thd");
-    boolean hasOutlier = m.contains("초과") || m.contains("기준") || m.contains("threshold") || m.contains("over")
-        || m.contains("이상") || m.contains("비정상") || m.contains("문제");
-    boolean hasMeterScope = m.contains("계측기") || m.contains("meter") || m.contains("목록") || m.contains("리스트") || m.contains("보여");
-    return hasHarmonic && (hasOutlier || hasMeterScope);
-}
-
-private boolean wantsFrequencyOutlier(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    return (m.contains("주파수") || m.contains("frequency") || m.contains("hz")) &&
-        (m.contains("이상") || m.contains("미만") || m.contains("초과") || m.contains("outlier"));
-}
-
-private boolean wantsVoltageUnbalanceTopN(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasUnbalance =
-        m.contains("불평형") || m.contains("불균형") ||
-        m.contains("전압불평형") || m.contains("전압불균형") ||
-        m.contains("unbalance");
-    boolean hasListIntent =
-        m.contains("top") || m.contains("상위") ||
-        m.contains("보여줘") || m.contains("목록") || m.contains("리스트") ||
-        m.matches(".*[0-9]+개.*");
-    return hasUnbalance && (hasListIntent || m.contains("계측기"));
-}
-
-private boolean wantsPowerFactorOutlier(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    boolean hasPf = m.contains("역률") || m.contains("powerfactor") || m.contains("pf");
-    boolean hasOutlier = m.contains("이상") || m.contains("비정상") || m.contains("문제")
-        || m.contains("낮") || m.contains("high") || m.contains("low");
-    boolean hasMeterScope = m.contains("계측기") || m.contains("meter") || m.contains("목록") || m.contains("보여");
-    return hasPf && (hasOutlier || hasMeterScope);
-}
-
 private Double extractPfThreshold(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractPfThreshold", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated instanceof Double) return (Double) delegated;
     if (userMessage == null) return null;
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
     java.util.regex.Matcher m = java.util.regex.Pattern.compile("([01](?:\\.[0-9]+)?)").matcher(src);
@@ -1508,6 +1724,8 @@ private int countDistinctMeterIds(String context) {
 }
 
 private Integer extractTopN(String userMessage, int defVal, int maxVal) {
+    Object delegated = invokeAgentQueryParser("extractTopN", new Class<?>[] { String.class, int.class, int.class }, new Object[] { userMessage, Integer.valueOf(defVal), Integer.valueOf(maxVal) });
+    if (delegated instanceof Integer) return (Integer) delegated;
     if (userMessage == null) return Integer.valueOf(defVal);
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
     java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("top\\s*([0-9]{1,3})").matcher(src);
@@ -1532,6 +1750,8 @@ private Integer extractTopN(String userMessage, int defVal, int maxVal) {
 }
 
 private Integer extractDays(String userMessage, int defVal, int maxVal) {
+    Object delegated = invokeAgentQueryParser("extractDays", new Class<?>[] { String.class, int.class, int.class }, new Object[] { userMessage, Integer.valueOf(defVal), Integer.valueOf(maxVal) });
+    if (delegated instanceof Integer) return (Integer) delegated;
     if (userMessage == null) return Integer.valueOf(defVal);
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
     if (src.contains("어제") || src.contains("yesterday")) return Integer.valueOf(1);
@@ -1549,6 +1769,8 @@ private Integer extractDays(String userMessage, int defVal, int maxVal) {
 }
 
 private Integer extractExplicitDays(String userMessage, int maxVal) {
+    Object delegated = invokeAgentQueryParser("extractExplicitDays", new Class<?>[] { String.class, int.class }, new Object[] { userMessage, Integer.valueOf(maxVal) });
+    if (delegated instanceof Integer) return (Integer) delegated;
     if (userMessage == null) return null;
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
     if (src.contains("일주일") || src.contains("한주") || src.contains("1주") || src.contains("one week")) {
@@ -1578,6 +1800,8 @@ private static class TimeWindow {
 }
 
 private java.time.LocalDate extractExplicitDate(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractExplicitDate", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated instanceof java.time.LocalDate) return (java.time.LocalDate) delegated;
     if (userMessage == null) return null;
     java.util.regex.Matcher dm = java.util.regex.Pattern
         .compile("([0-9]{4})[-./]([0-9]{1,2})[-./]([0-9]{1,2})")
@@ -1594,6 +1818,20 @@ private java.time.LocalDate extractExplicitDate(String userMessage) {
 }
 
 private TimeWindow extractTimeWindow(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractTimeWindow", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated != null) {
+        try {
+            java.lang.Class<?> cls = delegated.getClass();
+            java.lang.reflect.Field fromField = cls.getField("fromTs");
+            java.lang.reflect.Field toField = cls.getField("toTs");
+            java.lang.reflect.Field labelField = cls.getField("label");
+            Timestamp fromTs = (Timestamp) fromField.get(delegated);
+            Timestamp toTs = (Timestamp) toField.get(delegated);
+            String label = (String) labelField.get(delegated);
+            return new TimeWindow(fromTs, toTs, label);
+        } catch (Throwable ignore) {
+        }
+    }
     if (userMessage == null) return null;
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
     java.time.LocalDate today = java.time.LocalDate.now();
@@ -1634,6 +1872,8 @@ private TimeWindow extractTimeWindow(String userMessage) {
 }
 
 private Double extractHzThreshold(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractHzThreshold", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated instanceof Double) return (Double) delegated;
     if (userMessage == null) return null;
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
     java.util.regex.Matcher m = java.util.regex.Pattern.compile("([0-9]{2,3}(?:\\.[0-9]+)?)\\s*hz").matcher(src);
@@ -1644,6 +1884,8 @@ private Double extractHzThreshold(String userMessage) {
 }
 
 private Integer extractMonth(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractMonth", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated instanceof Integer) return (Integer) delegated;
     if (userMessage == null) return null;
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
     if (src.contains("이번달") || src.contains("금월") || src.contains("this month")) {
@@ -1660,6 +1902,8 @@ private Integer extractMonth(String userMessage) {
 }
 
 private Integer extractMeterId(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractMeterId", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated instanceof Integer) return (Integer) delegated;
     if (userMessage == null) return null;
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
 
@@ -1718,6 +1962,8 @@ private Integer resolveMeterIdByName(String meterNameToken) {
 }
 
 private List<String> extractPanelTokens(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractPanelTokens", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated instanceof List<?>) return (List<String>) delegated;
     ArrayList<String> tokens = new ArrayList<String>();
     if (userMessage == null) return tokens;
     String msg = userMessage.trim();
@@ -1760,6 +2006,8 @@ private List<String> extractPanelTokens(String userMessage) {
 }
 
 private List<String> extractPanelTokensLoose(String userMessage) {
+    Object delegated = invokeAgentQueryParser("extractPanelTokensLoose", new Class<?>[] { String.class }, new Object[] { userMessage });
+    if (delegated instanceof List<?>) return (List<String>) delegated;
     ArrayList<String> tokens = new ArrayList<String>();
     if (userMessage == null) return tokens;
     java.util.regex.Matcher m = java.util.regex.Pattern
@@ -1780,6 +2028,12 @@ private List<String> extractPanelTokensLoose(String userMessage) {
 }
 
 private String getRecentMeterContext(Integer meterId, List<String> panelTokens) {
+    String delegated = invokeAgentDbTool(
+        "getRecentMeterContext",
+        new Class<?>[] { Integer.class, String.class },
+        new Object[] { meterId, panelTokens == null ? null : String.join(",", panelTokens) }
+    );
+    if (delegated != null) return delegated;
     String baseSelect =
         "SELECT TOP %d m.meter_id, m.name AS meter_name, ms.measured_at, " +
         "m.panel_name, ms.average_voltage, ms.line_voltage_avg, ms.phase_voltage_avg, ms.voltage_ab, ms.average_current, " +
@@ -1938,6 +2192,12 @@ private String getRecentAlarmContext() {
 }
 
 private String getMonthlyAvgFrequencyContext(Integer meterId, Integer month) {
+    String delegated = invokeAgentDbTool(
+        "getMonthlyAvgFrequencyContext",
+        new Class<?>[] { Integer.class, Integer.class },
+        new Object[] { meterId, month }
+    );
+    if (delegated != null) return delegated;
     Integer targetMonth = month;
     int year = java.time.LocalDate.now().getYear();
 
@@ -2067,7 +2327,156 @@ private String getPerMeterPowerContext() {
     }
 }
 
+private String getLatestEnergyContext(Integer meterId, List<String> panelTokens) {
+    String delegated = invokeAgentDbTool(
+        "getLatestEnergyContext",
+        new Class<?>[] { Integer.class, String.class },
+        new Object[] { meterId, panelTokens == null ? null : String.join(",", panelTokens) }
+    );
+    if (delegated != null) return delegated;
+    String baseSelect =
+        "SELECT TOP %d m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " +
+        "ms.active_power_total, ms.energy_consumed_total, ms.reactive_energy_total " +
+        "FROM dbo.measurements ms " +
+        "INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id ";
+
+    boolean filtered = (meterId != null);
+    boolean panelFiltered = !filtered && panelTokens != null && !panelTokens.isEmpty();
+    StringBuilder where = new StringBuilder();
+    if (filtered) {
+        where.append("WHERE m.meter_id = ? ");
+    } else if (panelFiltered) {
+        where.append("WHERE 1=1 ");
+        for (int i = 0; i < panelTokens.size(); i++) {
+            where.append("AND UPPER(REPLACE(REPLACE(m.panel_name,'_',''),' ','')) LIKE ? ");
+        }
+    }
+
+    int topN = filtered ? 1 : (panelFiltered ? 1 : 3);
+    String sql = String.format(baseSelect, topN) + where.toString() + "ORDER BY ms.measurement_id DESC";
+    StringBuilder sb = new StringBuilder(filtered
+        ? "[Latest energy: meter_id=" + meterId + "]"
+        : (panelFiltered ? "[Latest energy: panel=" + panelTokens + "]" : "[Latest energy]"));
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        if (filtered) {
+            ps.setInt(1, meterId.intValue());
+        } else if (panelFiltered) {
+            int pi = 1;
+            for (int i = 0; i < panelTokens.size(); i++) {
+                String normalized = panelTokens.get(i).replaceAll("[\\s_\\-]+", "").toUpperCase(java.util.Locale.ROOT);
+                ps.setString(pi++, "%" + normalized + "%");
+            }
+        }
+        ps.setQueryTimeout(5);
+        try (ResultSet rs = ps.executeQuery()) {
+            int i = 0;
+            while (rs.next()) {
+                i++;
+                sb.append(" ").append(i).append(")")
+                  .append("meter_id=").append(rs.getInt("meter_id"))
+                  .append(", ").append(clip(rs.getString("meter_name"), 40))
+                  .append(", panel=").append(clip(rs.getString("panel_name"), 60))
+                  .append(", t=").append(fmtTs(rs.getTimestamp("measured_at")))
+                  .append(", kW=").append(fmtNum(rs.getDouble("active_power_total")))
+                  .append(", kWh=").append(fmtNum(rs.getDouble("energy_consumed_total")))
+                  .append(", kVArh=").append(fmtNum(rs.getDouble("reactive_energy_total")))
+                  .append(";");
+            }
+            if (i == 0) {
+                return filtered
+                    ? ("[Latest energy: meter_id=" + meterId + "] no data")
+                    : (panelFiltered ? ("[Latest energy: panel=" + panelTokens + "] no data") : "[Latest energy] no data");
+            }
+        }
+    } catch (Exception e) {
+        return (filtered
+                ? ("[Latest energy: meter_id=" + meterId + "]")
+                : (panelFiltered ? ("[Latest energy: panel=" + panelTokens + "]") : "[Latest energy]"))
+            + " unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+    return sb.toString();
+}
+
+private String getEnergyDeltaContext(Integer meterId, Timestamp fromTs, Timestamp toTs, String periodLabel, boolean reactive) {
+    String delegated = invokeAgentDbTool(
+        "getEnergyDeltaContext",
+        new Class<?>[] { Integer.class, Timestamp.class, Timestamp.class, String.class, boolean.class },
+        new Object[] { meterId, fromTs, toTs, periodLabel, Boolean.valueOf(reactive) }
+    );
+    if (delegated != null) return delegated;
+    if (meterId == null) {
+        return reactive ? "[Reactive energy delta] meter_id required" : "[Energy delta] meter_id required";
+    }
+    if (fromTs == null || toTs == null) {
+        return reactive ? "[Reactive energy delta] period required" : "[Energy delta] period required";
+    }
+    String column = reactive ? "reactive_energy_total" : "energy_consumed_total";
+    String prefix = reactive ? "[Reactive energy delta]" : "[Energy delta]";
+    String sql =
+        "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, CAST(ms." + column + " AS float) AS energy_val " +
+        "FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " +
+        "WHERE m.meter_id=? AND ms.measured_at >= ? AND ms.measured_at < ? AND ms." + column + " IS NOT NULL " +
+        "ORDER BY ms.measured_at %s, ms.measurement_id %s";
+    try (Connection conn = openDbConnection()) {
+        String meterName = null;
+        String panelName = null;
+        Timestamp firstTs = null;
+        Timestamp lastTs = null;
+        Double firstVal = null;
+        Double lastVal = null;
+        try (PreparedStatement ps = conn.prepareStatement(String.format(sql, "ASC", "ASC"))) {
+            ps.setInt(1, meterId.intValue());
+            ps.setTimestamp(2, fromTs);
+            ps.setTimestamp(3, toTs);
+            ps.setQueryTimeout(5);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    meterName = clip(rs.getString("meter_name"), 40);
+                    panelName = clip(rs.getString("panel_name"), 60);
+                    firstTs = rs.getTimestamp("measured_at");
+                    firstVal = Double.valueOf(rs.getDouble("energy_val"));
+                }
+            }
+        }
+        try (PreparedStatement ps = conn.prepareStatement(String.format(sql, "DESC", "DESC"))) {
+            ps.setInt(1, meterId.intValue());
+            ps.setTimestamp(2, fromTs);
+            ps.setTimestamp(3, toTs);
+            ps.setQueryTimeout(5);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    if (meterName == null) meterName = clip(rs.getString("meter_name"), 40);
+                    if (panelName == null) panelName = clip(rs.getString("panel_name"), 60);
+                    lastTs = rs.getTimestamp("measured_at");
+                    lastVal = Double.valueOf(rs.getDouble("energy_val"));
+                }
+            }
+        }
+        if (firstVal == null || lastVal == null) {
+            return prefix + " meter_id=" + meterId + ", period=" + (periodLabel == null ? "-" : periodLabel) + ", no data";
+        }
+        double delta = Math.max(0.0d, lastVal.doubleValue() - firstVal.doubleValue());
+        return prefix + " meter_id=" + meterId
+            + ", meter=" + (meterName == null || meterName.isEmpty() ? "-" : meterName)
+            + ", panel=" + (panelName == null || panelName.isEmpty() ? "-" : panelName)
+            + ", period=" + (periodLabel == null ? "-" : periodLabel)
+            + ", delta=" + fmtNum(delta)
+            + ", start_t=" + fmtTs(firstTs)
+            + ", end_t=" + fmtTs(lastTs)
+            + ", start_v=" + fmtNum(firstVal.doubleValue())
+            + ", end_v=" + fmtNum(lastVal.doubleValue());
+    } catch (Exception e) {
+        return prefix + " unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
 private String getVoltageAverageContext(Integer meterId, List<String> panelTokens, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer recentDays) {
+    String delegated = invokeAgentDbTool(
+        "getVoltageAverageContext",
+        new Class<?>[] { Integer.class, String.class, Timestamp.class, Timestamp.class, String.class, Integer.class },
+        new Object[] { meterId, panelTokens == null ? null : String.join(",", panelTokens), fromTs, toTs, periodLabel, recentDays }
+    );
+    if (delegated != null) return delegated;
     String expr =
         "COALESCE(ms.average_voltage, ms.line_voltage_avg, ms.phase_voltage_avg, ms.voltage_ab, ms.voltage_phase_a)";
     StringBuilder where = new StringBuilder("WHERE 1=1 ");
@@ -2142,6 +2551,12 @@ private String getVoltageAverageContext(Integer meterId, List<String> panelToken
 }
 
 private String buildVoltageAverageDirectAnswer(String voltageCtx, Integer meterId) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildVoltageAverageDirectAnswer",
+        new Class<?>[] { String.class, Integer.class },
+        new Object[] { voltageCtx, meterId }
+    );
+    if (delegated != null) return delegated;
     if (voltageCtx == null || voltageCtx.trim().isEmpty()) {
         return "기간 평균 전압 데이터를 찾지 못했습니다.";
     }
@@ -2170,6 +2585,12 @@ private String buildVoltageAverageDirectAnswer(String voltageCtx, Integer meterI
 }
 
 private String buildPerMeterPowerDirectAnswer(String powerCtx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildPerMeterPowerDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { powerCtx }
+    );
+    if (delegated != null) return delegated;
     if (powerCtx == null || powerCtx.trim().isEmpty()) {
         return "계측기별 전력량 데이터를 찾지 못했습니다.";
     }
@@ -2243,6 +2664,12 @@ private String getHarmonicContext(Integer meterId, List<String> panelTokens) {
 }
 
 private String buildHarmonicDirectAnswer(String harmonicCtx, Integer meterId) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildHarmonicDirectAnswer",
+        new Class<?>[] { String.class, Integer.class },
+        new Object[] { harmonicCtx, meterId }
+    );
+    if (delegated != null) return delegated;
     if (harmonicCtx == null || harmonicCtx.trim().isEmpty()) return "고조파 데이터를 찾지 못했습니다.";
     if (harmonicCtx.contains("no data")) {
         return (meterId == null ? "" : ("meter_id=" + meterId + "의 ")) + "고조파 데이터가 없습니다.";
@@ -2286,6 +2713,12 @@ private String getMonthlyPowerStatsContext(Integer meterId, Integer month) {
 }
 
 private String getBuildingPowerTopNContext(Integer month, Integer topN) {
+    String delegated = invokeAgentDbTool(
+        "getBuildingPowerTopNContext",
+        new Class<?>[] { Integer.class, Integer.class },
+        new Object[] { month, topN }
+    );
+    if (delegated != null) return delegated;
     Integer mm = month != null ? month : Integer.valueOf(java.time.LocalDate.now().getMonthValue());
     int yy = java.time.LocalDate.now().getYear();
     int n = topN != null ? topN.intValue() : 5;
@@ -2319,6 +2752,12 @@ private String getBuildingPowerTopNContext(Integer month, Integer topN) {
 }
 
 private String getPanelLatestStatusContext(List<String> panelTokens, Integer topN) {
+    String delegated = invokeAgentDbTool(
+        "getPanelLatestStatusContext",
+        new Class<?>[] { String.class, Integer.class },
+        new Object[] { panelTokens == null ? null : String.join(",", panelTokens), topN }
+    );
+    if (delegated != null) return delegated;
     if (panelTokens == null || panelTokens.isEmpty()) return "[Panel latest status] panel token required";
     StringBuilder where = new StringBuilder("WHERE 1=1 ");
     for (int i = 0; i < panelTokens.size(); i++) where.append("AND UPPER(REPLACE(REPLACE(m.panel_name,'_',''),' ','')) LIKE ? ");
@@ -2402,6 +2841,12 @@ private String getAlarmSeveritySummaryContext(Integer days) {
 }
 
 private String getAlarmSeveritySummaryContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    String delegated = invokeAgentDbTool(
+        "getAlarmSeveritySummaryContext",
+        new Class<?>[] { Integer.class, Timestamp.class, Timestamp.class, String.class },
+        new Object[] { days, fromTs, toTs, periodLabel }
+    );
+    if (delegated != null) return delegated;
     int d = days != null ? days.intValue() : 7;
     String sql;
     boolean byRange = (fromTs != null || toTs != null);
@@ -2448,6 +2893,12 @@ private String getAlarmSeveritySummaryContext(Integer days, Timestamp fromTs, Ti
 }
 
 private String getAlarmTypeSummaryContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId, boolean tripOnly, Integer topN) {
+    String delegated = invokeAgentDbTool(
+        "getAlarmTypeSummaryContext",
+        new Class<?>[] { Integer.class, Timestamp.class, Timestamp.class, String.class, Integer.class, boolean.class, Integer.class },
+        new Object[] { days, fromTs, toTs, periodLabel, meterId, Boolean.valueOf(tripOnly), topN }
+    );
+    if (delegated != null) return delegated;
     int d = days != null ? days.intValue() : 7;
     int n = topN != null ? topN.intValue() : 20;
     if (n < 1) n = 20;
@@ -2531,6 +2982,12 @@ private String getMeterNameById(Integer meterId) {
 }
 
 private String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId, String alarmTypeToken, String areaToken) {
+    String delegated = invokeAgentDbTool(
+        "getAlarmCountContext",
+        new Class<?>[] { Integer.class, Timestamp.class, Timestamp.class, String.class, Integer.class, String.class, String.class },
+        new Object[] { days, fromTs, toTs, periodLabel, meterId, alarmTypeToken, areaToken }
+    );
+    if (delegated != null) return delegated;
     int d = days != null ? days.intValue() : 7;
     boolean byRange = (fromTs != null || toTs != null);
     String meterName = getMeterNameById(meterId);
@@ -2605,6 +3062,12 @@ private String getOpenAlarmsContext(Integer topN) {
 }
 
 private String getOpenAlarmsContext(Integer topN, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    String delegated = invokeAgentDbTool(
+        "getOpenAlarmsContext",
+        new Class<?>[] { Integer.class, Timestamp.class, Timestamp.class, String.class },
+        new Object[] { topN, fromTs, toTs, periodLabel }
+    );
+    if (delegated != null) return delegated;
     int n = topN != null ? topN.intValue() : 10;
     StringBuilder where = new StringBuilder("WHERE cleared_at IS NULL ");
     if (fromTs != null) where.append("AND triggered_at >= ? ");
@@ -2641,6 +3104,12 @@ private String getOpenAlarmsContext(Integer topN, Timestamp fromTs, Timestamp to
 }
 
 private String getOpenAlarmCountContext(Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId, String alarmTypeToken, String areaToken) {
+    String delegated = invokeAgentDbTool(
+        "getOpenAlarmCountContext",
+        new Class<?>[] { Timestamp.class, Timestamp.class, String.class, Integer.class, String.class, String.class },
+        new Object[] { fromTs, toTs, periodLabel, meterId, alarmTypeToken, areaToken }
+    );
+    if (delegated != null) return delegated;
     String meterName = getMeterNameById(meterId);
     boolean byMeter = (meterId != null && meterName != null && !meterName.isEmpty());
     String token = trimToNull(alarmTypeToken);
@@ -2696,6 +3165,12 @@ private String getHarmonicExceedListContext(Double thdV, Double thdI, Integer to
 }
 
 private String getHarmonicExceedListContext(Double thdV, Double thdI, Integer topN, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    String delegated = invokeAgentDbTool(
+        "getHarmonicExceedListContext",
+        new Class<?>[] { Double.class, Double.class, Integer.class, Timestamp.class, Timestamp.class, String.class },
+        new Object[] { thdV, thdI, topN, fromTs, toTs, periodLabel }
+    );
+    if (delegated != null) return delegated;
     double v = thdV != null ? thdV.doubleValue() : 3.0d;
     double i = thdI != null ? thdI.doubleValue() : 20.0d;
     int n = topN != null ? topN.intValue() : 10;
@@ -2749,6 +3224,12 @@ private String getFrequencyOutlierListContext(Double thresholdHz, Integer topN) 
 }
 
 private String getFrequencyOutlierListContext(Double thresholdHz, Integer topN, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    String delegated = invokeAgentDbTool(
+        "getFrequencyOutlierListContext",
+        new Class<?>[] { Double.class, Integer.class, Timestamp.class, Timestamp.class, String.class },
+        new Object[] { thresholdHz, topN, fromTs, toTs, periodLabel }
+    );
+    if (delegated != null) return delegated;
     double hz = thresholdHz != null ? thresholdHz.doubleValue() : 59.5d;
     int n = topN != null ? topN.intValue() : 10;
     StringBuilder where = new StringBuilder("WHERE (ms.frequency < ? OR ms.frequency > ?) ");
@@ -2792,6 +3273,12 @@ private String getVoltageUnbalanceTopNContext(Integer topN) {
 }
 
 private String getVoltageUnbalanceTopNContext(Integer topN, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    String delegated = invokeAgentDbTool(
+        "getVoltageUnbalanceTopNContext",
+        new Class<?>[] { Integer.class, Timestamp.class, Timestamp.class, String.class },
+        new Object[] { topN, fromTs, toTs, periodLabel }
+    );
+    if (delegated != null) return delegated;
     int n = topN != null ? topN.intValue() : 10;
     StringBuilder where = new StringBuilder("WHERE 1=1 ");
     if (fromTs != null) where.append("AND ms.measured_at >= ? ");
@@ -2832,6 +3319,12 @@ private String getPowerFactorOutlierListContext(Double pfThreshold, Integer topN
 }
 
 private String getPowerFactorOutlierListContext(Double pfThreshold, Integer topN, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    String delegated = invokeAgentDbTool(
+        "getPowerFactorOutlierListContext",
+        new Class<?>[] { Double.class, Integer.class, Timestamp.class, Timestamp.class, String.class },
+        new Object[] { pfThreshold, topN, fromTs, toTs, periodLabel }
+    );
+    if (delegated != null) return delegated;
     double th = pfThreshold != null ? pfThreshold.doubleValue() : 0.9d;
     int n = topN != null ? topN.intValue() : 10;
     StringBuilder srcWhere = new StringBuilder("WHERE 1=1 ");
@@ -2913,6 +3406,12 @@ private int getPowerFactorNoSignalCount(Timestamp fromTs, Timestamp toTs) {
 }
 
 private String getVoltagePhaseAngleContext(Integer meterId) {
+    String delegated = invokeAgentDbTool(
+        "getVoltagePhaseAngleContext",
+        new Class<?>[] { Integer.class },
+        new Object[] { meterId }
+    );
+    if (delegated != null) return delegated;
     if (meterId == null) return "[Voltage phase angle] meter_id required";
     String sql =
         "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " +
@@ -2950,6 +3449,12 @@ private String getVoltagePhaseAngleContext(Integer meterId) {
 }
 
 private String getCurrentPhaseAngleContext(Integer meterId) {
+    String delegated = invokeAgentDbTool(
+        "getCurrentPhaseAngleContext",
+        new Class<?>[] { Integer.class },
+        new Object[] { meterId }
+    );
+    if (delegated != null) return delegated;
     if (meterId == null) return "[Current phase angle] meter_id required";
     String sql =
         "SELECT TOP 1 m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at, " +
@@ -2987,6 +3492,12 @@ private String getCurrentPhaseAngleContext(Integer meterId) {
 }
 
 private String getPhaseCurrentContext(Integer meterId, String phase) {
+    String delegated = invokeAgentDbTool(
+        "getPhaseCurrentContext",
+        new Class<?>[] { Integer.class, String.class },
+        new Object[] { meterId, phase }
+    );
+    if (delegated != null) return delegated;
     String p = trimToNull(phase);
     if (meterId == null) return "[Phase current] meter_id required";
     if (p == null) return "[Phase current] phase required";
@@ -3023,6 +3534,12 @@ private String getPhaseCurrentContext(Integer meterId, String phase) {
 }
 
 private String getPhaseVoltageContext(Integer meterId, String phase) {
+    String delegated = invokeAgentDbTool(
+        "getPhaseVoltageContext",
+        new Class<?>[] { Integer.class, String.class },
+        new Object[] { meterId, phase }
+    );
+    if (delegated != null) return delegated;
     String p = trimToNull(phase);
     if (meterId == null) return "[Phase voltage] meter_id required";
     if (p == null) return "[Phase voltage] phase required";
@@ -3059,6 +3576,12 @@ private String getPhaseVoltageContext(Integer meterId, String phase) {
 }
 
 private String getLineVoltageContext(Integer meterId, String pair) {
+    String delegated = invokeAgentDbTool(
+        "getLineVoltageContext",
+        new Class<?>[] { Integer.class, String.class },
+        new Object[] { meterId, pair }
+    );
+    if (delegated != null) return delegated;
     if (meterId == null) return "[Line voltage] meter_id required";
     String p = trimToNull(pair);
     if (p != null) p = p.toUpperCase(java.util.Locale.ROOT);
@@ -3100,6 +3623,12 @@ private String getLineVoltageContext(Integer meterId, String pair) {
 }
 
 private String buildFrequencyDirectAnswer(String frequencyCtx, Integer meterId, Integer month) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildFrequencyDirectAnswer",
+        new Class<?>[] { String.class, Integer.class, Integer.class },
+        new Object[] { frequencyCtx, meterId, month }
+    );
+    if (delegated != null) return delegated;
     if (frequencyCtx == null || frequencyCtx.trim().isEmpty()) {
         return "월 평균 주파수 정보를 찾지 못했습니다.";
     }
@@ -3125,7 +3654,128 @@ private String buildFrequencyDirectAnswer(String frequencyCtx, Integer meterId, 
         + " 평균 주파수는 " + avg + "Hz 입니다. (최소 " + min + ", 최대 " + max + ", 샘플 " + samples + ")";
 }
 
+private String buildPowerValueDirectAnswer(String meterCtx, boolean reactive) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildPowerValueDirectAnswer",
+        new Class<?>[] { String.class, boolean.class },
+        new Object[] { meterCtx, Boolean.valueOf(reactive) }
+    );
+    if (delegated != null) return delegated;
+    if (meterCtx == null || meterCtx.trim().isEmpty()) {
+        return reactive ? "무효전력 데이터를 찾지 못했습니다." : "유효전력 데이터를 찾지 못했습니다.";
+    }
+    if (meterCtx.contains("unavailable")) {
+        return reactive ? "무효전력을 현재 조회할 수 없습니다." : "유효전력을 현재 조회할 수 없습니다.";
+    }
+    if (meterCtx.contains("no data")) {
+        return reactive ? "요청한 계측기의 무효전력 데이터가 없습니다." : "요청한 계측기의 유효전력 데이터가 없습니다.";
+    }
+    java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(meterCtx);
+    java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter_id=[0-9]+,\\s*([^,;]+),").matcher(meterCtx);
+    java.util.regex.Matcher ts = java.util.regex.Pattern.compile("@\\s*([0-9\\-:\\s]+)\\s*V=").matcher(meterCtx);
+    java.util.regex.Matcher kw = java.util.regex.Pattern.compile("kW=([0-9.\\-]+)").matcher(meterCtx);
+    java.util.regex.Matcher kvar = java.util.regex.Pattern.compile("kVAr=([0-9.\\-]+)").matcher(meterCtx);
+    String meterId = mid.find() ? trimToNull(mid.group(1)) : null;
+    String meterName = mn.find() ? trimToNull(mn.group(1)) : null;
+    String time = ts.find() ? trimToNull(ts.group(1)) : null;
+    String value = reactive
+        ? (kvar.find() ? trimToNull(kvar.group(1)) : null)
+        : (kw.find() ? trimToNull(kw.group(1)) : null);
+    if (meterId == null || value == null) {
+        return reactive ? "요청한 계측기의 무효전력 데이터가 없습니다." : "요청한 계측기의 유효전력 데이터가 없습니다.";
+    }
+    String label = meterId + "번 계측기";
+    if (meterName != null && !meterName.isEmpty() && !"-".equals(meterName)) label += "(" + meterName + ")";
+    String unit = reactive ? "kVAr" : "kW";
+    String subject = reactive ? "무효전력" : "유효전력";
+    String out = label + "의 현재 " + subject + "은 " + value + unit + "입니다.";
+    if (time != null && !time.isEmpty()) out += " 측정 시각: " + clip(time, 19);
+    return out;
+}
+
+private String buildEnergyValueDirectAnswer(String energyCtx, boolean reactive) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildEnergyValueDirectAnswer",
+        new Class<?>[] { String.class, boolean.class },
+        new Object[] { energyCtx, Boolean.valueOf(reactive) }
+    );
+    if (delegated != null) return delegated;
+    if (energyCtx == null || energyCtx.trim().isEmpty()) {
+        return reactive ? "무효전력량 데이터를 찾지 못했습니다." : "전력량 데이터를 찾지 못했습니다.";
+    }
+    if (energyCtx.contains("unavailable")) {
+        return reactive ? "무효전력량을 현재 조회할 수 없습니다." : "전력량을 현재 조회할 수 없습니다.";
+    }
+    if (energyCtx.contains("no data")) {
+        return reactive ? "요청한 계측기의 무효전력량 데이터가 없습니다." : "요청한 계측기의 전력량 데이터가 없습니다.";
+    }
+    java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(energyCtx);
+    java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter_id=[0-9]+,\\s*([^,;]+),").matcher(energyCtx);
+    java.util.regex.Matcher ts = java.util.regex.Pattern.compile("t=([0-9\\-:\\s]+)").matcher(energyCtx);
+    java.util.regex.Matcher kwh = java.util.regex.Pattern.compile("kWh=([0-9.\\-]+)").matcher(energyCtx);
+    java.util.regex.Matcher kvarh = java.util.regex.Pattern.compile("kVArh=([0-9.\\-]+)").matcher(energyCtx);
+    String meterId = mid.find() ? trimToNull(mid.group(1)) : null;
+    String meterName = mn.find() ? trimToNull(mn.group(1)) : null;
+    String time = ts.find() ? trimToNull(ts.group(1)) : null;
+    String value = reactive
+        ? (kvarh.find() ? trimToNull(kvarh.group(1)) : null)
+        : (kwh.find() ? trimToNull(kwh.group(1)) : null);
+    if (meterId == null || value == null) {
+        return reactive ? "요청한 계측기의 무효전력량 데이터가 없습니다." : "요청한 계측기의 전력량 데이터가 없습니다.";
+    }
+    String label = meterId + "번 계측기";
+    if (meterName != null && !meterName.isEmpty() && !"-".equals(meterName)) label += "(" + meterName + ")";
+    String subject = reactive ? "무효전력량" : "전력량";
+    String unit = reactive ? "kVArh" : "kWh";
+    String out = label + "의 현재 " + subject + "은 " + value + unit + "입니다.";
+    if (time != null && !time.isEmpty()) out += " 측정 시각: " + clip(time, 19);
+    return out;
+}
+
+private String buildEnergyDeltaDirectAnswer(String ctx, boolean reactive) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildEnergyDeltaDirectAnswer",
+        new Class<?>[] { String.class, boolean.class },
+        new Object[] { ctx, Boolean.valueOf(reactive) }
+    );
+    if (delegated != null) return delegated;
+    if (ctx == null || ctx.trim().isEmpty()) {
+        return reactive ? "무효전력량 증가 데이터를 찾지 못했습니다." : "전력량 증가 데이터를 찾지 못했습니다.";
+    }
+    if (ctx.contains("unavailable")) {
+        return reactive ? "무효전력량 증가량을 현재 조회할 수 없습니다." : "전력량 증가량을 현재 조회할 수 없습니다.";
+    }
+    if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+    if (ctx.contains("period required")) return "기간을 지정해 주세요.";
+    if (ctx.contains("no data")) {
+        return reactive ? "요청한 기간의 무효전력량 데이터가 없습니다." : "요청한 기간의 전력량 데이터가 없습니다.";
+    }
+    java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+    java.util.regex.Matcher mn = java.util.regex.Pattern.compile("meter=([^,]+)").matcher(ctx);
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([^,]+)").matcher(ctx);
+    java.util.regex.Matcher dm = java.util.regex.Pattern.compile("delta=([0-9.\\-]+)").matcher(ctx);
+    String meterId = mid.find() ? trimToNull(mid.group(1)) : null;
+    String meterName = mn.find() ? trimToNull(mn.group(1)) : null;
+    String period = pm.find() ? trimToNull(pm.group(1)) : null;
+    String delta = dm.find() ? trimToNull(dm.group(1)) : null;
+    if (meterId == null || delta == null) {
+        return reactive ? "요청한 기간의 무효전력량 데이터가 없습니다." : "요청한 기간의 전력량 데이터가 없습니다.";
+    }
+    String label = meterId + "번 계측기";
+    if (meterName != null && !meterName.isEmpty() && !"-".equals(meterName)) label += "(" + meterName + ")";
+    String subject = reactive ? "무효전력량 증가량" : "전력량 증가량";
+    String unit = reactive ? "kVArh" : "kWh";
+    String periodText = (period == null || period.isEmpty() || "-".equals(period)) ? "지정 기간" : period;
+    return label + "의 " + periodText + " " + subject + "은 " + delta + unit + "입니다.";
+}
+
 private String buildAlarmSeverityDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildAlarmSeverityDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) {
         return "심각도별 알람 집계 데이터를 찾지 못했습니다.";
     }
@@ -3166,6 +3816,12 @@ private String buildAlarmSeverityDirectAnswer(String ctx) {
 }
 
 private String buildAlarmTypeDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildAlarmTypeDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) {
         return "알람 종류별 집계 데이터를 찾지 못했습니다.";
     }
@@ -3212,6 +3868,12 @@ private String buildAlarmTypeDirectAnswer(String ctx) {
 }
 
 private String buildBuildingPowerTopDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildBuildingPowerTopDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) {
         return "건물별 전력 TOP 데이터를 찾지 못했습니다.";
     }
@@ -3239,6 +3901,12 @@ private String buildBuildingPowerTopDirectAnswer(String ctx) {
 }
 
 private String buildVoltageUnbalanceTopDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildVoltageUnbalanceTopDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) {
         return "전압 불평형 상위 데이터를 찾지 못했습니다.";
     }
@@ -3272,6 +3940,18 @@ private String buildVoltageUnbalanceTopDirectAnswer(String ctx) {
 }
 
 private String buildHarmonicExceedDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildHarmonicExceedDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) {
+        boolean delegatedLooksEmpty = delegated.contains("고조파 이상 계측기가 없습니다");
+        boolean ctxLooksPopulated = ctx != null && ctx.contains("meter_id=") && !ctx.contains("none") && !ctx.contains("no data");
+        if (!delegatedLooksEmpty || !ctxLooksPopulated) {
+            return delegated;
+        }
+    }
     if (ctx == null || ctx.trim().isEmpty()) return "고조파 이상 데이터를 찾지 못했습니다.";
     if (ctx.contains("unavailable")) return "고조파 이상 데이터를 현재 조회할 수 없습니다.";
     if (ctx.contains("none") || ctx.contains("no data")) return "고조파 이상 계측기가 없습니다.";
@@ -3280,19 +3960,19 @@ private String buildHarmonicExceedDirectAnswer(String ctx) {
     String period = pm.find() ? trimToNull(pm.group(1)) : null;
     java.util.ArrayList<String> items = new java.util.ArrayList<String>();
     java.util.regex.Matcher row = java.util.regex.Pattern.compile(
-        "\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^,;]*),\\s*thdV=([0-9.\\-]+),\\s*thdI=([0-9.\\-]+),\\s*t=([^;]+);"
+        "\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),(?:\\s*panel=([^,;]*),)?\\s*t=([^,;]+),\\s*TV=([0-9./\\-]+),\\s*TI=([0-9./\\-]+);"
     ).matcher(ctx);
     while (row.find()) {
         String meterId = trimToNull(row.group(1));
         String meterName = trimToNull(row.group(2));
         String panel = trimToNull(row.group(3));
-        String thdV = trimToNull(row.group(4));
-        String thdI = trimToNull(row.group(5));
-        String ts = trimToNull(row.group(6));
+        String ts = trimToNull(row.group(4));
+        String thdV = trimToNull(row.group(5));
+        String thdI = trimToNull(row.group(6));
         if (meterId == null || meterName == null) continue;
         String item = meterName + "(" + meterId + ")";
         if (panel != null && !panel.isEmpty() && !"-".equals(panel)) item += " [" + panel + "]";
-        item += " THD_V " + thdV + "%, THD_I " + thdI + "%";
+        item += " THD_V " + thdV + ", THD_I " + thdI;
         if (ts != null && !ts.isEmpty()) item += " @ " + clip(ts, 19);
         items.add(item);
     }
@@ -3302,6 +3982,12 @@ private String buildHarmonicExceedDirectAnswer(String ctx) {
 }
 
 private String buildPowerFactorOutlierDirectAnswer(String ctx, int noSignalCount) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildPowerFactorOutlierDirectAnswer",
+        new Class<?>[] { String.class, int.class },
+        new Object[] { ctx, Integer.valueOf(noSignalCount) }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) return "역률 이상 데이터를 찾지 못했습니다.";
     if (ctx.contains("unavailable")) return "역률 이상 데이터를 현재 조회할 수 없습니다.";
     if (ctx.contains("none") || ctx.contains("no data")) {
@@ -3338,6 +4024,12 @@ private String buildPowerFactorOutlierDirectAnswer(String ctx, int noSignalCount
 }
 
 private String buildFrequencyOutlierDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildFrequencyOutlierDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) return "주파수 이상치 데이터를 찾지 못했습니다.";
     if (ctx.contains("unavailable")) return "주파수 이상치 데이터를 현재 조회할 수 없습니다.";
     if (ctx.contains("none") || ctx.contains("no data")) return "주파수 이상치가 없습니다.";
@@ -3367,6 +4059,12 @@ private String buildFrequencyOutlierDirectAnswer(String ctx) {
 }
 
 private String buildMonthlyPowerStatsDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildMonthlyPowerStatsDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) return "월 전력 통계 데이터를 찾지 못했습니다.";
     if (ctx.contains("unavailable")) return "월 전력 통계를 현재 조회할 수 없습니다.";
     if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
@@ -3475,6 +4173,12 @@ private String compactAlarmList(java.util.List<String[]> rows, String prefix) {
 }
 
 private String buildLatestAlarmsDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildLatestAlarmsDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) return "최근 알람 데이터를 찾지 못했습니다.";
     if (ctx.contains("unavailable")) return "알람 데이터를 현재 조회할 수 없습니다.";
     if (ctx.contains("no recent alarm")) return "최근 알람이 없습니다.";
@@ -3512,6 +4216,12 @@ private String buildLatestAlarmsDirectAnswer(String ctx) {
 }
 
 private String buildOpenAlarmsDirectAnswer(String ctx) {
+    String delegated = invokeAgentAnswerFormatter(
+        "buildOpenAlarmsDirectAnswer",
+        new Class<?>[] { String.class },
+        new Object[] { ctx }
+    );
+    if (delegated != null) return delegated;
     if (ctx == null || ctx.trim().isEmpty()) return "열린 알람 데이터를 찾지 못했습니다.";
     if (ctx.contains("unavailable")) return "열린 알람 데이터를 현재 조회할 수 없습니다.";
     if (ctx.contains("none") || ctx.contains("no data")) return "현재 미해결 알람이 없습니다.";
@@ -3538,8 +4248,8 @@ private String buildOpenAlarmsDirectAnswer(String ctx) {
 }
 
 private String buildDirectDbSummary(String userMessage, String meterCtx, String alarmCtx) {
-    boolean meter = wantsMeterSummary(userMessage);
-    boolean alarm = wantsAlarmSummary(userMessage);
+    boolean meter = routedWantsMeterSummary(userMessage);
+    boolean alarm = routedWantsAlarmSummary(userMessage);
     if (!meter && !alarm) return null;
 
     StringBuilder sb = new StringBuilder();
@@ -3678,6 +4388,15 @@ private String buildUserDbContext(String dbContext) {
         java.util.regex.Matcher mid = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
         Integer meterId = mid.find() ? Integer.valueOf(mid.group(1)) : null;
         return buildFrequencyDirectAnswer(ctx, meterId, null);
+    }
+    if (ctx.contains("[Latest energy")) {
+        return buildEnergyValueDirectAnswer(ctx, false);
+    }
+    if (ctx.contains("[Energy delta]")) {
+        return buildEnergyDeltaDirectAnswer(ctx, false);
+    }
+    if (ctx.contains("[Reactive energy delta]")) {
+        return buildEnergyDeltaDirectAnswer(ctx, true);
     }
     if (ctx.contains("[Monthly power stats]")) {
         return buildMonthlyPowerStatsDirectAnswer(ctx);
@@ -4021,10 +4740,15 @@ private boolean isAdminRequest(javax.servlet.http.HttpServletRequest request, ja
 }
 
 private void writeSuccessJson(javax.servlet.jsp.JspWriter out, javax.servlet.http.HttpServletResponse response, String finalAnswer, String dbContext, boolean isAdmin) throws java.io.IOException {
-    String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
     String userDbContext = buildUserDbContext(dbContext);
     String rawDbContext = isAdmin ? dbContext : "";
     response.setStatus(200);
+    String builtPayload = buildSuccessJsonPayload(finalAnswer, rawDbContext, userDbContext, isAdmin);
+    if (builtPayload != null) {
+        out.print(builtPayload);
+        return;
+    }
+    String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
     out.print("{\"provider_response\":");
     out.print(jsonEscape(line));
     out.print(",\"db_context\":");
@@ -4034,6 +4758,11 @@ private void writeSuccessJson(javax.servlet.jsp.JspWriter out, javax.servlet.htt
     out.print(",\"is_admin\":");
     out.print(isAdmin ? "true" : "false");
     out.print("}");
+}
+
+private void writeErrorJson(javax.servlet.jsp.JspWriter out, javax.servlet.http.HttpServletResponse response, int statusCode, String errorMessage) throws java.io.IOException {
+    response.setStatus(statusCode);
+    out.print(buildErrorJsonPayload(errorMessage));
 }
 
 private List<String> panelTokensFromRaw(String panel) {
@@ -4057,15 +4786,82 @@ private List<String> panelTokensFromRaw(String panel) {
 }
 
 private String unescapeJsonText(String s) {
+    Object delegated = invokeAgentJsonHelper(
+        "unescapeJsonText",
+        new Class<?>[] { String.class },
+        new Object[] { s }
+    );
+    if (delegated instanceof String) return (String) delegated;
     if (s == null) return "";
-    return s.replaceAll("\\\\\\\"", "\"")
-            .replaceAll("\\\\\\\\", "\\\\")
-            .replaceAll("\\\\n", "\n")
-            .replaceAll("\\\\r", "\r")
-            .replaceAll("\\\\t", "\t");
+    StringBuilder out = new StringBuilder(s.length());
+    for (int i = 0; i < s.length(); i++) {
+        char ch = s.charAt(i);
+        if (ch != '\\' || i + 1 >= s.length()) {
+            out.append(ch);
+            continue;
+        }
+        char next = s.charAt(++i);
+        switch (next) {
+            case '"':
+                out.append('"');
+                break;
+            case '\\':
+                if (i + 5 < s.length() && s.charAt(i + 1) == 'u') {
+                    String hex = s.substring(i + 2, i + 6);
+                    try {
+                        out.append((char) Integer.parseInt(hex, 16));
+                        i += 5;
+                        break;
+                    } catch (Exception ignore) {
+                    }
+                }
+                out.append('\\');
+                break;
+            case '/':
+                out.append('/');
+                break;
+            case 'b':
+                out.append('\b');
+                break;
+            case 'f':
+                out.append('\f');
+                break;
+            case 'n':
+                out.append('\n');
+                break;
+            case 'r':
+                out.append('\r');
+                break;
+            case 't':
+                out.append('\t');
+                break;
+            case 'u':
+                if (i + 4 < s.length()) {
+                    String hex = s.substring(i + 1, i + 5);
+                    try {
+                        out.append((char) Integer.parseInt(hex, 16));
+                        i += 4;
+                        break;
+                    } catch (Exception ignore) {
+                    }
+                }
+                out.append('\\').append('u');
+                break;
+            default:
+                out.append(next);
+                break;
+        }
+    }
+    return out.toString();
 }
 
 private String extractJsonStringField(String json, String field) {
+    Object delegated = invokeAgentJsonHelper(
+        "extractJsonStringField",
+        new Class<?>[] { String.class, String.class },
+        new Object[] { json, field }
+    );
+    if (delegated instanceof String || delegated == null) return (String) delegated;
     if (json == null || field == null) return null;
     try {
         java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"", java.util.regex.Pattern.DOTALL);
@@ -4076,6 +4872,12 @@ private String extractJsonStringField(String json, String field) {
 }
 
 private Integer extractJsonIntField(String json, String field) {
+    Object delegated = invokeAgentJsonHelper(
+        "extractJsonIntField",
+        new Class<?>[] { String.class, String.class },
+        new Object[] { json, field }
+    );
+    if (delegated instanceof Integer || delegated == null) return (Integer) delegated;
     if (json == null || field == null) return null;
     try {
         java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*(\\d+)");
@@ -4086,6 +4888,12 @@ private Integer extractJsonIntField(String json, String field) {
 }
 
 private Boolean extractJsonBoolField(String json, String field) {
+    Object delegated = invokeAgentJsonHelper(
+        "extractJsonBoolField",
+        new Class<?>[] { String.class, String.class },
+        new Object[] { json, field }
+    );
+    if (delegated instanceof Boolean || delegated == null) return (Boolean) delegated;
     if (json == null || field == null) return null;
     try {
         java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*(true|false)", java.util.regex.Pattern.CASE_INSENSITIVE);
@@ -4230,18 +5038,20 @@ if (clientIp == null || clientIp.isEmpty()) {
 }
 
 if (!checkRateLimit(clientIp)) {
-    response.setStatus(429);
-    out.print("{\"error\":\"Rate limit exceeded. Maximum 10 requests per minute.\"}");
+    writeErrorJson(out, response, 429, "Rate limit exceeded. Maximum 10 requests per minute.");
     return;
 }
 
 if (!"POST".equalsIgnoreCase(request.getMethod())) {
-    response.setStatus(405);
-    out.print("{\"error\":\"Method not allowed\"}");
+    writeErrorJson(out, response, 405, "Method not allowed");
     return;
 }
 
 String body = "";
+try {
+    request.setCharacterEncoding("UTF-8");
+} catch (Exception ignore) {
+}
 try (BufferedReader reader = request.getReader()) {
     String line;
     StringBuilder sb = new StringBuilder();
@@ -4250,8 +5060,7 @@ try (BufferedReader reader = request.getReader()) {
     }
     body = sb.toString();
 } catch (Exception e) {
-    response.setStatus(400);
-    out.print("{\"error\":\"Failed to read request\"}");
+    writeErrorJson(out, response, 400, "Failed to read request");
     return;
 }
 
@@ -4260,45 +5069,37 @@ try {
     java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"message\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"", java.util.regex.Pattern.DOTALL);
     java.util.regex.Matcher m = p.matcher(body);
     if (m.find()) {
-        userMessage = m.group(1);
-        userMessage = userMessage.replaceAll("\\\\\\\"", "\"")
-                                 .replaceAll("\\\\\\\\", "\\\\")
-                                 .replaceAll("\\\\n", "\n")
-                                 .replaceAll("\\\\r", "\r")
-                                 .replaceAll("\\\\t", "\t");
+        userMessage = unescapeJsonText(m.group(1));
     }
 } catch (Exception e) {
 }
 
 if (!isValidInput(userMessage)) {
-    response.setStatus(400);
-    out.print("{\"error\":\"Invalid message\"}");
+    writeErrorJson(out, response, 400, "Invalid message");
     return;
 }
-
-boolean forceLlmOnly = false;
-boolean forceRuleOnly = false;
-try {
-    String um = userMessage == null ? "" : userMessage.trim();
-    if (um.toLowerCase(java.util.Locale.ROOT).startsWith("/llm ")) {
-        forceLlmOnly = true;
-        userMessage = um.substring(5).trim();
-    } else if (um.toLowerCase(java.util.Locale.ROOT).startsWith("/rule ")) {
-        forceRuleOnly = true;
-        userMessage = um.substring(6).trim();
-    }
-} catch (Exception ignore) {
-}
+epms.util.AgentQueryRouter.ParsedQuery parsedQuery = epms.util.AgentQueryRouter.parse(userMessage);
+userMessage = parsedQuery.userMessage;
+boolean forceLlmOnly = parsedQuery.mode == epms.util.AgentQueryRouter.Mode.LLM_ONLY;
+boolean forceRuleOnly = parsedQuery.mode == epms.util.AgentQueryRouter.Mode.RULE_ONLY;
+boolean preferNarrativeLlm = parsedQuery.prefersNarrativeLlm && !forceLlmOnly && !forceRuleOnly;
+boolean bypassDirect = shouldBypassDirect(forceLlmOnly, preferNarrativeLlm);
+boolean bypassSpecialized = shouldBypassSpecialized(forceLlmOnly, preferNarrativeLlm);
 
 boolean isAdmin = isAdminRequest(request, application);
 
-DirectAnswerResult directResult = tryBuildDirectAnswer(userMessage, forceLlmOnly);
+DirectAnswerResult criticalDirectResult = tryBuildCriticalDirectAnswer(userMessage, forceLlmOnly);
+if (criticalDirectResult != null) {
+    int meterCount = countDistinctMeterIds(criticalDirectResult.dbContext);
+    criticalDirectResult.answer = finalizeDirectAnswer(criticalDirectResult.answer, criticalDirectResult.dbContext, meterCount);
+    writeSuccessJson(out, response, criticalDirectResult.answer, criticalDirectResult.dbContext, isAdmin);
+    return;
+}
+
+DirectAnswerResult directResult = tryBuildDirectAnswer(userMessage, bypassDirect);
 if (directResult != null) {
     int meterCount = countDistinctMeterIds(directResult.dbContext);
-    boolean skipMeterCountSuffix = directResult.dbContext.startsWith("[Alarm count]") || directResult.dbContext.startsWith("[Panel latest status]");
-    if (!skipMeterCountSuffix && meterCount > 0 && (directResult.answer == null || directResult.answer.indexOf('\n') < 0)) {
-        directResult.answer = directResult.answer + " (해당 계측기 " + meterCount + "개)";
-    }
+    directResult.answer = finalizeDirectAnswer(directResult.answer, directResult.dbContext, meterCount);
     writeSuccessJson(out, response, directResult.answer, directResult.dbContext, isAdmin);
     return;
 }
@@ -4307,7 +5108,7 @@ if (forceRuleOnly) {
     writeSuccessJson(
         out,
         response,
-        "RULE 모드: 직접 규칙에 매칭된 결과가 없습니다. 같은 질문을 /llm 으로 시도해 주세요.",
+        getRuleOnlyFallbackMessage(),
         "[Rule mode] no direct match",
         isAdmin
     );
@@ -4328,18 +5129,15 @@ try {
         listStr = fetchOllamaTagList(ollamaUrl, ollamaConnectTimeoutMs, ollamaReadTimeoutMs);
 
         if (!modelExistsInTagList(listStr, model)) {
-            response.setStatus(400);
-            out.print("{\"error\":\"Model not found: " + model + "\"}");
+            writeErrorJson(out, response, 400, "Model not found: " + model);
             return;
         }
         if (!modelExistsInTagList(listStr, coderModel)) {
-            response.setStatus(400);
-            out.print("{\"error\":\"Model not found: " + coderModel + "\"}");
+            writeErrorJson(out, response, 400, "Model not found: " + coderModel);
             return;
         }
     } catch (Exception e) {
-        response.setStatus(502);
-        out.print("{\"error\":\"Cannot reach Ollama\"}");
+        writeErrorJson(out, response, 502, "Cannot reach Ollama");
         return;
     }
 
@@ -4368,31 +5166,19 @@ try {
     );
     String dbContext = buildDbContext(execCtx, plannerResult, userMessage);
 
-    SpecializedAnswerResult specializedAnswer = tryBuildSpecializedAnswer(execCtx, plannerResult);
+    SpecializedAnswerResult specializedAnswer = bypassSpecialized ? null : tryBuildSpecializedAnswer(execCtx, plannerResult);
     if (specializedAnswer != null) {
         writeSuccessJson(out, response, specializedAnswer.answer, dbContext, isAdmin);
         return;
     }
 
     // Stage 3: qwen2.5:14b creates final user-facing answer.
-    String finalPrompt;
-    if (execCtx.needsDb && dbContext != null && !dbContext.isEmpty()) {
-        finalPrompt =
-            "You are an EPMS expert assistant. " +
-            "Answer in Korean, concise, and grounded only on provided DB context. " +
-            "If context indicates no signal, clearly say no signal.\n\n" +
-            "User: " + userMessage + "\n\nDB Context:\n" + dbContext;
-    } else {
-        finalPrompt =
-            "You are an EPMS expert assistant. " +
-            "Answer in Korean briefly and accurately.\n\nUser: " + userMessage;
-    }
+    String finalPrompt = buildFinalPrompt(execCtx.needsDb, userMessage, dbContext);
     String finalAnswer = callOllamaOnce(ollamaUrl, model, finalPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.4d);
     finalAnswer = sanitizeUngroundedJudgement(finalAnswer, dbContext);
     writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
 
 } catch (Exception e) {
-    response.setStatus(500);
-    out.print("{\"error\":\"" + e.getClass().getSimpleName() + ": " + (e.getMessage() != null ? e.getMessage() : "Unknown") + "\"}");
+    writeErrorJson(out, response, 500, e.getClass().getSimpleName() + ": " + (e.getMessage() != null ? e.getMessage() : "Unknown"));
 }
 %>

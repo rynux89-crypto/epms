@@ -13,7 +13,7 @@
   const uiDefaultsRaw = window.EPMS_AGENT_UI_DEFAULTS || {};
   const uiDefaults = {
     widthPx: clamp(toInt(uiDefaultsRaw.widthPx, 360), 300, 560),
-    maxHeightVh: clamp(toInt(uiDefaultsRaw.maxHeightVh, 60), 40, 90),
+    maxHeightVh: clamp(toInt(uiDefaultsRaw.maxHeightVh, 75), 40, 90),
     fontSizePx: clamp(toInt(uiDefaultsRaw.fontSizePx, 13), 12, 20),
   };
 
@@ -71,7 +71,7 @@
     }
     .epms-chat-modal{
       position:fixed; right:20px; bottom:80px; z-index:9999;
-      width:var(--epms-chat-width, 360px); max-height:var(--epms-chat-max-height, 60vh);
+      width:var(--epms-chat-width, 360px); max-height:var(--epms-chat-max-height, 75vh);
       display:flex; flex-direction:column;
       background:#fff; border:1px solid #d7dce2; border-radius:10px;
       box-shadow:0 10px 28px rgba(0,0,0,.24);
@@ -113,7 +113,7 @@
     @media (max-width: 640px){
       .epms-chat-btn{ right:12px; bottom:12px; padding:10px 14px; }
       .epms-chat-modal{
-        left:12px; right:12px; width:auto; bottom:64px; max-height:70vh;
+        left:12px; right:12px; width:auto; bottom:64px; max-height:80vh;
       }
       .epms-chat-tools{ display:none; }
     }
