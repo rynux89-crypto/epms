@@ -187,7 +187,6 @@
         .page-meter-status.page-alarm { height: auto; min-height: 100vh; overflow: auto; }
         .page-meter-status.page-alarm .dash { height: auto; min-height: 100vh; }
         .page-meter-status.page-alarm .dash-main { overflow: auto; }
-        .table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
         .alarm-table { table-layout: auto; margin-bottom: 0; }
         .alarm-table th, .alarm-table td { white-space: nowrap; text-align: center; }
         .alarm-table tbody tr { cursor: pointer; }
@@ -195,10 +194,8 @@
         .sev-High { color: #b42318; font-weight: 700; }
         .sev-Medium { color: #b54708; font-weight: 700; }
         .sev-Low { color: #027a48; font-weight: 700; }
-        .filter-box { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .filter-box label { font-weight: 700; }
-        .filter-box input, .filter-box select { min-width: 120px; margin: 0; }
-        .filter-box button { margin: 0; }
+        .filter-card { min-height: 0; }
+        .filter-card input, .filter-card select { min-width: 120px; }
     </style>
 </head>
 <body class="page-meter-status page-alarm">
@@ -212,7 +209,7 @@
         <form method="get" class="search-form" id="alarmFilterForm">
             <div class="form-row" style="width:100%;">
                 <div class="card" style="flex: 1 1 auto; margin: 0;">
-                    <div class="filter-box">
+                    <div class="filter-card">
                         <label for="building_name">건물</label>
                         <select id="building_name" name="building_name">
                             <option value="">전체</option>
@@ -240,7 +237,7 @@
                         <label for="startDate">기간</label>
                         <input id="startDate" type="date" name="startDate" value="<%= startDate %>">
                         <input id="startTime" type="time" step="1" name="startTime" value="<%= startTime %>">
-                        <span>~</span>
+                        <span class="spacer">~</span>
                         <input id="endDate" type="date" name="endDate" value="<%= endDate %>">
                         <input id="endTime" type="time" step="1" name="endTime" value="<%= endTime %>">
 
@@ -251,12 +248,14 @@
         </form>
     </div>
 
-    <div class="dash-main" style="display:flex; min-height:0;">
+    <div class="dash-main stack" style="min-height:0;">
         <section class="panel_s" style="width:100%; min-height:0;">
             <% if (error != null && !error.trim().isEmpty()) { %>
             <div class="msg-box"><%= h(error) %></div>
             <% } %>
-            <div style="font-weight:700; margin-bottom:8px;">조회 건수: <%= alarms.size() %></div>
+            <div class="summary-meta" style="margin-bottom:8px;">
+                <span class="badge">조회 건수: <%= alarms.size() %></span>
+            </div>
             <div class="table-wrap">
                 <table class="alarm-table">
                     <thead>
@@ -292,7 +291,7 @@
                         </tr>
                     <% } %>
                     <% if (alarms.isEmpty()) { %>
-                        <tr><td colspan="9" style="text-align:center;">조회 결과가 없습니다.</td></tr>
+                        <tr><td colspan="9">조회 결과가 없습니다.</td></tr>
                     <% } %>
                     </tbody>
                 </table>

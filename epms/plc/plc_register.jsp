@@ -223,8 +223,10 @@
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>PLC Register (plc_config)</h2>
-        <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS Home</button>
+        <h2>🤖 PLC Register (plc_config)</h2>
+        <div class="inline-actions">
+            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS Home</button>
+        </div>
     </div>
 
     <% if (message != null && !message.trim().isEmpty()) { %>

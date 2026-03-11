@@ -448,7 +448,7 @@
 <div class="page-wrap">
     <div class="title-bar">
         <h2>🧭 단선 계층 (meter_tree) 관리</h2>
-        <div style="display:flex; gap:8px; align-items:center;">
+        <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         </div>
     </div>

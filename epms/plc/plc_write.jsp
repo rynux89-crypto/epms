@@ -959,8 +959,8 @@ try (Connection conn = createConn()) {
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>PLC 상태 / 샘플 쓰기</h2>
-        <div style="display:flex; gap:8px;"><button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button></div>
+        <h2>🤖 PLC 상태 / 샘플 쓰기</h2>
+        <div class="inline-actions"><button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button></div>
     </div>
     <div class="info-box">
         PLC별로 랜덤 샘플값을 PLC로 write합니다.<br/>

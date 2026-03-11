@@ -301,7 +301,9 @@
     <div class="dash-top">
       <div class="title-bar">
           <h2>📊 계측기 상세 모니터링</h2>
-          <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'" >EPMS 홈</button>
+          <div class="inline-actions">
+              <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'" >EPMS 홈</button>
+          </div>
       </div>
 
       <!-- 🔍 조회 조건 폼 -->

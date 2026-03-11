@@ -215,8 +215,8 @@
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>AI-Measurements 매칭 관리</h2>
-        <div style="display:flex; gap:8px;">
+        <h2>🔗 AI-Measurements 매칭 관리</h2>
+        <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/ai_measurements_match.jsp'">매칭 검증 화면</button>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         </div>

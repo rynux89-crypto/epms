@@ -413,7 +413,9 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
 <body>
 <div class="wrap">
     <div class="card">
-        <h1>Agent 모델 관리</h1>
+        <div class="title-bar">
+            <h1>🧠 Agent 모델 관리</h1>
+        </div>
         <p class="sub">Ollama 등록 모델에서 선택하면 저장 직후 <code>agent.jsp</code> 요청부터 즉시 적용됩니다.</p>
 
         <% if (state.successMsg != null) { %>

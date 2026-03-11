@@ -101,7 +101,7 @@
 <body>
     <div class="title-bar">
         <h2>🎵 전압 고조파 분석</h2>
-        <div style="display:flex; gap:8px; align-items:center;">
+        <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'" >EPMS 홈</button>
             <button class="back-btn" onclick="goToHarmonics('i')" >전류 고조파 분석</button>
         </div>

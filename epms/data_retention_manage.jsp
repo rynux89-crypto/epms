@@ -264,7 +264,7 @@
     <div class="dash-top">
         <div class="title-bar">
             <h2>🧹 Data 관리 - 이력 데이터 삭제</h2>
-            <div class="top-actions">
+            <div class="inline-actions">
                 <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
             </div>
         </div>

@@ -204,8 +204,10 @@
 <div class="dash">
     <div class="dash-top">
         <div class="title-bar">
-            <h2>이벤트 상세</h2>
-            <button class="back-btn" type="button" onclick="location.href='event_view.jsp?<%= backQuery %>'">목록으로</button>
+            <h2>📄 이벤트 상세</h2>
+            <div class="inline-actions">
+                <button class="back-btn" type="button" onclick="location.href='event_view.jsp?<%= backQuery %>'">목록으로</button>
+            </div>
         </div>
     </div>
 

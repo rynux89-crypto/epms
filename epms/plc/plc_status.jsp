@@ -67,8 +67,8 @@
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>PLC 상태 / 수동 읽기</h2>
-        <div style="display:flex; gap:8px;">
+        <h2>🤖 PLC 상태 / 수동 읽기</h2>
+        <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
         </div>
     </div>

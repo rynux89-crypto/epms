@@ -312,8 +312,10 @@
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>계측기 등록 관리</h2>
-        <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
+        <h2>🗂️ 계측기 등록 관리</h2>
+        <div class="inline-actions">
+            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
+        </div>
     </div>
 
     <% if (message != null && !message.trim().isEmpty()) { %>

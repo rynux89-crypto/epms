@@ -263,8 +263,10 @@
 <div class="dash">
     <div class="dash-top">
         <div class="title-bar">
-            <h2>이벤트 목록</h2>
-            <button class="back-btn" type="button" onclick="location.href='epms_main.jsp'">EPMS 홈</button>
+            <h2>📄 이벤트 목록</h2>
+            <div class="inline-actions">
+                <button class="back-btn" type="button" onclick="location.href='epms_main.jsp'">EPMS 홈</button>
+            </div>
         </div>
 
         <form method="get" class="search-form" id="eventFilterForm">
