@@ -39,7 +39,6 @@
         set.add("DI_OVR_ALL_ON");
         set.add("DI_ELD_ON");
         set.add("DI_TM_ON");
-        set.add("DI_LIGHT_ON");
         // Virtual grouped keys for one-rule-per-kind operation.
         set.add("VOLTAGE");
         set.add("CURRENT");
@@ -261,7 +260,6 @@
             "  ('TRIP_DI', N'TRIP Signal', 'PROTECTION', 'PLC', 'di_trip', '=', 1.0, NULL, 0, NULL, 'ALARM', 1, N'DI trip signal on'), " +
             "  ('ELD_DI', N'ELD Leakage Signal', 'PROTECTION', 'PLC', 'DI_ELD_ON', '=', 1.0, NULL, 0, NULL, 'ALARM', 1, N'ELD leakage bit on'), " +
             "  ('TM_DI', N'TM Temperature Signal', 'PROTECTION', 'PLC', 'DI_TM_ON', '=', 1.0, NULL, 0, NULL, 'ALARM', 1, N'Transformer temperature alarm bit on'), " +
-            "  ('LIGHT_DI', N'Warning Light Signal', 'PROTECTION', 'PLC', 'DI_LIGHT_ON', '=', 1.0, NULL, 0, NULL, 'WARN', 1, N'Warning light signal on'), " +
             "  ('PF_LOW', N'Power Factor Low', 'POWER_QUALITY', 'METER', 'pf_total', '<', 0.90, NULL, 10, 0.02, 'WARN', 1, N'Power factor below threshold'), " +
             "  ('V_UNBAL', N'Voltage Unbalance', 'POWER_QUALITY', 'METER', 'voltage_unbalance_rate', '>=', 2.0, NULL, 10, 0.5, 'WARN', 1, N'Voltage unbalance over threshold'), " +
             "  ('V_VAR', N'Voltage Variation', 'POWER_QUALITY', 'METER', 'voltage_variation_rate', '>=', 10.0, NULL, 10, 2.0, 'WARN', 1, N'Voltage variation over threshold'), " +
@@ -285,7 +283,6 @@
             "  ('TRIP_DI', N'TRIP Signal', 'PROTECTION', 'PLC', 'DI_TRIP', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'ALARM', N'DI trip signal on'), " +
             "  ('ELD_DI', N'ELD Leakage Signal', 'PROTECTION', 'PLC', 'DI_ELD_ON', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'ALARM', N'ELD leakage bit on'), " +
             "  ('TM_DI', N'TM Temperature Signal', 'PROTECTION', 'PLC', 'DI_TM_ON', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'ALARM', N'Transformer temperature alarm bit on'), " +
-            "  ('LIGHT_DI', N'Warning Light Signal', 'PROTECTION', 'PLC', 'DI_LIGHT_ON', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'WARN', N'Warning light signal on'), " +
             "  ('PEAK_HIGH', N'Peak Power High', 'POWER_QUALITY', 'METER', 'PEAK', '>=', CAST(9000.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 10, CAST(100.0 AS DECIMAL(18,6)), 'WARN', N'Peak power exceeds threshold') " +
             ") AS v(rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, hysteresis, severity, description) " +
             "WHERE NOT EXISTS (SELECT 1 FROM dbo.alarm_rule x WHERE x.rule_code = v.rule_code)";

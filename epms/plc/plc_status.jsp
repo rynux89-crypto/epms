@@ -47,6 +47,11 @@
         .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
         .b-on { background: #e8f7ec; color: #1b7f3b; border: 1px solid #b9e6c6; }
         .b-off { background: #fff3e0; color: #b45309; border: 1px solid #ffd8a8; }
+        .state-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+        .state-running { background: #e9f7ef; color: #117a37; border: 1px solid #b7e5c6; }
+        .state-stopped { background: #f4f6f8; color: #475569; border: 1px solid #d8e0e8; }
+        .state-inactive { background: #fff4e5; color: #b45309; border: 1px solid #fed7aa; }
+        .state-error { background: #fff1f2; color: #b42318; border: 1px solid #fecdd3; }
         .mono { font-family: Consolas, "Courier New", monospace; }
         td { font-size: 12px; }
         th { font-size: 11px; }
@@ -56,7 +61,9 @@
         .plc-table th, .plc-table td { padding: 6px 8px; }
         .plc-table th:nth-child(1), .plc-table td:nth-child(1) { width: 60px; }
         .plc-table th:nth-child(2), .plc-table td:nth-child(2) { width: 170px; }
-        .plc-table td:nth-child(11), .plc-table td:nth-child(12) { white-space: nowrap; }
+        .plc-table th:nth-child(11), .plc-table td:nth-child(11) { width: 150px; white-space: nowrap; }
+        .plc-table th:nth-child(12), .plc-table td:nth-child(12),
+        .plc-table th:nth-child(13), .plc-table td:nth-child(13) { width: 80px; white-space: nowrap; }
         .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
         @media (max-width: 1100px) {
             .data-grid { grid-template-columns: 1fr; }
@@ -75,6 +82,8 @@
 
     <div class="info-box">
         PLC 선택 없이 각 행에서 개별 제어합니다.<br/>
+        ACTIVE는 PLC 사용 가능 상태이고, 실제 읽는 중 여부는 운영상태 컬럼에서 확인합니다.<br/>
+        DI/AI 읽기 횟수는 현재 상태가 아니라 서버 시작 후 누적 읽기 횟수입니다.<br/>
         시작: 서버 백그라운드에서 polling_ms 주기로 연속 읽기(화면 닫힘 후에도 지속), 중지: 해당 PLC 연속 읽기 중단
     </div>
 
@@ -92,16 +101,17 @@
             <th>polling_ms</th>
             <th>enabled</th>
             <th class="ctrl-col">control</th>
-            <th>state</th>
-            <th>di_read_count</th>
-            <th>ai_read_count</th>
+            <th>운영상태</th>
+            <th>DI 누적 읽기 횟수</th>
+            <th>AI 누적 읽기 횟수</th>
+            <th>마지막 읽기 시각</th>
             <th>di_read_ms</th>
             <th>ai_read_ms</th>
         </tr>
         </thead>
         <tbody>
         <% if (plcList.isEmpty()) { %>
-        <tr><td colspan="12">등록된 PLC가 없습니다.</td></tr>
+        <tr><td colspan="13">등록된 PLC가 없습니다.</td></tr>
         <% } else { %>
             <% for (Map<String, Object> p : plcList) { %>
             <% boolean enabled = (Boolean)p.get("enabled"); %>
@@ -121,9 +131,16 @@
                         <button type="button" class="btn-stop" data-plc-id="<%= p.get("plc_id") %>" disabled>중지</button>
                     </div>
                 </td>
-                <td id="state-<%= p.get("plc_id") %>"><%= enabled ? "idle" : "inactive" %></td>
+                <td id="state-<%= p.get("plc_id") %>">
+                    <% if (enabled) { %>
+                    <span class="state-badge state-stopped">중지됨</span>
+                    <% } else { %>
+                    <span class="state-badge state-inactive">비활성</span>
+                    <% } %>
+                </td>
                 <td id="dicount-<%= p.get("plc_id") %>">0</td>
                 <td id="aicount-<%= p.get("plc_id") %>">0</td>
+                <td id="lastrun-<%= p.get("plc_id") %>">-</td>
                 <td id="dims-<%= p.get("plc_id") %>">-</td>
                 <td id="aims-<%= p.get("plc_id") %>">-</td>
             </tr>
@@ -355,11 +372,25 @@ const API = 'modbus_api.jsp';
     diRowsBody.innerHTML = html;
   }
 
+  function getStateBadgeHtml(state){
+    switch (String(state || '').toLowerCase()) {
+      case 'running':
+        return '<span class="state-badge state-running">읽는 중</span>';
+      case 'inactive':
+        return '<span class="state-badge state-inactive">비활성</span>';
+      case 'error':
+        return '<span class="state-badge state-error">오류</span>';
+      case 'stopped':
+      default:
+        return '<span class="state-badge state-stopped">중지됨</span>';
+    }
+  }
+
   function setPlcState(plcId, text, isErr){
     const el = document.getElementById('state-' + plcId);
     if (!el) return;
-    el.textContent = text;
-    el.style.color = isErr ? '#b42318' : '#334155';
+    const state = isErr ? 'error' : text;
+    el.innerHTML = getStateBadgeHtml(state);
   }
 
   function toNum(v){
@@ -381,6 +412,25 @@ const API = 'modbus_api.jsp';
     if (aiEl) aiEl.textContent = String(toNum(aiCount));
   }
 
+  function fmtTs(ms){
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '-';
+    const d = new Date(n);
+    const yyyy = d.getFullYear();
+    const MM = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return yyyy + '-' + MM + '-' + dd + ' ' + hh + ':' + mm + ':' + ss;
+  }
+
+  function setLastRunAt(plcId, lastRunAt){
+    const el = document.getElementById('lastrun-' + plcId);
+    if (!el) return;
+    el.textContent = fmtTs(lastRunAt);
+  }
+
   function setReadMs(plcId, lastMs, diMs, aiMs, procMs){
     const diEl = document.getElementById('dims-' + plcId);
     const aiEl = document.getElementById('aims-' + plcId);
@@ -393,10 +443,14 @@ const API = 'modbus_api.jsp';
 
   function setButtons(plcId, running){
     const start = document.querySelector('.btn-start[data-plc-id="' + plcId + '"]');
+    const readOnce = document.querySelector('.btn-read-once[data-plc-id="' + plcId + '"]');
     const stop = document.querySelector('.btn-stop[data-plc-id="' + plcId + '"]');
     const busy = !!actionBusy[String(plcId)];
-    if (start) start.disabled = busy || running;
-    if (stop) stop.disabled = busy || !running;
+    const st = serverStates[String(plcId)];
+    const enabled = !(st && st.enabled === false);
+    if (readOnce) readOnce.disabled = busy || !enabled;
+    if (start) start.disabled = busy || !enabled || running;
+    if (stop) stop.disabled = busy || !enabled || !running;
   }
 
   function setActionBusy(plcId, busy){
@@ -434,14 +488,9 @@ const API = 'modbus_api.jsp';
         const running = !!st.running;
         setButtons(plcId, running);
         setReadCounts(plcId, st.di_read_count, st.ai_read_count);
+        setLastRunAt(plcId, st.last_run_at);
         setReadMs(plcId, st.last_read_ms, st.di_read_ms, st.ai_read_ms, st.proc_ms);
-        if (running) {
-          setPlcState(plcId, 'running', false);
-        } else if (st.last_error) {
-          setPlcState(plcId, 'error', true);
-        } else {
-          setPlcState(plcId, 'stopped', false);
-        }
+        setPlcState(plcId, st.status || (running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error');
       });
     } catch (e) {
       // ignore status sync errors for UX continuity
@@ -469,14 +518,9 @@ const API = 'modbus_api.jsp';
         lastDiRowsByPlc[plcId] = st.di_rows || [];
         setButtons(plcId, !!st.running);
         setReadCounts(plcId, st.di_read_count, st.ai_read_count);
+        setLastRunAt(plcId, st.last_run_at);
         setReadMs(plcId, st.last_read_ms, st.di_read_ms, st.ai_read_ms, st.proc_ms);
-        if (st.running) {
-          setPlcState(plcId, 'running', false);
-        } else if (st.last_error) {
-          setPlcState(plcId, 'error', true);
-        } else {
-          setPlcState(plcId, 'stopped', false);
-        }
+        setPlcState(plcId, st.status || (st.running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error');
       });
 
       const rows = mergedRows();

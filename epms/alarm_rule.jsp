@@ -11,21 +11,6 @@
     TreeSet<String> aiMetricSet = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
     String loadErr = null;
     try {
-        String ensureCatalogSql =
-            "IF OBJECT_ID('dbo.metric_catalog','U') IS NULL " +
-            "BEGIN " +
-            "  CREATE TABLE dbo.metric_catalog ( " +
-            "    metric_key VARCHAR(100) NOT NULL PRIMARY KEY, " +
-            "    display_name NVARCHAR(150) NULL, " +
-            "    source_type VARCHAR(20) NOT NULL DEFAULT 'AI', " +
-            "    enabled BIT NOT NULL DEFAULT 1, " +
-            "    created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(), " +
-            "    updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME() " +
-            "  ); " +
-            "END";
-        try (Statement st = conn.createStatement()) {
-            st.execute(ensureCatalogSql);
-        }
 
         try (PreparedStatement ps = conn.prepareStatement("SELECT token, measurement_column FROM dbo.plc_ai_measurements_match");
              ResultSet rs = ps.executeQuery()) {
@@ -49,64 +34,14 @@
             }
         } catch (Exception ignore) {}
 
-        aiMetricSet.add("VOLTAGE");
-        aiMetricSet.add("CURRENT");
-        aiMetricSet.add("THD");
-        aiMetricSet.add("THD_VOLTAGE");
-        aiMetricSet.add("THD_CURRENT");
-        aiMetricSet.add("UNBALANCE");
-        aiMetricSet.add("VARIATION");
-        aiMetricSet.add("POWER_FACTOR");
-        aiMetricSet.add("FREQUENCY_GROUP");
-        aiMetricSet.add("PEAK");
-        aiMetricSet.add("MAX_POWER");
-
-        // Keep existing alarm metric keys selectable as catalog entries.
-        try (PreparedStatement ps = conn.prepareStatement("SELECT DISTINCT metric_key FROM dbo.alarm_rule");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                String mk = rs.getString(1);
-                if (mk != null && !mk.trim().isEmpty()) aiMetricSet.add(mk.trim().toUpperCase(Locale.ROOT));
-            }
-        } catch (Exception ignore) {}
-
-        String mergeCatalogSql =
-            "MERGE dbo.metric_catalog AS t " +
-            "USING (SELECT ? AS metric_key, ? AS source_type) s " +
-            "ON (t.metric_key = s.metric_key) " +
-            "WHEN MATCHED THEN " +
-            "  UPDATE SET display_name = COALESCE(NULLIF(t.display_name,''), s.metric_key), " +
-            "             source_type = CASE WHEN UPPER(t.source_type)='DI' THEN t.source_type ELSE s.source_type END, " +
-            "             enabled = 1, updated_at = SYSUTCDATETIME() " +
-            "WHEN NOT MATCHED THEN " +
-            "  INSERT (metric_key, display_name, source_type, enabled, created_at, updated_at) " +
-            "  VALUES (s.metric_key, s.metric_key, s.source_type, 1, SYSUTCDATETIME(), SYSUTCDATETIME());";
-        try (PreparedStatement ps = conn.prepareStatement(mergeCatalogSql)) {
-            for (String mk : aiMetricSet) {
-                ps.setString(1, mk);
-                ps.setString(2, "AI");
-                ps.executeUpdate();
-            }
-        }
-
-        // Read metric keys from catalog (all enabled keys).
-        aiMetricSet.clear();
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT metric_key FROM dbo.metric_catalog WHERE enabled = 1 ORDER BY metric_key");
+                "SELECT metric_key FROM dbo.metric_catalog WHERE enabled = 1 AND UPPER(ISNULL(source_type,'AI')) IN ('AI','SYSTEM') ORDER BY metric_key");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 String mk = rs.getString(1);
                 if (mk != null && !mk.trim().isEmpty()) aiMetricSet.add(mk.trim().toUpperCase(Locale.ROOT));
             }
         }
-        // Safety net: always include keys already used by alarm rules.
-        try (PreparedStatement ps = conn.prepareStatement("SELECT DISTINCT metric_key FROM dbo.alarm_rule");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                String mk = rs.getString(1);
-                if (mk != null && !mk.trim().isEmpty()) aiMetricSet.add(mk.trim().toUpperCase(Locale.ROOT));
-            }
-        } catch (Exception ignore) {}
     } catch (Exception e) {
         loadErr = e.getMessage();
     } finally {
@@ -207,7 +142,6 @@
             { code: 'DI_OVR_ALL_ON', label: '보호계전/차단 - OVR ALL ON', metricKey: 'DI_OVR_ALL_ON', category: 'SAFETY', severity: 'CRITICAL' },
             { code: 'DI_ELD_ON', label: '안전/환경 - ELD 누전', metricKey: 'DI_ELD_ON', category: 'SAFETY', severity: 'CRITICAL' },
             { code: 'DI_TM_ON', label: '안전/환경 - TM 온도접점', metricKey: 'DI_TM_ON', category: 'SAFETY', severity: 'ALARM' },
-            { code: 'DI_LIGHT_ON', label: '고장/경고 - 경고등', metricKey: 'DI_LIGHT_ON', category: 'FACILITY', severity: 'WARN' }
         ];
         const AI_TOKEN_OPTIONS = [
             <% int tokIdx = 0; for (String t : aiTokenSet) { if (tokIdx++ > 0) { %>,<% } %>"<%= jsq(t) %>"<% } %>

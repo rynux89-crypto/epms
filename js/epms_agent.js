@@ -13,7 +13,7 @@
   const uiDefaultsRaw = window.EPMS_AGENT_UI_DEFAULTS || {};
   const uiDefaults = {
     widthPx: clamp(toInt(uiDefaultsRaw.widthPx, 360), 300, 560),
-    maxHeightVh: clamp(toInt(uiDefaultsRaw.maxHeightVh, 75), 40, 90),
+    maxHeightVh: 75,
     fontSizePx: clamp(toInt(uiDefaultsRaw.fontSizePx, 13), 12, 20),
   };
 
@@ -24,7 +24,7 @@
       const parsed = JSON.parse(raw);
       return {
         widthPx: clamp(toInt(parsed.widthPx, uiDefaults.widthPx), 300, 560),
-        maxHeightVh: clamp(toInt(parsed.maxHeightVh, uiDefaults.maxHeightVh), 40, 90),
+        maxHeightVh: 75,
         fontSizePx: clamp(toInt(parsed.fontSizePx, uiDefaults.fontSizePx), 12, 20),
       };
     } catch (e) {
@@ -71,7 +71,7 @@
     }
     .epms-chat-modal{
       position:fixed; right:20px; bottom:80px; z-index:9999;
-      width:var(--epms-chat-width, 360px); max-height:var(--epms-chat-max-height, 75vh);
+      width:var(--epms-chat-width, 360px); height:var(--epms-chat-max-height, 75vh); max-height:75vh;
       display:flex; flex-direction:column;
       background:#fff; border:1px solid #d7dce2; border-radius:10px;
       box-shadow:0 10px 28px rgba(0,0,0,.24);
@@ -113,7 +113,7 @@
     @media (max-width: 640px){
       .epms-chat-btn{ right:12px; bottom:12px; padding:10px 14px; }
       .epms-chat-modal{
-        left:12px; right:12px; width:auto; bottom:64px; max-height:80vh;
+        left:12px; right:12px; width:auto; bottom:64px; height:75vh; max-height:75vh;
       }
       .epms-chat-tools{ display:none; }
     }
@@ -137,7 +137,14 @@
       </div>
       <button type="button" class="epms-chat-close" id="epms-close" aria-label="닫기">x</button>
     </div>
-    <div class="epms-chat-body" id="epms-chat-body"></div>
+    <div class="epms-chat-body" id="epms-chat-body" data-welcome-shown="true">
+      <div class="epms-msg bot">무엇을 도와드릴까요? 아래 처럼 질문해 보세요.
+- 현재 알람 상태는?
+- 1번 계측기 현재 상태는?
+- 주파수가 이상한 것을 보여줘
+- 1번 계측기 이번 달 전력 사용량은?
+- 동관의 전력 사용량은?</div>
+    </div>
     <div class="epms-chat-footer">
       <input id="epms-input" placeholder="질문을 입력하세요" />
       <button id="epms-send" type="button">Send</button>

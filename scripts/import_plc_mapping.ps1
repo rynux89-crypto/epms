@@ -3,7 +3,9 @@ param(
     [int]$PlcId = 0,
     [string]$ByteOrder = 'CDAB',
     [int]$FloatCount = 62,
-    [switch]$Apply
+    [switch]$Apply,
+    [switch]$AllowDisable,
+    [string]$OutputJsonPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -121,6 +123,28 @@ function New-SqlConnection {
     return $cn
 }
 
+function New-StringSet {
+    return New-Object 'System.Collections.Generic.HashSet[string]'
+}
+
+function Extract-JsonText([string]$text) {
+    $s = if ($null -eq $text) { '' } else { $text.Trim() }
+    if ($s -eq '') { return '' }
+    $start = $s.IndexOf('{')
+    $end = $s.LastIndexOf('}')
+    if ($start -lt 0 -or $end -lt $start) { return $s }
+    return $s.Substring($start, ($end - $start + 1))
+}
+
+function Write-JsonResult([object]$obj, [int]$depth = 8) {
+    $json = $obj | ConvertTo-Json -Depth $depth -Compress
+    if ((Normalize-Str $OutputJsonPath) -ne '') {
+        Set-Content -Path $OutputJsonPath -Value $json -Encoding UTF8
+    } else {
+        $json
+    }
+}
+
 function Query-ExcelTable([string]$path, [string]$sheetName){
     $cs = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$path;Extended Properties='Excel 12.0 Xml;HDR=NO;IMEX=1'"
     $cn = New-Object System.Data.OleDb.OleDbConnection($cs)
@@ -235,6 +259,7 @@ try {
         $floatMetersAll = @{}
 
         foreach ($plcNum in $plcIds) {
+            $jsonOutPath = [System.IO.Path]::GetTempFileName()
             $args = @(
                 '-NoProfile',
                 '-ExecutionPolicy', 'Bypass',
@@ -242,18 +267,27 @@ try {
                 '-ExcelPath', $ExcelPath,
                 '-PlcId', [string]$plcNum,
                 '-ByteOrder', $ByteOrder,
-                '-FloatCount', [string]$FloatCount
+                '-FloatCount', [string]$FloatCount,
+                '-OutputJsonPath', $jsonOutPath
             )
             if ($Apply.IsPresent) { $args += '-Apply' }
-
-            $raw = & $runner @args 2>&1 | Out-String
-            $text = ($raw | Out-String).Trim()
-            if ($text -eq '') { throw "PLC $plcNum import returned empty output." }
+            if ($AllowDisable.IsPresent) { $args += '-AllowDisable' }
 
             try {
+                $raw = & $runner @args 2>&1 | Out-String
+                $text = ''
+                if (Test-Path $jsonOutPath) {
+                    $text = Extract-JsonText (Get-Content -Path $jsonOutPath -Raw -Encoding UTF8)
+                }
+                if ($text -eq '') {
+                    $text = Extract-JsonText ($raw | Out-String)
+                }
+                if ($text -eq '') { throw "PLC $plcNum import returned empty output." }
                 $obj = $text | ConvertFrom-Json -ErrorAction Stop
             } catch {
                 throw "PLC $plcNum import parse failed: $text"
+            } finally {
+                try { if (Test-Path $jsonOutPath) { Remove-Item $jsonOutPath -Force } } catch {}
             }
             if (-not $obj.ok) {
                 $msg = if ($obj.message) { [string]$obj.message } else { $text }
@@ -317,7 +351,7 @@ try {
             di_tag_rows = $sumDiTagRows
             per_plc = $all
         }
-        $out | ConvertTo-Json -Depth 8 -Compress
+        Write-JsonResult -obj $out -depth 8
         exit 0
     }
 
@@ -491,6 +525,124 @@ try {
         }
     }
 
+    $newAiKeySet = New-StringSet
+    foreach ($r in $aiRows) { [void]$newAiKeySet.Add([string]([int]$r.meter_id)) }
+
+    $newDiMapKeySet = New-StringSet
+    foreach ($k in $diMapByPoint.Keys) { [void]$newDiMapKeySet.Add([string]([int]$k)) }
+
+    $newDiTagKeySet = New-StringSet
+    $newEldTagCount = 0
+    foreach ($r in $diTags) {
+        [void]$newDiTagKeySet.Add(("{0}|{1}|{2}" -f [int]$r.point_id, [int]$r.di_address, [int]$r.bit_no))
+        if (([string]$r.tag_name).ToUpperInvariant().Contains('ELD')) { $newEldTagCount++ }
+    }
+
+    $existingAiEnabled = 0
+    $existingDiMapEnabled = 0
+    $existingDiTagEnabled = 0
+    $existingEldTagEnabled = 0
+    $disabledAiSamples = New-Object System.Collections.Generic.List[string]
+    $disabledDiMapSamples = New-Object System.Collections.Generic.List[string]
+    $disabledDiTagSamples = New-Object System.Collections.Generic.List[string]
+    $disabledAiCount = 0
+    $disabledDiMapCount = 0
+    $disabledDiTagCount = 0
+
+    $cmdExistingAi = $sqlCn.CreateCommand()
+    $cmdExistingAi.CommandText = @"
+SELECT m.meter_id, mt.name
+FROM dbo.plc_meter_map m
+LEFT JOIN dbo.meters mt ON mt.meter_id = m.meter_id
+WHERE m.plc_id = @plc_id AND m.enabled = 1
+"@
+    [void]$cmdExistingAi.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+    $cmdExistingAi.Parameters['@plc_id'].Value = $PlcId
+    $rExistingAi = $cmdExistingAi.ExecuteReader()
+    while ($rExistingAi.Read()) {
+        $existingAiEnabled++
+        $meterId = [int]$rExistingAi['meter_id']
+        if (-not $newAiKeySet.Contains([string]$meterId)) {
+            $disabledAiCount++
+            if ($disabledAiSamples.Count -lt 10) {
+                $disabledAiSamples.Add(("meter_id={0}, name={1}" -f $meterId, (Normalize-Str $rExistingAi['name'])))
+            }
+        }
+    }
+    $rExistingAi.Close()
+
+    $cmdExistingDiMap = $sqlCn.CreateCommand()
+    $cmdExistingDiMap.CommandText = @"
+SELECT point_id, start_address
+FROM dbo.plc_di_map
+WHERE plc_id = @plc_id AND enabled = 1
+"@
+    [void]$cmdExistingDiMap.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+    $cmdExistingDiMap.Parameters['@plc_id'].Value = $PlcId
+    $rExistingDiMap = $cmdExistingDiMap.ExecuteReader()
+    while ($rExistingDiMap.Read()) {
+        $existingDiMapEnabled++
+        $pointId = [int]$rExistingDiMap['point_id']
+        if (-not $newDiMapKeySet.Contains([string]$pointId)) {
+            $disabledDiMapCount++
+            if ($disabledDiMapSamples.Count -lt 10) {
+                $disabledDiMapSamples.Add(("point_id={0}, start_address={1}" -f $pointId, [int]$rExistingDiMap['start_address']))
+            }
+        }
+    }
+    $rExistingDiMap.Close()
+
+    $cmdExistingDiTag = $sqlCn.CreateCommand()
+    $cmdExistingDiTag.CommandText = @"
+SELECT point_id, di_address, bit_no, tag_name, item_name, panel_name
+FROM dbo.plc_di_tag_map
+WHERE plc_id = @plc_id AND enabled = 1
+"@
+    [void]$cmdExistingDiTag.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+    $cmdExistingDiTag.Parameters['@plc_id'].Value = $PlcId
+    $rExistingDiTag = $cmdExistingDiTag.ExecuteReader()
+    while ($rExistingDiTag.Read()) {
+        $existingDiTagEnabled++
+        $tagName = Normalize-Str $rExistingDiTag['tag_name']
+        if ($tagName.ToUpperInvariant().Contains('ELD')) { $existingEldTagEnabled++ }
+        $key = "{0}|{1}|{2}" -f ([int]$rExistingDiTag['point_id']), ([int]$rExistingDiTag['di_address']), ([int]$rExistingDiTag['bit_no'])
+        if (-not $newDiTagKeySet.Contains($key)) {
+            $disabledDiTagCount++
+            if ($disabledDiTagSamples.Count -lt 12) {
+                $disabledDiTagSamples.Add((
+                    "point_id={0}, addr={1}, bit={2}, tag={3}, item={4}, panel={5}" -f
+                    ([int]$rExistingDiTag['point_id']),
+                    ([int]$rExistingDiTag['di_address']),
+                    ([int]$rExistingDiTag['bit_no']),
+                    $tagName,
+                    (Normalize-Str $rExistingDiTag['item_name']),
+                    (Normalize-Str $rExistingDiTag['panel_name'])
+                ))
+            }
+        }
+    }
+    $rExistingDiTag.Close()
+
+    $disableSummary = [PSCustomObject]@{
+        ai_disabled = $disabledAiCount
+        di_map_disabled = $disabledDiMapCount
+        di_tag_disabled = $disabledDiTagCount
+        existing_ai_enabled = $existingAiEnabled
+        existing_di_map_enabled = $existingDiMapEnabled
+        existing_di_tag_enabled = $existingDiTagEnabled
+        existing_eld_tag_enabled = $existingEldTagEnabled
+        new_eld_tag_count = $newEldTagCount
+        ai_disabled_samples = $disabledAiSamples
+        di_map_disabled_samples = $disabledDiMapSamples
+        di_tag_disabled_samples = $disabledDiTagSamples
+    }
+
+    if ($Apply.IsPresent -and -not $AllowDisable.IsPresent) {
+        if ($disabledAiCount -gt 0 -or $disabledDiMapCount -gt 0 -or $disabledDiTagCount -gt 0) {
+            throw ("This apply would disable existing mappings. Preview first and re-run with disable confirmation. ai={0}, di_map={1}, di_tag={2}" -f $disabledAiCount, $disabledDiMapCount, $disabledDiTagCount)
+        }
+    }
+
     if ($Apply.IsPresent) {
         $tx = $sqlCn.BeginTransaction()
         try {
@@ -638,8 +790,10 @@ WHEN NOT MATCHED THEN
         ai_rows_sample = $aiRowsSample
         di_map_rows = $diMapByPoint.Count
         di_tag_rows = $diTags.Count
+        disable_summary = $disableSummary
+        allow_disable = [bool]$AllowDisable.IsPresent
     }
-    $out | ConvertTo-Json -Depth 6 -Compress
+    Write-JsonResult -obj $out -depth 6
     }
     finally {
         $sqlCn.Close()
@@ -649,11 +803,12 @@ catch {
     $line = $_.InvocationInfo.ScriptLineNumber
     $msg = $_.Exception.Message
     $src = $_.InvocationInfo.Line
-    [PSCustomObject]@{
+    $errObj = [PSCustomObject]@{
         ok = $false
         line = $line
         message = $msg
         source = $src
-    } | ConvertTo-Json -Compress
+    }
+    Write-JsonResult -obj $errObj -depth 4
     exit 1
 }

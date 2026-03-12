@@ -601,6 +601,26 @@
         }
     }
 
+    private static Map<Integer, PlcConfig> getAllPlcConfigs() throws Exception {
+        Map<Integer, PlcConfig> out = new LinkedHashMap<>();
+        try (Connection conn = createConn();
+             PreparedStatement ps = conn.prepareStatement(
+                 "SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config ORDER BY plc_id");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                PlcConfig cfg = new PlcConfig();
+                cfg.exists = true;
+                cfg.ip = rs.getString("plc_ip");
+                cfg.port = rs.getInt("plc_port");
+                cfg.unitId = rs.getInt("unit_id");
+                cfg.pollingMs = rs.getInt("polling_ms");
+                cfg.enabled = rs.getBoolean("enabled");
+                out.put(Integer.valueOf(rs.getInt("plc_id")), cfg);
+            }
+        }
+        return out;
+    }
+
     private static String normalizeMetricOrder(String metricOrder) {
         if (metricOrder == null || metricOrder.trim().isEmpty()) return metricOrder;
         String[] raw = metricOrder.split("\\s*,\\s*");
@@ -905,6 +925,41 @@
             }
         }
         return new int[]{measurementsInserted, harmonicInserted, flickerInserted};
+    }
+
+    private static int persistAiRowsToSamples(int plcId, PlcConfig cfg, List<Map<String, Object>> aiRows, Timestamp measuredAt) throws Exception {
+        if (cfg == null || aiRows == null || aiRows.isEmpty()) return 0;
+
+        String sql =
+            "INSERT INTO dbo.plc_ai_samples " +
+            "(measured_at, plc_id, plc_ip, unit_id, meter_id, reg_address, value_float, byte_order, quality) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        int inserted = 0;
+        try (Connection conn = createConn();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (Map<String, Object> row : aiRows) {
+                Object meterObj = row.get("meter_id");
+                Object regObj = row.get("reg1");
+                Object valObj = row.get("value");
+                if (!(meterObj instanceof Number) || !(regObj instanceof Number) || !(valObj instanceof Number)) continue;
+
+                ps.setTimestamp(1, measuredAt);
+                ps.setInt(2, plcId);
+                ps.setString(3, cfg.ip);
+                ps.setInt(4, cfg.unitId);
+                ps.setInt(5, ((Number)meterObj).intValue());
+                ps.setInt(6, ((Number)regObj).intValue());
+                ps.setDouble(7, ((Number)valObj).doubleValue());
+                String byteOrder = String.valueOf(row.get("byte_order") == null ? "" : row.get("byte_order")).trim();
+                if (byteOrder.isEmpty()) byteOrder = "ABCD";
+                ps.setString(8, byteOrder);
+                ps.setString(9, "GOOD");
+                ps.addBatch();
+                inserted++;
+            }
+            if (inserted > 0) ps.executeBatch();
+        }
+        return inserted;
     }
 
     private static int[] persistDiRowsToDeviceEvents(int plcId, List<Map<String, Object>> diRows, Timestamp measuredAt) throws Exception {
@@ -1307,6 +1362,7 @@
                 row.put("token", i < tokens.length ? tokens[i] : ("F" + (i + 1)));
                 row.put("reg1", startAddress + (i * 2));
                 row.put("reg2", startAddress + (i * 2) + 1);
+                row.put("byte_order", byteOrder);
                 row.put("value", v);
                 out.add(row);
             }
@@ -1346,6 +1402,7 @@
 
             DiReadData diData = readDiData(plcId, cfg);
             AiReadData aiData = readAiData(plcId, cfg);
+            persistAiRowsToSamples(plcId, cfg, aiData.rows, measuredAt);
             int[] aiPersist = persistAiRowsToTargetTables(aiData.rows, measuredAt);
             int[] aiAlarmPersist = new int[]{0, 0};
             try {
@@ -1538,6 +1595,7 @@
                     if (applyInvalidPlcState(st, cfg)) return;
 
                     AiReadData aiData = readAiData(plcId, cfg);
+                    persistAiRowsToSamples(plcId, cfg, aiData.rows, measuredAt);
                     int[] aiPersist = persistAiRowsToTargetTables(aiData.rows, measuredAt);
                     int[] aiAlarmPersist = new int[]{0, 0};
                     try {
@@ -1622,34 +1680,50 @@
         outJson.append("]");
     }
 
-    private static void appendPollStateJson(StringBuilder s, Integer id, PollState st, boolean includeRows) {
-        long attempt = st.attemptCount.get();
-        long success = st.successCount.get();
+    private static String resolvePollStatus(PlcConfig cfg, PollState st) {
+        boolean enabled = cfg != null && cfg.enabled;
+        if (!enabled) return "inactive";
+        if (st != null && st.running) return "running";
+        if (st != null && st.lastError != null && !st.lastError.trim().isEmpty()) return "error";
+        return "stopped";
+    }
+
+    private static void appendPollStateJson(StringBuilder s, Integer id, PlcConfig cfg, PollState st, boolean includeRows) {
+        PollState safeState = (st == null) ? new PollState() : st;
+        PlcConfig safeCfg = (cfg == null) ? new PlcConfig() : cfg;
+        if (safeCfg.exists && safeCfg.pollingMs > 0) {
+            safeState.pollingMs = safeCfg.pollingMs;
+        }
+        String status = resolvePollStatus(safeCfg, safeState);
+        long attempt = safeState.attemptCount.get();
+        long success = safeState.successCount.get();
         double successRate = (attempt > 0L) ? (success * 100.0d / attempt) : 0.0d;
-        double avgReadMs = (success > 0L) ? (st.readDurationSumMs.get() * 1.0d / success) : 0.0d;
+        double avgReadMs = (success > 0L) ? (safeState.readDurationSumMs.get() * 1.0d / success) : 0.0d;
         s.append("{")
          .append("\"plc_id\":").append(id).append(",")
-         .append("\"running\":").append(st.running ? "true" : "false").append(",")
-         .append("\"polling_ms\":").append(st.pollingMs).append(",")
+         .append("\"enabled\":").append(safeCfg.enabled ? "true" : "false").append(",")
+         .append("\"status\":\"").append(status).append("\",")
+         .append("\"running\":").append(safeState.running ? "true" : "false").append(",")
+         .append("\"polling_ms\":").append(safeState.pollingMs).append(",")
          .append("\"attempt_count\":").append(attempt).append(",")
          .append("\"success_count\":").append(success).append(",")
          .append("\"success_rate\":").append(String.format(java.util.Locale.US, "%.2f", successRate)).append(",")
-         .append("\"read_count\":").append(st.readCount.get()).append(",")
-         .append("\"di_read_count\":").append(st.diReadCount.get()).append(",")
-         .append("\"ai_read_count\":").append(st.aiReadCount.get()).append(",")
-         .append("\"last_read_ms\":").append(st.lastReadDurationMs).append(",")
-         .append("\"di_read_ms\":").append(st.lastDiReadMs).append(",")
-         .append("\"ai_read_ms\":").append(st.lastAiReadMs).append(",")
-         .append("\"proc_ms\":").append(st.lastProcMs).append(",")
+         .append("\"read_count\":").append(safeState.readCount.get()).append(",")
+         .append("\"di_read_count\":").append(safeState.diReadCount.get()).append(",")
+         .append("\"ai_read_count\":").append(safeState.aiReadCount.get()).append(",")
+         .append("\"last_read_ms\":").append(safeState.lastReadDurationMs).append(",")
+         .append("\"di_read_ms\":").append(safeState.lastDiReadMs).append(",")
+         .append("\"ai_read_ms\":").append(safeState.lastAiReadMs).append(",")
+         .append("\"proc_ms\":").append(safeState.lastProcMs).append(",")
          .append("\"avg_read_ms\":").append(String.format(java.util.Locale.US, "%.1f", avgReadMs)).append(",")
-         .append("\"last_run_at\":").append(st.lastRunAt).append(",")
-         .append("\"last_info\":\"").append(escJson(st.lastInfo)).append("\",")
-         .append("\"last_error\":\"").append(escJson(st.lastError)).append("\"");
+         .append("\"last_run_at\":").append(safeState.lastRunAt).append(",")
+         .append("\"last_info\":\"").append(escJson(safeState.lastInfo)).append("\",")
+         .append("\"last_error\":\"").append(escJson(safeState.lastError)).append("\"");
         if (includeRows) {
             s.append(",\"rows\":");
-            appendAiRowsJson(s, st.lastRows);
+            appendAiRowsJson(s, safeState.lastRows);
             s.append(",\"di_rows\":");
-            appendDiRowsJson(s, st.lastDiRows);
+            appendDiRowsJson(s, safeState.lastDiRows);
         }
         s.append("}");
     }
@@ -1658,14 +1732,25 @@
         StringBuilder s = new StringBuilder();
         s.append("{\"ok\":true,\"states\":[");
         boolean first = true;
-        List<Integer> ids = new ArrayList<>(pollRt.states.keySet());
-        Collections.sort(ids);
-        for (Integer id : ids) {
-            PollState st = pollRt.states.get(id);
-            if (st == null) continue;
-            if (!first) s.append(",");
-            first = false;
-            appendPollStateJson(s, id, st, includeRows);
+        try {
+            Map<Integer, PlcConfig> cfgMap = getAllPlcConfigs();
+            for (Map.Entry<Integer, PlcConfig> entry : cfgMap.entrySet()) {
+                Integer id = entry.getKey();
+                PlcConfig cfg = entry.getValue();
+                PollState st = pollRt.states.get(id);
+                if (!first) s.append(",");
+                first = false;
+                appendPollStateJson(s, id, cfg, st, includeRows);
+            }
+        } catch (Exception e) {
+            List<Integer> ids = new ArrayList<>(pollRt.states.keySet());
+            Collections.sort(ids);
+            for (Integer id : ids) {
+                PollState st = pollRt.states.get(id);
+                if (!first) s.append(",");
+                first = false;
+                appendPollStateJson(s, id, null, st, includeRows);
+            }
         }
         s.append("]}");
         return s.toString();

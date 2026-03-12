@@ -179,6 +179,93 @@
             return e.getMessage();
         }
     }
+
+    private static String handleSyncAiMetricCatalog(Connection conn) {
+        TreeSet<String> aiMetricSet = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        aiMetricSet.add("VOLTAGE");
+        aiMetricSet.add("CURRENT");
+        aiMetricSet.add("THD");
+        aiMetricSet.add("THD_VOLTAGE");
+        aiMetricSet.add("THD_CURRENT");
+        aiMetricSet.add("UNBALANCE");
+        aiMetricSet.add("V_VARIATION");
+        aiMetricSet.add("I_VARIATION");
+        aiMetricSet.add("VARIATION");
+        aiMetricSet.add("POWER_FACTOR");
+        aiMetricSet.add("FREQUENCY_GROUP");
+        aiMetricSet.add("PEAK");
+        aiMetricSet.add("MAX_POWER");
+
+        try (PreparedStatement ps = conn.prepareStatement("SELECT measurement_column FROM dbo.plc_ai_measurements_match");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String col = normalizeMetricKey(rs.getString(1));
+                if (col != null) aiMetricSet.add(col);
+            }
+        } catch (Exception ignore) {}
+
+        try (PreparedStatement ps = conn.prepareStatement("SELECT DISTINCT metric_key FROM dbo.alarm_rule WHERE UPPER(target_scope) IN ('METER','AI')");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String mk = normalizeMetricKey(rs.getString(1));
+                if (mk != null) aiMetricSet.add(mk);
+            }
+        } catch (Exception ignore) {}
+
+        String mergeSql =
+            "MERGE dbo.metric_catalog t " +
+            "USING (SELECT ? AS metric_key) s ON (t.metric_key = s.metric_key) " +
+            "WHEN MATCHED THEN UPDATE SET display_name = COALESCE(NULLIF(t.display_name,''), s.metric_key), source_type = CASE WHEN UPPER(ISNULL(t.source_type,''))='DI' THEN t.source_type ELSE 'AI' END, enabled = 1, updated_at = SYSUTCDATETIME() " +
+            "WHEN NOT MATCHED THEN INSERT (metric_key, display_name, source_type, enabled, created_at, updated_at) VALUES (?, ?, 'AI', 1, SYSUTCDATETIME(), SYSUTCDATETIME());";
+        try (PreparedStatement ps = conn.prepareStatement(mergeSql)) {
+            for (String mk : aiMetricSet) {
+                ps.setString(1, mk);
+                ps.setString(2, mk);
+                ps.setString(3, mk);
+                ps.executeUpdate();
+            }
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    private static String handleSyncDiMetricCatalog(Connection conn) {
+        TreeSet<String> diMetricSet = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+
+        try (PreparedStatement ps = conn.prepareStatement("SELECT metric_key FROM dbo.di_group_rule_map WHERE enabled = 1");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String mk = normalizeMetricKey(rs.getString(1));
+                if (mk != null) diMetricSet.add(mk);
+            }
+        } catch (Exception ignore) {}
+
+        try (PreparedStatement ps = conn.prepareStatement("SELECT metric_key FROM dbo.alarm_rule WHERE UPPER(target_scope)='PLC' AND enabled = 1");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String mk = normalizeMetricKey(rs.getString(1));
+                if (mk != null) diMetricSet.add(mk);
+            }
+        } catch (Exception ignore) {}
+
+        String mergeSql =
+            "MERGE dbo.metric_catalog t " +
+            "USING (SELECT ? AS metric_key) s ON (t.metric_key = s.metric_key) " +
+            "WHEN MATCHED THEN UPDATE SET display_name = COALESCE(NULLIF(t.display_name,''), s.metric_key), source_type = 'DI', enabled = 1, updated_at = SYSUTCDATETIME() " +
+            "WHEN NOT MATCHED THEN INSERT (metric_key, display_name, source_type, enabled, created_at, updated_at) VALUES (?, ?, 'DI', 1, SYSUTCDATETIME(), SYSUTCDATETIME());";
+        try (PreparedStatement ps = conn.prepareStatement(mergeSql)) {
+            for (String mk : diMetricSet) {
+                ps.setString(1, mk);
+                ps.setString(2, mk);
+                ps.setString(3, mk);
+                ps.executeUpdate();
+            }
+            return null;
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
 %>
 <%
     request.setCharacterEncoding("UTF-8");
@@ -264,6 +351,26 @@
                 response.sendRedirect(self + "?msg=" + URLEncoder.encode("지표키를 삭제했습니다.", "UTF-8"));
                 return;
             }
+
+            if ("sync_ai".equals(formReq.action)) {
+                String saveErr = handleSyncAiMetricCatalog(conn);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
+                    return;
+                }
+                response.sendRedirect(self + "?msg=" + URLEncoder.encode("AI 지표 카탈로그를 동기화했습니다.", "UTF-8"));
+                return;
+            }
+
+            if ("sync_di".equals(formReq.action)) {
+                String saveErr = handleSyncDiMetricCatalog(conn);
+                if (saveErr != null) {
+                    response.sendRedirect(self + "?err=" + URLEncoder.encode(saveErr, "UTF-8"));
+                    return;
+                }
+                response.sendRedirect(self + "?msg=" + URLEncoder.encode("DI 지표 카탈로그를 동기화했습니다.", "UTF-8"));
+                return;
+            }
         }
 
         try (PreparedStatement ps = conn.prepareStatement(
@@ -331,6 +438,16 @@
             </select>
             <button type="submit">저장</button>
         </div>
+    </form>
+
+    <form method="POST" style="margin-top:8px;">
+        <input type="hidden" name="action" value="sync_ai">
+        <button type="submit">AI 지표 동기화</button>
+    </form>
+
+    <form method="POST" style="margin-top:8px;">
+        <input type="hidden" name="action" value="sync_di">
+        <button type="submit">DI 지표 동기화</button>
     </form>
 
     <table style="margin-top:12px;">

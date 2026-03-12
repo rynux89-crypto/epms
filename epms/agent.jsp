@@ -15,6 +15,10 @@ private static final String DB_JNDI_NAME = "java:comp/env/jdbc/epms";
 private static final Object SCHEMA_CACHE_LOCK = new Object();
 private static final long DEFAULT_SCHEMA_CACHE_TTL_MS = 5L * 60L * 1000L;
 private static final Object METER_SCOPE_CACHE_LOCK = new Object();
+private static final Object USAGE_TYPE_CACHE_LOCK = new Object();
+private static final Object USAGE_ALIAS_CACHE_LOCK = new Object();
+private static final Object BUILDING_NAME_CACHE_LOCK = new Object();
+private static final Object BUILDING_ALIAS_CACHE_LOCK = new Object();
 private static final long DEFAULT_METER_SCOPE_CACHE_TTL_MS = 5L * 60L * 1000L;
 private static final int SCHEMA_MAX_TABLES = 60;
 private static final int SCHEMA_MAX_COLUMNS_PER_TABLE = 40;
@@ -23,7 +27,15 @@ private static volatile String schemaContextCache = "";
 private static volatile long schemaContextCacheAt = 0L;
 private static volatile long schemaCacheTtlMs = DEFAULT_SCHEMA_CACHE_TTL_MS;
 private static volatile List<String> meterScopeValueCache = new ArrayList<String>();
+private static volatile List<String> usageTypeValueCache = new ArrayList<String>();
+private static volatile Map<String, String> usageAliasMapCache = new LinkedHashMap<String, String>();
+private static volatile List<String> buildingNameValueCache = new ArrayList<String>();
+private static volatile Map<String, String> buildingAliasMapCache = new LinkedHashMap<String, String>();
 private static volatile long meterScopeCacheAt = 0L;
+private static volatile long usageTypeCacheAt = 0L;
+private static volatile long usageAliasCacheAt = 0L;
+private static volatile long buildingNameCacheAt = 0L;
+private static volatile long buildingAliasCacheAt = 0L;
 
 private static class AgentRequestContext {
     Integer requestedMeterId;
@@ -203,6 +215,7 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
         routedWantsOpenAlarmCountSummary(userMessage)
         || localWantsOpenAlarmCountSummary(userMessage)
         || (directOpenAlarmsIntent && directAlarmCountIntent);
+    boolean directScopedMonthlyEnergyIntent = localWantsScopedMonthlyEnergySummary(userMessage);
 
     Integer directMeterId = extractMeterId(userMessage);
     if (directMeterId == null) {
@@ -231,7 +244,18 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
         directAlarmAreaToken != null && !directAlarmAreaToken.trim().isEmpty()) {
         directMeterScopeToken = directAlarmAreaToken;
     }
+    if ((directMeterScopeToken == null || directMeterScopeToken.trim().isEmpty()) && directScopedMonthlyEnergyIntent) {
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        if (scopeHints != null && !scopeHints.isEmpty()) {
+            directMeterScopeToken = String.join(",", scopeHints);
+        } else {
+            directMeterScopeToken = extractScopedAreaTokenFallback(userMessage);
+        }
+    }
     List<String> directPanelTokens = extractPanelTokens(userMessage);
+    if (directIntentText.contains("전체") || directIntentText.contains("전부") || directIntentText.contains("모두") || directIntentText.contains("all")) {
+        directTopN = Integer.valueOf(50);
+    }
     if (routedWantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
         directPanelTokens = extractPanelTokensLoose(userMessage);
     }
@@ -240,6 +264,9 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
     if (directPfStandard) {
         result.dbContext = "[PF standard] IEEE";
         result.answer = buildPowerFactorStandardDirectAnswer(userMessage);
+    } else if (directScopedMonthlyEnergyIntent) {
+        result.dbContext = getScopedMonthlyEnergyContext(directMeterScopeToken, directMonth);
+        result.answer = buildScopedMonthlyEnergyDirectAnswer(result.dbContext);
     } else if (routedWantsVoltageAverageSummary(userMessage)) {
         Timestamp fromTs = directWindow != null ? directWindow.fromTs : null;
         Timestamp toTs = directWindow != null ? directWindow.toTs : null;
@@ -443,6 +470,16 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
             ? getPowerFactorNoSignalCount(directWindow.fromTs, directWindow.toTs)
             : getPowerFactorNoSignalCount();
         result.answer = buildPowerFactorOutlierDirectAnswer(result.dbContext, pfNoSignalCount);
+        if ((result.dbContext.contains("none") || result.dbContext.contains("no data")) && pfNoSignalCount > 0) {
+            int noSignalTopN = (directIntentText.contains("전체") || directIntentText.contains("전부") || directIntentText.contains("모두") || directIntentText.contains("all")) ? 50 : 10;
+            String noSignalCtx = directWindow != null
+                ? getPowerFactorNoSignalListContext(noSignalTopN, directWindow.fromTs, directWindow.toTs, directWindow.label)
+                : getPowerFactorNoSignalListContext(noSignalTopN, null, null, null);
+            String snippet = buildPowerFactorNoSignalListSnippet(noSignalCtx);
+            if (snippet != null && !snippet.trim().isEmpty()) {
+                result.answer = result.answer + "\n\n" + snippet.trim();
+            }
+        }
     } else if (routedWantsHarmonicSummary(userMessage) && !routedWantsHarmonicExceed(userMessage)) {
         result.dbContext = getHarmonicContext(directMeterId, directPanelTokens);
         result.answer = buildHarmonicDirectAnswer(result.dbContext, directMeterId);
@@ -490,6 +527,117 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
 
 private DirectAnswerResult tryBuildCriticalDirectAnswer(String userMessage, boolean forceLlmOnly) throws Exception {
     if (forceLlmOnly) return null;
+
+    String criticalIntentText = normalizeForIntent(userMessage);
+    boolean criticalHasMeterHint =
+        extractMeterId(userMessage) != null
+        || trimToNull(extractMeterNameToken(userMessage)) != null;
+    if (!criticalHasMeterHint && criticalIntentText.contains("전체사용량") && userMessage != null && userMessage.contains("의")) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        String scopeToken = extractScopedAreaTokenFallback(userMessage);
+        result.dbContext = getScopedMonthlyEnergyContext(scopeToken, extractMonth(userMessage));
+        result.answer = buildScopedMonthlyEnergyDirectAnswer(result.dbContext);
+        return result;
+    }
+
+    if (localWantsPanelMonthlyEnergySummary(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        List<String> panelTokens = extractPanelTokens(userMessage);
+        if (panelTokens == null || panelTokens.isEmpty()) {
+            panelTokens = extractPanelTokensLoose(userMessage);
+        }
+        result.dbContext = getPanelMonthlyEnergyContext(panelTokens, extractMonth(userMessage));
+        result.answer = buildPanelMonthlyEnergyDirectAnswer(result.dbContext);
+        return result;
+    }
+
+    if (localWantsUsageMonthlyEnergySummary(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        String usageToken = extractUsageTokenFallback(userMessage);
+        result.dbContext = getUsageMonthlyEnergyContext(usageToken, extractMonth(userMessage));
+        result.answer = buildUsageMonthlyEnergyDirectAnswer(result.dbContext);
+        return result;
+    }
+
+    if (localWantsUsagePowerTopSummary(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = getUsagePowerTopNContext(extractMonth(userMessage), extractTopN(userMessage, 5, 20));
+        result.answer = buildUsagePowerTopDirectAnswer(result.dbContext);
+        return result;
+    }
+
+    if (localWantsHarmonicExceedStandard(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = "[Harmonic exceed standard] thdV>3.0, thdI>20.0";
+        result.answer = buildHarmonicExceedStandardDirectAnswer();
+        return result;
+    }
+
+    if (localWantsPowerFactorThreshold(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = "[PF threshold] 0.9/0.95";
+        result.answer = buildPowerFactorThresholdDirectAnswer();
+        return result;
+    }
+
+    if (localWantsEpmsKnowledge(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = "[EPMS knowledge]";
+        result.answer = buildEpmsKnowledgeDirectAnswer();
+        return result;
+    }
+
+    if (localWantsFrequencyOutlierStandard(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = "[Frequency outlier standard] threshold<59.5 or >60.5";
+        result.answer = buildFrequencyOutlierStandardDirectAnswer();
+        return result;
+    }
+
+    if (localWantsCurrentUnbalanceCount(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        TimeWindow directWindow = extractTimeWindow(userMessage);
+        String countCtx = (directWindow != null)
+            ? getCurrentUnbalanceCountContext(10.0d, directWindow.fromTs, directWindow.toTs, directWindow.label)
+            : getCurrentUnbalanceCountContext(10.0d, null, null, null);
+        result.dbContext = "";
+        result.answer = buildCurrentUnbalanceCountDirectAnswer(countCtx);
+        return result;
+    }
+
+    if (localWantsHarmonicExceedCount(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        TimeWindow directWindow = extractTimeWindow(userMessage);
+        Integer directTopN = extractTopN(userMessage, 200, 500);
+        String countCtx;
+        if (directWindow != null) {
+            countCtx = getHarmonicExceedListContext(null, null, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        } else {
+            countCtx = getHarmonicExceedListContext(null, null, directTopN);
+        }
+        result.dbContext = "";
+        result.answer = buildHarmonicExceedCountDirectAnswer(countCtx);
+        return result;
+    }
+
+    if (localWantsScopedMonthlyEnergySummary(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
+        String scopeToken = (scopeHints == null || scopeHints.isEmpty())
+            ? extractScopedAreaTokenFallback(userMessage)
+            : String.join(",", scopeHints);
+        Integer month = extractMonth(userMessage);
+        result.dbContext = getScopedMonthlyEnergyContext(scopeToken, month);
+        result.answer = buildScopedMonthlyEnergyDirectAnswer(result.dbContext);
+        return result;
+    }
+
+    if (localWantsMonthlyEnergyUsagePrompt(userMessage)) {
+        DirectAnswerResult result = new DirectAnswerResult();
+        result.dbContext = "";
+        result.answer = "이번 달 전력 사용량은 계측기를 지정해야 조회할 수 있습니다. 예: 77번 계측기 이번 달 전력 사용량은?";
+        return result;
+    }
 
     if (localWantsDisplayedVoltageMeaning(userMessage)) {
         DirectAnswerResult result = new DirectAnswerResult();
@@ -1095,6 +1243,258 @@ private List<String> findScopeTokensFromMeterMaster(String userMessage, int maxT
     return out;
 }
 
+private List<String> buildUsageTypeValuesFromDb() {
+    LinkedHashSet<String> set = new LinkedHashSet<String>();
+    String sql =
+        "SELECT DISTINCT LTRIM(RTRIM(ISNULL(usage_type,''))) AS usage_type " +
+        "FROM dbo.meters " +
+        "WHERE LTRIM(RTRIM(ISNULL(usage_type,''))) <> ''";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String v = trimToNull(rs.getString("usage_type"));
+                if (v == null) continue;
+                if (normalizeScopeKey(v).length() < 2) continue;
+                set.add(v);
+            }
+        }
+    } catch (Exception ignore) {
+    }
+    ArrayList<String> out = new ArrayList<String>(set);
+    java.util.Collections.sort(out, new java.util.Comparator<String>() {
+        public int compare(String a, String b) {
+            int la = normalizeScopeKey(a).length();
+            int lb = normalizeScopeKey(b).length();
+            if (la != lb) return lb - la;
+            return a.compareToIgnoreCase(b);
+        }
+    });
+    return out;
+}
+
+private List<String> getUsageTypeValuesCached() {
+    long now = System.currentTimeMillis();
+    List<String> cached = usageTypeValueCache;
+    if (cached != null && !cached.isEmpty() && (now - usageTypeCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+        return cached;
+    }
+    synchronized (USAGE_TYPE_CACHE_LOCK) {
+        long now2 = System.currentTimeMillis();
+        if (usageTypeValueCache != null && !usageTypeValueCache.isEmpty() && (now2 - usageTypeCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+            return usageTypeValueCache;
+        }
+        List<String> fresh = buildUsageTypeValuesFromDb();
+        usageTypeValueCache = fresh == null ? new ArrayList<String>() : fresh;
+        usageTypeCacheAt = now2;
+        return usageTypeValueCache;
+    }
+}
+
+private String findUsageTypeFromDb(String userMessage) {
+    String msg = normalizeScopeKey(userMessage);
+    if (msg.isEmpty()) return null;
+    List<String> values = getUsageTypeValuesCached();
+    if (values == null || values.isEmpty()) return null;
+    for (int i = 0; i < values.size(); i++) {
+        String v = values.get(i);
+        String nv = normalizeScopeKey(v);
+        if (nv.length() < 2) continue;
+        if (msg.contains(nv)) return v;
+    }
+    return null;
+}
+
+private Map<String, String> buildUsageAliasMapFromDb() {
+    LinkedHashMap<String, String> out = new LinkedHashMap<String, String>();
+    String sql =
+        "SELECT LTRIM(RTRIM(ISNULL(alias_keyword,''))) AS alias_keyword, " +
+        "       LTRIM(RTRIM(ISNULL(usage_type,''))) AS usage_type " +
+        "FROM dbo.usage_type_alias " +
+        "WHERE LTRIM(RTRIM(ISNULL(alias_keyword,''))) <> '' " +
+        "  AND LTRIM(RTRIM(ISNULL(usage_type,''))) <> '' " +
+        "  AND ISNULL(is_active, 1) = 1";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String alias = trimToNull(rs.getString("alias_keyword"));
+                String usageType = trimToNull(rs.getString("usage_type"));
+                if (alias == null || usageType == null) continue;
+                String key = normalizeScopeKey(alias);
+                if (key.length() < 2) continue;
+                out.put(key, usageType);
+            }
+        }
+    } catch (Exception ignore) {
+    }
+    return out;
+}
+
+private Map<String, String> getUsageAliasMapCached() {
+    long now = System.currentTimeMillis();
+    Map<String, String> cached = usageAliasMapCache;
+    if (cached != null && !cached.isEmpty() && (now - usageAliasCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+        return cached;
+    }
+    synchronized (USAGE_ALIAS_CACHE_LOCK) {
+        long now2 = System.currentTimeMillis();
+        if (usageAliasMapCache != null && !usageAliasMapCache.isEmpty() && (now2 - usageAliasCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+            return usageAliasMapCache;
+        }
+        Map<String, String> fresh = buildUsageAliasMapFromDb();
+        usageAliasMapCache = fresh == null ? new LinkedHashMap<String, String>() : fresh;
+        usageAliasCacheAt = now2;
+        return usageAliasMapCache;
+    }
+}
+
+private String findUsageAliasFromDb(String userMessage) {
+    String msg = normalizeScopeKey(userMessage);
+    if (msg.isEmpty()) return null;
+    Map<String, String> aliasMap = getUsageAliasMapCached();
+    if (aliasMap == null || aliasMap.isEmpty()) return null;
+    String bestUsage = null;
+    int bestLen = -1;
+    for (Map.Entry<String, String> e : aliasMap.entrySet()) {
+        String alias = e.getKey();
+        if (alias == null || alias.length() < 2) continue;
+        if (msg.contains(alias) && alias.length() > bestLen) {
+            bestUsage = e.getValue();
+            bestLen = alias.length();
+        }
+    }
+    return trimToNull(bestUsage);
+}
+
+private List<String> buildBuildingNameValuesFromDb() {
+    LinkedHashSet<String> set = new LinkedHashSet<String>();
+    String sql =
+        "SELECT DISTINCT LTRIM(RTRIM(ISNULL(building_name,''))) AS building_name " +
+        "FROM dbo.meters " +
+        "WHERE LTRIM(RTRIM(ISNULL(building_name,''))) <> ''";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String v = trimToNull(rs.getString("building_name"));
+                if (v == null) continue;
+                if (normalizeScopeKey(v).length() < 2) continue;
+                set.add(v);
+            }
+        }
+    } catch (Exception ignore) {
+    }
+    ArrayList<String> out = new ArrayList<String>(set);
+    java.util.Collections.sort(out, new java.util.Comparator<String>() {
+        public int compare(String a, String b) {
+            int la = normalizeScopeKey(a).length();
+            int lb = normalizeScopeKey(b).length();
+            if (la != lb) return lb - la;
+            return a.compareToIgnoreCase(b);
+        }
+    });
+    return out;
+}
+
+private List<String> getBuildingNameValuesCached() {
+    long now = System.currentTimeMillis();
+    List<String> cached = buildingNameValueCache;
+    if (cached != null && !cached.isEmpty() && (now - buildingNameCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+        return cached;
+    }
+    synchronized (BUILDING_NAME_CACHE_LOCK) {
+        long now2 = System.currentTimeMillis();
+        if (buildingNameValueCache != null && !buildingNameValueCache.isEmpty() && (now2 - buildingNameCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+            return buildingNameValueCache;
+        }
+        List<String> fresh = buildBuildingNameValuesFromDb();
+        buildingNameValueCache = fresh == null ? new ArrayList<String>() : fresh;
+        buildingNameCacheAt = now2;
+        return buildingNameValueCache;
+    }
+}
+
+private String findBuildingNameFromDb(String userMessage) {
+    String msg = normalizeScopeKey(userMessage);
+    if (msg.isEmpty()) return null;
+    List<String> values = getBuildingNameValuesCached();
+    if (values == null || values.isEmpty()) return null;
+    for (int i = 0; i < values.size(); i++) {
+        String v = values.get(i);
+        String nv = normalizeScopeKey(v);
+        if (nv.length() < 2) continue;
+        if (msg.contains(nv)) return v;
+    }
+    return null;
+}
+
+private Map<String, String> buildBuildingAliasMapFromDb() {
+    LinkedHashMap<String, String> out = new LinkedHashMap<String, String>();
+    String sql =
+        "SELECT LTRIM(RTRIM(ISNULL(alias_keyword,''))) AS alias_keyword, " +
+        "       LTRIM(RTRIM(ISNULL(building_name,''))) AS building_name " +
+        "FROM dbo.building_alias " +
+        "WHERE LTRIM(RTRIM(ISNULL(alias_keyword,''))) <> '' " +
+        "  AND LTRIM(RTRIM(ISNULL(building_name,''))) <> '' " +
+        "  AND ISNULL(is_active, 1) = 1";
+    try (Connection conn = openDbConnection();
+         PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setQueryTimeout(8);
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String alias = trimToNull(rs.getString("alias_keyword"));
+                String building = trimToNull(rs.getString("building_name"));
+                if (alias == null || building == null) continue;
+                String key = normalizeScopeKey(alias);
+                if (key.length() < 2) continue;
+                out.put(key, building);
+            }
+        }
+    } catch (Exception ignore) {
+    }
+    return out;
+}
+
+private Map<String, String> getBuildingAliasMapCached() {
+    long now = System.currentTimeMillis();
+    Map<String, String> cached = buildingAliasMapCache;
+    if (cached != null && !cached.isEmpty() && (now - buildingAliasCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+        return cached;
+    }
+    synchronized (BUILDING_ALIAS_CACHE_LOCK) {
+        long now2 = System.currentTimeMillis();
+        if (buildingAliasMapCache != null && !buildingAliasMapCache.isEmpty() && (now2 - buildingAliasCacheAt) < DEFAULT_METER_SCOPE_CACHE_TTL_MS) {
+            return buildingAliasMapCache;
+        }
+        Map<String, String> fresh = buildBuildingAliasMapFromDb();
+        buildingAliasMapCache = fresh == null ? new LinkedHashMap<String, String>() : fresh;
+        buildingAliasCacheAt = now2;
+        return buildingAliasMapCache;
+    }
+}
+
+private String findBuildingAliasFromDb(String userMessage) {
+    String msg = normalizeScopeKey(userMessage);
+    if (msg.isEmpty()) return null;
+    Map<String, String> aliasMap = getBuildingAliasMapCached();
+    if (aliasMap == null || aliasMap.isEmpty()) return null;
+    String bestBuilding = null;
+    int bestLen = -1;
+    for (Map.Entry<String, String> e : aliasMap.entrySet()) {
+        String alias = e.getKey();
+        if (alias == null || alias.length() < 2) continue;
+        if (msg.contains(alias) && alias.length() > bestLen) {
+            bestBuilding = e.getValue();
+            bestLen = alias.length();
+        }
+    }
+    return trimToNull(bestBuilding);
+}
+
 private boolean routedWantsMeterSummary(String userMessage) {
     Boolean delegated = invokeAgentQueryRouterBoolean("wantsMeterSummary", userMessage);
     return delegated != null ? delegated.booleanValue() : false;
@@ -1305,6 +1705,132 @@ private boolean localWantsPowerFactorStandard(String userMessage) {
     return hasPf && hasStandard && hasIeee;
 }
 
+private boolean localWantsPowerFactorThreshold(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasPf = m.contains("역률") || m.contains("powerfactor") || m.contains("pf");
+    boolean asksThreshold = m.contains("임계치") || m.contains("기준") || m.contains("기준치") || m.contains("threshold");
+    boolean hasIeee = m.contains("ieee");
+    return hasPf && asksThreshold && !hasIeee;
+}
+
+private boolean localWantsEpmsKnowledge(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean asksEpms =
+        m.contains("epms") ||
+        m.contains("이에프엠에스") ||
+        m.contains("전력감시") ||
+        m.contains("에너지관리");
+    boolean asksKnowledge =
+        m.contains("잘알아") ||
+        m.contains("알아") ||
+        m.contains("무슨시스템") ||
+        m.contains("뭐하는시스템") ||
+        m.contains("설명해");
+    return asksEpms && asksKnowledge;
+}
+
+private boolean localWantsFrequencyOutlierStandard(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasFrequency = m.contains("주파수") || m.contains("frequency") || m.contains("hz");
+    boolean asksStandard = m.contains("기준") || m.contains("임계치") || m.contains("어떻게판단") || m.contains("판단")
+        || m.contains("threshold") || m.contains("조건");
+    return hasFrequency && asksStandard;
+}
+
+private boolean localWantsMonthlyEnergyUsagePrompt(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasEnergy =
+        m.contains("\uC804\uB825\uB7C9") || m.contains("\uC0AC\uC6A9\uB7C9") || m.contains("\uB204\uC801")
+        || m.contains("kwh") || m.contains("energy");
+    boolean hasMonth =
+        m.contains("\uC774\uBC88\uB2EC") || m.contains("\uAE08\uC6D4") || m.contains("thismonth")
+        || m.contains("\uC6D4\uAC04");
+    boolean hasMeterHint =
+        extractMeterId(userMessage) != null
+        || trimToNull(extractMeterNameToken(userMessage)) != null
+        || !extractPanelTokens(userMessage).isEmpty()
+        || !extractPanelTokensLoose(userMessage).isEmpty();
+    return hasEnergy && hasMonth && !hasMeterHint;
+}
+
+private boolean localWantsScopedMonthlyEnergySummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasEnergy =
+        m.contains("전력사용량") || m.contains("사용전력") || m.contains("전력량") || m.contains("사용량")
+        || m.contains("kwh") || m.contains("energy");
+    boolean hasTotal =
+        m.contains("전체") || m.contains("총") || m.contains("합계") || m.contains("누적")
+        || m.endsWith("은?") || m.endsWith("는?") || m.endsWith("?");
+    boolean hasMeterHint =
+        extractMeterId(userMessage) != null
+        || trimToNull(extractMeterNameToken(userMessage)) != null;
+    List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 1);
+    String localScope = extractScopedAreaTokenFallback(userMessage);
+    return hasEnergy && hasTotal && !hasMeterHint &&
+        ((scopeHints != null && !scopeHints.isEmpty()) || localScope != null);
+}
+
+private boolean localWantsPanelMonthlyEnergySummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasPanel = m.contains("패널") || m.contains("panel") || m.contains("판넬");
+    boolean hasEnergy =
+        m.contains("전력사용량") || m.contains("사용전력") || m.contains("전력량") || m.contains("사용량")
+        || m.contains("kwh") || m.contains("energy");
+    boolean hasTotal =
+        m.contains("전체") || m.contains("총") || m.contains("합계") || m.contains("누적")
+        || m.endsWith("은?") || m.endsWith("는?") || m.endsWith("?");
+    List<String> panelTokens = extractPanelTokens(userMessage);
+    if (panelTokens == null || panelTokens.isEmpty()) panelTokens = extractPanelTokensLoose(userMessage);
+    return hasPanel && hasEnergy && hasTotal && panelTokens != null && !panelTokens.isEmpty();
+}
+
+private boolean localWantsUsageMonthlyEnergySummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasUsage = m.contains("용도") || m.contains("사용처") || m.contains("usage");
+    boolean hasEnergy =
+        m.contains("전력사용량") || m.contains("사용전력") || m.contains("전력량") || m.contains("사용량")
+        || m.contains("kwh") || m.contains("energy");
+    boolean hasTotal =
+        m.contains("전체") || m.contains("총") || m.contains("합계") || m.contains("누적")
+        || m.endsWith("은?") || m.endsWith("는?") || m.endsWith("?");
+    String usageToken = extractUsageTokenFallback(userMessage);
+    return hasUsage && hasEnergy && hasTotal && usageToken != null;
+}
+
+private boolean localWantsUsagePowerTopSummary(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasUsage = m.contains("용도별") || m.contains("사용처별") || (m.contains("용도") && m.contains("별")) || m.contains("usage");
+    boolean hasPower = m.contains("전력") || m.contains("전력량") || m.contains("사용량") || m.contains("kwh") || m.contains("power");
+    boolean hasTop = m.contains("top") || m.contains("상위") || m.contains("비교") || m.contains("목록") || m.contains("보여");
+    return hasUsage && hasPower && hasTop;
+}
+
+private boolean localWantsHarmonicExceedCount(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasHarmonic = m.contains("고조파") || m.contains("harmonic") || m.contains("thd");
+    boolean hasOutlier = m.contains("이상") || m.contains("초과") || m.contains("문제") || m.contains("비정상");
+    boolean hasCount = m.contains("총몇개") || m.contains("몇개") || m.contains("몇건") || m.contains("건수")
+        || m.contains("개수") || m.contains("갯수") || m.contains("count") || m.contains("총몇");
+    return hasHarmonic && hasOutlier && hasCount;
+}
+
+private boolean localWantsHarmonicExceedStandard(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasHarmonic = m.contains("고조파") || m.contains("harmonic") || m.contains("thd");
+    boolean asksStandard = m.contains("기준") || m.contains("기준값") || m.contains("임계치")
+        || m.contains("threshold") || m.contains("조건");
+    return hasHarmonic && asksStandard;
+}
+
+private boolean localWantsCurrentUnbalanceCount(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    boolean hasCurrent = m.contains("전류") || m.contains("current");
+    boolean hasUnbalance = m.contains("불평형") || m.contains("불균형") || m.contains("unbalance") || m.contains("imbalance");
+    boolean hasCount = m.contains("수는") || m.contains("몇개") || m.contains("몇건") || m.contains("개수")
+        || m.contains("갯수") || m.contains("건수") || m.contains("count") || m.contains("총몇");
+    return hasCurrent && hasUnbalance && hasCount;
+}
+
 private boolean localWantsDisplayedVoltageMeaning(String userMessage) {
     String m = normalizeForIntent(userMessage);
     boolean asksVoltageMeaning =
@@ -1418,7 +1944,58 @@ private List<String> splitAlarmAreaTokens(String areaToken) {
 
 private String extractMeterScopeToken(String userMessage) {
     Object delegated = invokeAgentQueryParser("extractMeterScopeToken", new Class<?>[] { String.class }, new Object[] { userMessage });
-    return delegated instanceof String ? (String) delegated : null;
+    if (delegated instanceof String) return (String) delegated;
+    return extractScopedAreaTokenFallback(userMessage);
+}
+
+private String extractScopedAreaTokenFallback(String userMessage) {
+    String raw = trimToNull(userMessage);
+    if (raw == null) return null;
+    String aliasMatched = findBuildingAliasFromDb(raw);
+    if (aliasMatched != null) return aliasMatched;
+    String dbMatched = findBuildingNameFromDb(raw);
+    if (dbMatched != null) return dbMatched;
+    java.util.regex.Matcher possessive = java.util.regex.Pattern.compile("([가-힣A-Za-z0-9_\\-]{2,20})\\s*의").matcher(raw);
+    while (possessive.find()) {
+        String token = trimToNull(possessive.group(1));
+        if (token == null) continue;
+        String n = normalizeForIntent(token);
+        if (n.length() < 2) continue;
+        if ("이번달".equals(n) || "금월".equals(n) || "전체".equals(n) || "전력".equals(n) || "사용량".equals(n)) continue;
+        return token;
+    }
+    java.util.regex.Matcher bare = java.util.regex.Pattern.compile("([가-힣A-Za-z0-9_\\-]{2,20})\\s*(관련|전체|전력|사용량)").matcher(raw);
+    if (bare.find()) {
+        String token = trimToNull(bare.group(1));
+        if (token != null && normalizeForIntent(token).length() >= 2) return token;
+    }
+    return null;
+}
+
+private String extractUsageTokenFallback(String userMessage) {
+    String raw = trimToNull(userMessage);
+    if (raw == null) return null;
+    String aliasMatched = findUsageAliasFromDb(raw);
+    if (aliasMatched != null) return aliasMatched;
+    String dbMatched = findUsageTypeFromDb(raw);
+    if (dbMatched != null) return dbMatched;
+    String norm = normalizeForIntent(raw);
+    if (norm.contains("동력")) return "전열";
+    if (norm.contains("조명")) return "전등";
+    if (norm.contains("비상전원")) return "비상";
+    if (norm.contains("무정전")) return "UPS";
+    if (norm.contains("발전기")) return "Generator";
+    java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("([가-힣A-Za-z0-9_\\-]{2,20})\\s*용도").matcher(raw);
+    if (m1.find()) {
+        String token = trimToNull(m1.group(1));
+        if (token != null && normalizeForIntent(token).length() >= 2) return token;
+    }
+    java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("용도\\s*([가-힣A-Za-z0-9_\\-]{2,20})").matcher(raw);
+    if (m2.find()) {
+        String token = trimToNull(m2.group(1));
+        if (token != null && normalizeForIntent(token).length() >= 2) return token;
+    }
+    return null;
 }
 
 private String invokeAgentDbTool(String methodName, Class<?>[] argTypes, Object[] args) {
@@ -1805,6 +2382,9 @@ private Integer extractTopN(String userMessage, int defVal, int maxVal) {
     if (delegated instanceof Integer) return (Integer) delegated;
     if (userMessage == null) return Integer.valueOf(defVal);
     String src = userMessage.toLowerCase(java.util.Locale.ROOT);
+    if (src.contains("전체") || src.contains("전부") || src.contains("모두") || src.contains("all")) {
+        return Integer.valueOf(maxVal);
+    }
     java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("top\\s*([0-9]{1,3})").matcher(src);
     if (m1.find()) {
         try {
@@ -2790,22 +3370,44 @@ private String getMonthlyPowerStatsContext(Integer meterId, Integer month) {
 }
 
 private String getBuildingPowerTopNContext(Integer month, Integer topN) {
-    String delegated = invokeAgentDbTool(
-        "getBuildingPowerTopNContext",
-        new Class<?>[] { Integer.class, Integer.class },
-        new Object[] { month, topN }
-    );
-    if (delegated != null) return delegated;
     Integer mm = month != null ? month : Integer.valueOf(java.time.LocalDate.now().getMonthValue());
     int yy = java.time.LocalDate.now().getYear();
     int n = topN != null ? topN.intValue() : 5;
     String sql =
-        "SELECT TOP " + n + " m.building_name, " +
-        "SUM(CAST(ms.active_power_total AS float)) / NULLIF(COUNT(*),0) AS avg_kw, " +
-        "SUM(CAST(ms.energy_consumed_total AS float)) AS sum_kwh " +
-        "FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " +
-        "WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
-        "GROUP BY m.building_name ORDER BY avg_kw DESC";
+        "WITH leaf_meters AS ( " +
+        "  SELECT m.meter_id, ISNULL(NULLIF(LTRIM(RTRIM(m.building_name)), ''), '미분류') AS building_name " +
+        "  FROM dbo.meters m " +
+        "  WHERE NOT EXISTS ( " +
+        "    SELECT 1 FROM dbo.meter_tree t " +
+        "    WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+        "  ) " +
+        "), month_samples AS ( " +
+        "  SELECT lm.building_name, ms.meter_id, ms.measurement_id, ms.measured_at, " +
+        "         CAST(ms.active_power_total AS float) AS active_kw, " +
+        "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+        "  FROM dbo.measurements ms " +
+        "  INNER JOIN leaf_meters lm ON lm.meter_id = ms.meter_id " +
+        "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+        "), month_energy AS ( " +
+        "  SELECT building_name, meter_id, " +
+        "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+        "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+        "  FROM month_samples GROUP BY building_name, meter_id " +
+        "), building_avg AS ( " +
+        "  SELECT building_name, AVG(active_kw) AS avg_kw " +
+        "  FROM month_samples GROUP BY building_name " +
+        "), building_sum AS ( " +
+        "  SELECT building_name, " +
+        "         SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 ELSE end_kwh - start_kwh END) AS sum_kwh " +
+        "  FROM month_energy GROUP BY building_name " +
+        "), building_agg AS ( " +
+        "  SELECT a.building_name, a.avg_kw, ISNULL(s.sum_kwh, 0) AS sum_kwh " +
+        "  FROM building_avg a LEFT JOIN building_sum s ON s.building_name = a.building_name " +
+        ") " +
+        "SELECT TOP " + n + " building_name, avg_kw, sum_kwh " +
+        "FROM building_agg ORDER BY sum_kwh DESC, avg_kw DESC, building_name ASC";
     try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
         ps.setInt(1, yy);
         ps.setInt(2, mm.intValue());
@@ -2825,6 +3427,266 @@ private String getBuildingPowerTopNContext(Integer month, Integer topN) {
         }
     } catch (Exception e) {
         return "[Building power TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
+private String getScopedMonthlyEnergyContext(String scopeToken, Integer month) {
+    List<String> tokens = splitAlarmAreaTokens(scopeToken);
+    if (tokens == null || tokens.isEmpty()) return "[Scoped monthly energy] scope required";
+    Integer mm = month != null ? month : Integer.valueOf(java.time.LocalDate.now().getMonthValue());
+    int yy = java.time.LocalDate.now().getYear();
+    StringBuilder scopeWhere = new StringBuilder("(");
+    for (int i = 0; i < tokens.size(); i++) {
+        if (i > 0) scopeWhere.append(" OR ");
+        scopeWhere.append("UPPER(ISNULL(m.building_name,'')) LIKE ? OR UPPER(ISNULL(m.usage_type,'')) LIKE ?");
+    }
+    scopeWhere.append(")");
+    String sql =
+        "WITH selected_leaf_meters AS ( " +
+        "  SELECT DISTINCT m.meter_id " +
+        "  FROM dbo.meters m " +
+        "  WHERE " + scopeWhere.toString() + " " +
+        "    AND NOT EXISTS ( " +
+        "      SELECT 1 FROM dbo.meter_tree t " +
+        "      WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+        "    ) " +
+        "), month_samples AS ( " +
+        "  SELECT ms.meter_id, ms.measurement_id, ms.measured_at, " +
+        "         CAST(ms.active_power_total AS float) AS active_kw, " +
+        "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+        "  FROM dbo.measurements ms " +
+        "  INNER JOIN selected_leaf_meters slm ON slm.meter_id = ms.meter_id " +
+        "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+        "), month_energy AS ( " +
+        "  SELECT meter_id, " +
+        "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+        "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+        "  FROM month_samples GROUP BY meter_id " +
+        ") " +
+        "SELECT " +
+        "  (SELECT COUNT(*) FROM selected_leaf_meters) AS leaf_meter_count, " +
+        "  (SELECT COUNT(*) FROM month_energy) AS measured_meter_count, " +
+        "  (SELECT AVG(active_kw) FROM month_samples) AS avg_kw, " +
+        "  (SELECT SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 ELSE end_kwh - start_kwh END) FROM month_energy) AS sum_kwh";
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        int pi = 1;
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i).toUpperCase(java.util.Locale.ROOT);
+            ps.setString(pi++, "%" + token + "%");
+            ps.setString(pi++, "%" + token + "%");
+        }
+        ps.setInt(pi++, yy);
+        ps.setInt(pi++, mm.intValue());
+        ps.setQueryTimeout(10);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                int leafMeterCount = rs.getInt("leaf_meter_count");
+                int measuredMeterCount = rs.getInt("measured_meter_count");
+                if (leafMeterCount <= 0) {
+                    return "[Scoped monthly energy] scope=" + String.join(",", tokens) + "; period=" + yy + "-" + String.format(java.util.Locale.US, "%02d", mm.intValue()) + "; no data";
+                }
+                return "[Scoped monthly energy] scope=" + String.join(",", tokens)
+                    + "; period=" + yy + "-" + String.format(java.util.Locale.US, "%02d", mm.intValue())
+                    + "; leaf_meter_count=" + leafMeterCount
+                    + "; measured_meter_count=" + measuredMeterCount
+                    + "; avg_kw=" + fmtNum(rs.getDouble("avg_kw"))
+                    + "; sum_kwh=" + fmtNum(rs.getDouble("sum_kwh"));
+            }
+        }
+    } catch (Exception e) {
+        return "[Scoped monthly energy] scope=" + String.join(",", tokens) + "; unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+    return "[Scoped monthly energy] no data";
+}
+
+private String getPanelMonthlyEnergyContext(List<String> panelTokens, Integer month) {
+    if (panelTokens == null || panelTokens.isEmpty()) return "[Panel monthly energy] panel token required";
+    Integer mm = month != null ? month : Integer.valueOf(java.time.LocalDate.now().getMonthValue());
+    int yy = java.time.LocalDate.now().getYear();
+    StringBuilder panelWhere = new StringBuilder("(");
+    for (int i = 0; i < panelTokens.size(); i++) {
+        if (i > 0) panelWhere.append(" OR ");
+        panelWhere.append("UPPER(REPLACE(REPLACE(ISNULL(m.panel_name,''),'_',''),' ','')) LIKE ?");
+    }
+    panelWhere.append(")");
+    String sql =
+        "WITH selected_leaf_meters AS ( " +
+        "  SELECT DISTINCT m.meter_id " +
+        "  FROM dbo.meters m " +
+        "  WHERE " + panelWhere.toString() + " " +
+        "    AND NOT EXISTS ( " +
+        "      SELECT 1 FROM dbo.meter_tree t " +
+        "      WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+        "    ) " +
+        "), month_samples AS ( " +
+        "  SELECT ms.meter_id, ms.measurement_id, ms.measured_at, " +
+        "         CAST(ms.active_power_total AS float) AS active_kw, " +
+        "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+        "  FROM dbo.measurements ms " +
+        "  INNER JOIN selected_leaf_meters slm ON slm.meter_id = ms.meter_id " +
+        "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+        "), month_energy AS ( " +
+        "  SELECT meter_id, " +
+        "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+        "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+        "  FROM month_samples GROUP BY meter_id " +
+        ") " +
+        "SELECT " +
+        "  (SELECT COUNT(*) FROM selected_leaf_meters) AS leaf_meter_count, " +
+        "  (SELECT COUNT(*) FROM month_energy) AS measured_meter_count, " +
+        "  (SELECT AVG(active_kw) FROM month_samples) AS avg_kw, " +
+        "  (SELECT SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 ELSE end_kwh - start_kwh END) FROM month_energy) AS sum_kwh";
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        int pi = 1;
+        for (int i = 0; i < panelTokens.size(); i++) {
+            String normalized = panelTokens.get(i).replaceAll("[\\s_\\-]+", "").toUpperCase(java.util.Locale.ROOT);
+            ps.setString(pi++, "%" + normalized + "%");
+        }
+        ps.setInt(pi++, yy);
+        ps.setInt(pi++, mm.intValue());
+        ps.setQueryTimeout(10);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                int leafMeterCount = rs.getInt("leaf_meter_count");
+                int measuredMeterCount = rs.getInt("measured_meter_count");
+                if (leafMeterCount <= 0) {
+                    return "[Panel monthly energy] panel=" + panelTokens + "; period=" + yy + "-" + String.format(java.util.Locale.US, "%02d", mm.intValue()) + "; no data";
+                }
+                return "[Panel monthly energy] panel=" + panelTokens
+                    + "; period=" + yy + "-" + String.format(java.util.Locale.US, "%02d", mm.intValue())
+                    + "; leaf_meter_count=" + leafMeterCount
+                    + "; measured_meter_count=" + measuredMeterCount
+                    + "; avg_kw=" + fmtNum(rs.getDouble("avg_kw"))
+                    + "; sum_kwh=" + fmtNum(rs.getDouble("sum_kwh"));
+            }
+        }
+    } catch (Exception e) {
+        return "[Panel monthly energy] panel=" + panelTokens + "; unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+    return "[Panel monthly energy] no data";
+}
+
+private String getUsageMonthlyEnergyContext(String usageToken, Integer month) {
+    String token = trimToNull(usageToken);
+    if (token == null) return "[Usage monthly energy] usage token required";
+    Integer mm = month != null ? month : Integer.valueOf(java.time.LocalDate.now().getMonthValue());
+    int yy = java.time.LocalDate.now().getYear();
+    String sql =
+        "WITH selected_leaf_meters AS ( " +
+        "  SELECT DISTINCT m.meter_id " +
+        "  FROM dbo.meters m " +
+        "  WHERE UPPER(ISNULL(m.usage_type,'')) LIKE ? " +
+        "    AND NOT EXISTS ( " +
+        "      SELECT 1 FROM dbo.meter_tree t " +
+        "      WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+        "    ) " +
+        "), month_samples AS ( " +
+        "  SELECT ms.meter_id, ms.measurement_id, ms.measured_at, " +
+        "         CAST(ms.active_power_total AS float) AS active_kw, " +
+        "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+        "  FROM dbo.measurements ms " +
+        "  INNER JOIN selected_leaf_meters slm ON slm.meter_id = ms.meter_id " +
+        "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+        "), month_energy AS ( " +
+        "  SELECT meter_id, " +
+        "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+        "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+        "  FROM month_samples GROUP BY meter_id " +
+        ") " +
+        "SELECT " +
+        "  (SELECT COUNT(*) FROM selected_leaf_meters) AS leaf_meter_count, " +
+        "  (SELECT COUNT(*) FROM month_energy) AS measured_meter_count, " +
+        "  (SELECT AVG(active_kw) FROM month_samples) AS avg_kw, " +
+        "  (SELECT SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 ELSE end_kwh - start_kwh END) FROM month_energy) AS sum_kwh";
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        int pi = 1;
+        ps.setString(pi++, "%" + token.toUpperCase(java.util.Locale.ROOT) + "%");
+        ps.setInt(pi++, yy);
+        ps.setInt(pi++, mm.intValue());
+        ps.setQueryTimeout(10);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                int leafMeterCount = rs.getInt("leaf_meter_count");
+                int measuredMeterCount = rs.getInt("measured_meter_count");
+                if (leafMeterCount <= 0) {
+                    return "[Usage monthly energy] usage=" + token + "; period=" + yy + "-" + String.format(java.util.Locale.US, "%02d", mm.intValue()) + "; no data";
+                }
+                return "[Usage monthly energy] usage=" + token
+                    + "; period=" + yy + "-" + String.format(java.util.Locale.US, "%02d", mm.intValue())
+                    + "; leaf_meter_count=" + leafMeterCount
+                    + "; measured_meter_count=" + measuredMeterCount
+                    + "; avg_kw=" + fmtNum(rs.getDouble("avg_kw"))
+                    + "; sum_kwh=" + fmtNum(rs.getDouble("sum_kwh"));
+            }
+        }
+    } catch (Exception e) {
+        return "[Usage monthly energy] usage=" + token + "; unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+    return "[Usage monthly energy] no data";
+}
+
+private String getUsagePowerTopNContext(Integer month, Integer topN) {
+    Integer mm = month != null ? month : Integer.valueOf(java.time.LocalDate.now().getMonthValue());
+    int yy = java.time.LocalDate.now().getYear();
+    int n = topN != null ? topN.intValue() : 5;
+    String sql =
+        "WITH leaf_meters AS ( " +
+        "  SELECT m.meter_id, ISNULL(NULLIF(LTRIM(RTRIM(m.usage_type)), ''), '미분류') AS usage_type " +
+        "  FROM dbo.meters m " +
+        "  WHERE NOT EXISTS ( " +
+        "    SELECT 1 FROM dbo.meter_tree t " +
+        "    WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+        "  ) " +
+        "), month_samples AS ( " +
+        "  SELECT lm.usage_type, ms.meter_id, ms.measurement_id, ms.measured_at, " +
+        "         CAST(ms.active_power_total AS float) AS active_kw, " +
+        "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+        "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+        "  FROM dbo.measurements ms " +
+        "  INNER JOIN leaf_meters lm ON lm.meter_id = ms.meter_id " +
+        "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+        "), month_energy AS ( " +
+        "  SELECT usage_type, meter_id, " +
+        "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+        "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+        "  FROM month_samples GROUP BY usage_type, meter_id " +
+        "), usage_avg AS ( " +
+        "  SELECT usage_type, AVG(active_kw) AS avg_kw " +
+        "  FROM month_samples GROUP BY usage_type " +
+        "), usage_sum AS ( " +
+        "  SELECT usage_type, SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 ELSE end_kwh - start_kwh END) AS sum_kwh " +
+        "  FROM month_energy GROUP BY usage_type " +
+        "), usage_agg AS ( " +
+        "  SELECT a.usage_type, a.avg_kw, ISNULL(s.sum_kwh, 0) AS sum_kwh " +
+        "  FROM usage_avg a LEFT JOIN usage_sum s ON s.usage_type = a.usage_type " +
+        ") " +
+        "SELECT TOP " + n + " usage_type, avg_kw, sum_kwh FROM usage_agg ORDER BY sum_kwh DESC, avg_kw DESC, usage_type ASC";
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, yy);
+        ps.setInt(2, mm.intValue());
+        ps.setQueryTimeout(10);
+        try (ResultSet rs = ps.executeQuery()) {
+            StringBuilder sb = new StringBuilder("[Usage power TOP] period=" + yy + "-" + String.format(java.util.Locale.US, "%02d", mm.intValue()) + ";");
+            int i = 0;
+            while (rs.next()) {
+                i++;
+                sb.append(" ").append(i).append(")")
+                  .append(clip(rs.getString("usage_type"), 30))
+                  .append(": avg_kw=").append(fmtNum(rs.getDouble("avg_kw")))
+                  .append(", sum_kwh=").append(fmtNum(rs.getDouble("sum_kwh"))).append(";");
+            }
+            if (i == 0) return "[Usage power TOP] no data";
+            return sb.toString();
+        }
+    } catch (Exception e) {
+        return "[Usage power TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
     }
 }
 
@@ -3361,9 +4223,33 @@ private String getVoltageUnbalanceTopNContext(Integer topN, Timestamp fromTs, Ti
     if (fromTs != null) where.append("AND ms.measured_at >= ? ");
     if (toTs != null) where.append("AND ms.measured_at < ? ");
     String sql =
-        "SELECT TOP " + n + " m.meter_id, m.name AS meter_name, ms.measured_at, ms.voltage_unbalance_rate " +
-        "FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " +
-        where.toString() + "ORDER BY ms.voltage_unbalance_rate DESC, ms.measured_at DESC";
+        "WITH src AS ( " +
+        "  SELECT m.meter_id, m.name AS meter_name, ms.measured_at, " +
+        "         CAST(ms.voltage_unbalance_rate AS float) AS voltage_unbalance_rate, " +
+        "         CAST(ms.voltage_phase_a AS float) AS va, " +
+        "         CAST(ms.voltage_phase_b AS float) AS vb, " +
+        "         CAST(ms.voltage_phase_c AS float) AS vc, " +
+        "         ROW_NUMBER() OVER (PARTITION BY m.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn " +
+        "  FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " +
+        where.toString() +
+        "), calc AS ( " +
+        "  SELECT meter_id, meter_name, measured_at, " +
+        "         CASE " +
+        "           WHEN voltage_unbalance_rate IS NOT NULL AND voltage_unbalance_rate > 0 THEN voltage_unbalance_rate " +
+        "           WHEN va IS NULL OR vb IS NULL OR vc IS NULL THEN NULL " +
+        "           WHEN ((va + vb + vc) / 3.0) <= 0 THEN NULL " +
+        "           ELSE 100.0 * ( " +
+        "             CASE " +
+        "               WHEN ABS(va - ((va + vb + vc) / 3.0)) >= ABS(vb - ((va + vb + vc) / 3.0)) AND ABS(va - ((va + vb + vc) / 3.0)) >= ABS(vc - ((va + vb + vc) / 3.0)) THEN ABS(va - ((va + vb + vc) / 3.0)) " +
+        "               WHEN ABS(vb - ((va + vb + vc) / 3.0)) >= ABS(vc - ((va + vb + vc) / 3.0)) THEN ABS(vb - ((va + vb + vc) / 3.0)) " +
+        "               ELSE ABS(vc - ((va + vb + vc) / 3.0)) " +
+        "             END " +
+        "           ) / ((va + vb + vc) / 3.0) " +
+        "         END AS effective_unb " +
+        "  FROM src WHERE rn = 1 " +
+        ") " +
+        "SELECT TOP " + n + " meter_id, meter_name, measured_at, effective_unb " +
+        "FROM calc WHERE effective_unb IS NOT NULL ORDER BY effective_unb DESC, measured_at DESC";
     try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
         int pi = 1;
         if (fromTs != null) ps.setTimestamp(pi++, fromTs);
@@ -3379,7 +4265,7 @@ private String getVoltageUnbalanceTopNContext(Integer topN, Timestamp fromTs, Ti
                 sb.append(" ").append(i).append(")")
                   .append("meter_id=").append(rs.getInt("meter_id"))
                   .append(", ").append(clip(rs.getString("meter_name"), 24))
-                  .append(", unb=").append(fmtNum(rs.getDouble("voltage_unbalance_rate")))
+                  .append(", unb=").append(fmtNum(rs.getDouble("effective_unb")))
                   .append(", t=").append(fmtTs(rs.getTimestamp("measured_at")))
                   .append(";");
             }
@@ -3388,6 +4274,56 @@ private String getVoltageUnbalanceTopNContext(Integer topN, Timestamp fromTs, Ti
         }
     } catch (Exception e) {
         return "[Voltage unbalance TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
+private String getCurrentUnbalanceCountContext(Double thresholdPct, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    double th = thresholdPct != null ? thresholdPct.doubleValue() : 10.0d;
+    StringBuilder where = new StringBuilder("WHERE 1=1 ");
+    if (fromTs != null) where.append("AND ms.measured_at >= ? ");
+    if (toTs != null) where.append("AND ms.measured_at < ? ");
+    String sql =
+        "WITH latest AS ( " +
+        "  SELECT m.meter_id, m.name AS meter_name, ms.measured_at, " +
+        "         CAST(ms.current_phase_a AS float) AS ia, " +
+        "         CAST(ms.current_phase_b AS float) AS ib, " +
+        "         CAST(ms.current_phase_c AS float) AS ic, " +
+        "         ROW_NUMBER() OVER (PARTITION BY m.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn " +
+        "  FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id " +
+        where.toString() +
+        "), calc AS ( " +
+        "  SELECT meter_id, meter_name, measured_at, ia, ib, ic, " +
+        "         ((ISNULL(ia,0) + ISNULL(ib,0) + ISNULL(ic,0)) / 3.0) AS avg_i " +
+        "  FROM latest WHERE rn = 1 " +
+        "), filtered AS ( " +
+        "  SELECT meter_id, meter_name, measured_at, " +
+        "         CASE WHEN avg_i <= 0 THEN NULL ELSE " +
+        "           (100.0 * (" +
+        "             CASE " +
+        "               WHEN ABS(ISNULL(ia,0) - avg_i) >= ABS(ISNULL(ib,0) - avg_i) AND ABS(ISNULL(ia,0) - avg_i) >= ABS(ISNULL(ic,0) - avg_i) THEN ABS(ISNULL(ia,0) - avg_i) " +
+        "               WHEN ABS(ISNULL(ib,0) - avg_i) >= ABS(ISNULL(ic,0) - avg_i) THEN ABS(ISNULL(ib,0) - avg_i) " +
+        "               ELSE ABS(ISNULL(ic,0) - avg_i) " +
+        "             END" +
+        "           ) / avg_i) END AS current_unbalance_pct " +
+        "  FROM calc " +
+        ") " +
+        "SELECT COUNT(*) AS meter_count " +
+        "FROM filtered WHERE current_unbalance_pct > ?";
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        int pi = 1;
+        if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+        if (toTs != null) ps.setTimestamp(pi++, toTs);
+        ps.setDouble(pi++, th);
+        ps.setQueryTimeout(10);
+        try (ResultSet rs = ps.executeQuery()) {
+            int count = rs.next() ? rs.getInt("meter_count") : 0;
+            StringBuilder sb = new StringBuilder("[Current unbalance count] threshold=").append(fmtNum(th));
+            if (periodLabel != null && !periodLabel.isEmpty()) sb.append("; period=").append(periodLabel);
+            sb.append("; count=").append(count);
+            return sb.toString();
+        }
+    } catch (Exception e) {
+        return "[Current unbalance count] unavailable: " + clip(e.getClass().getSimpleName(), 24);
     }
 }
 
@@ -3480,6 +4416,81 @@ private int getPowerFactorNoSignalCount(Timestamp fromTs, Timestamp toTs) {
     } catch (Exception e) {
         return -1;
     }
+}
+
+private String getPowerFactorNoSignalListContext(int topN, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+    int n = topN > 0 ? topN : 10;
+    StringBuilder srcWhere = new StringBuilder("WHERE 1=1 ");
+    if (fromTs != null) srcWhere.append("AND ms.measured_at >= ? ");
+    if (toTs != null) srcWhere.append("AND ms.measured_at < ? ");
+    String sql =
+        "WITH latest AS (" +
+        " SELECT ms.*, ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC) AS rn " +
+        " FROM dbo.measurements ms " + srcWhere.toString() +
+        ") " +
+        "SELECT TOP " + n + " m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at " +
+        "FROM latest ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " +
+        "WHERE ms.rn=1 " +
+        "AND (" +
+        " COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c)/3.0) IS NULL " +
+        " OR COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c)/3.0) = 0" +
+        ") " +
+        "ORDER BY ms.measured_at DESC";
+    try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        int pi = 1;
+        if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+        if (toTs != null) ps.setTimestamp(pi++, toTs);
+        ps.setQueryTimeout(10);
+        try (ResultSet rs = ps.executeQuery()) {
+            StringBuilder sb = new StringBuilder("[Power factor no signal]");
+            if (periodLabel != null && !periodLabel.isEmpty()) sb.append(" period=").append(periodLabel);
+            sb.append(";");
+            int i = 0;
+            while (rs.next()) {
+                i++;
+                sb.append(" ").append(i).append(")")
+                  .append("meter_id=").append(rs.getInt("meter_id"))
+                  .append(", ").append(clip(rs.getString("meter_name"), 24))
+                  .append(", panel=").append(clip(rs.getString("panel_name"), 24))
+                  .append(", t=").append(fmtTs(rs.getTimestamp("measured_at")))
+                  .append(";");
+            }
+            if (i == 0) return "[Power factor no signal] none";
+            return sb.toString();
+        }
+    } catch (Exception e) {
+        return "[Power factor no signal] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+    }
+}
+
+private String buildPowerFactorNoSignalListSnippet(String ctx) {
+    if (ctx == null || ctx.trim().isEmpty() || ctx.contains("none") || ctx.contains("unavailable")) return null;
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
+    String period = pm.find() ? trimToNull(pm.group(1)) : null;
+    java.util.ArrayList<String> items = new java.util.ArrayList<String>();
+    java.util.regex.Matcher row = java.util.regex.Pattern.compile(
+        "\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^,;]*),\\s*t=([^;]+);"
+    ).matcher(ctx);
+    while (row.find()) {
+        String meterId = trimToNull(row.group(1));
+        String meterName = trimToNull(row.group(2));
+        String panel = trimToNull(row.group(3));
+        String ts = trimToNull(row.group(4));
+        if (meterId == null || meterName == null) continue;
+        String item = meterName + "(" + meterId + ")";
+        if (panel != null && !panel.isEmpty() && !"-".equals(panel)) item += " / " + panel;
+        if (ts != null && !ts.isEmpty()) item += " / " + clip(ts, 19);
+        items.add(item);
+    }
+    if (items.isEmpty()) return null;
+    StringBuilder out = new StringBuilder();
+    if (period == null || period.isEmpty()) out.append("신호없음 계측기 예시:\n");
+    else out.append(period).append(" 신호없음 계측기 예시:\n");
+    for (int i = 0; i < items.size(); i++) {
+        out.append("- ").append(items.get(i));
+        if (i + 1 < items.size()) out.append("\n");
+    }
+    return out.toString();
 }
 
 private String getVoltagePhaseAngleContext(Integer meterId) {
@@ -4002,6 +5013,123 @@ private String buildBuildingPowerTopDirectAnswer(String ctx) {
     return period + " 건물별 전력 TOP은 " + String.join(" / ", parts) + "입니다.";
 }
 
+private String buildScopedMonthlyEnergyDirectAnswer(String ctx) {
+    if (ctx == null || ctx.trim().isEmpty()) {
+        return "구역별 전력 사용량 데이터를 찾지 못했습니다.";
+    }
+    if (ctx.contains("scope required")) {
+        return "건물이나 구역을 지정해 주세요. 예: 동관의 전체 사용량은?";
+    }
+    if (ctx.contains("unavailable")) {
+        return "구역별 전력 사용량을 현재 조회할 수 없습니다.";
+    }
+    if (ctx.contains("no data")) {
+        return "요청한 구역의 전력 사용량 데이터가 없습니다.";
+    }
+    java.util.regex.Matcher sm = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(ctx);
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([0-9]{4}-[0-9]{2})").matcher(ctx);
+    java.util.regex.Matcher lm = java.util.regex.Pattern.compile("leaf_meter_count=([0-9]+)").matcher(ctx);
+    java.util.regex.Matcher mm = java.util.regex.Pattern.compile("measured_meter_count=([0-9]+)").matcher(ctx);
+    java.util.regex.Matcher am = java.util.regex.Pattern.compile("avg_kw=([0-9.\\-]+)").matcher(ctx);
+    java.util.regex.Matcher km = java.util.regex.Pattern.compile("sum_kwh=([0-9.\\-]+)").matcher(ctx);
+    String scope = sm.find() ? trimToNull(sm.group(1)) : null;
+    String period = pm.find() ? trimToNull(pm.group(1)) : null;
+    String leafMeterCount = lm.find() ? trimToNull(lm.group(1)) : "0";
+    String measuredMeterCount = mm.find() ? trimToNull(mm.group(1)) : "0";
+    String avgKw = am.find() ? trimToNull(am.group(1)) : "-";
+    String sumKwh = km.find() ? trimToNull(km.group(1)) : "-";
+    String label = (scope == null || scope.isEmpty()) ? "해당 구역" : scope;
+    String prefix = (period == null || period.isEmpty()) ? (label + " 전체 사용량 조회 결과입니다.") : (label + " " + period + " 전력 사용량입니다.");
+    return prefix + "\n\n핵심 값:\n- 누적 전력량: " + sumKwh + "kWh\n- 평균전력: " + avgKw + "kW\n\n메타 정보:\n- 최종 리프 계측기 수: " + leafMeterCount + "개\n- 데이터 집계 리프 수: " + measuredMeterCount + "개";
+}
+
+private String buildPanelMonthlyEnergyDirectAnswer(String ctx) {
+    if (ctx == null || ctx.trim().isEmpty()) {
+        return "패널 전력 사용량 데이터를 찾지 못했습니다.";
+    }
+    if (ctx.contains("panel token required")) {
+        return "패널명을 지정해 주세요. 예: MDB_3C 패널 전체 사용량은?";
+    }
+    if (ctx.contains("unavailable")) {
+        return "패널 전력 사용량을 현재 조회할 수 없습니다.";
+    }
+    if (ctx.contains("no data")) {
+        return "요청한 패널의 전력 사용량 데이터가 없습니다.";
+    }
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("panel=([^;]+)").matcher(ctx);
+    java.util.regex.Matcher tm = java.util.regex.Pattern.compile("period=([0-9]{4}-[0-9]{2})").matcher(ctx);
+    java.util.regex.Matcher lm = java.util.regex.Pattern.compile("leaf_meter_count=([0-9]+)").matcher(ctx);
+    java.util.regex.Matcher mm = java.util.regex.Pattern.compile("measured_meter_count=([0-9]+)").matcher(ctx);
+    java.util.regex.Matcher am = java.util.regex.Pattern.compile("avg_kw=([0-9.\\-]+)").matcher(ctx);
+    java.util.regex.Matcher km = java.util.regex.Pattern.compile("sum_kwh=([0-9.\\-]+)").matcher(ctx);
+    String panel = pm.find() ? trimToNull(pm.group(1)) : null;
+    String period = tm.find() ? trimToNull(tm.group(1)) : null;
+    String leafMeterCount = lm.find() ? trimToNull(lm.group(1)) : "0";
+    String measuredMeterCount = mm.find() ? trimToNull(mm.group(1)) : "0";
+    String avgKw = am.find() ? trimToNull(am.group(1)) : "-";
+    String sumKwh = km.find() ? trimToNull(km.group(1)) : "-";
+    String label = (panel == null || panel.isEmpty()) ? "해당 패널" : panel;
+    String prefix = (period == null || period.isEmpty()) ? (label + " 전력 사용량 조회 결과입니다.") : (label + " " + period + " 전력 사용량입니다.");
+    return prefix + "\n\n핵심 값:\n- 누적 전력량: " + sumKwh + "kWh\n- 평균전력: " + avgKw + "kW\n\n메타 정보:\n- 최종 리프 계측기 수: " + leafMeterCount + "개\n- 데이터 집계 리프 수: " + measuredMeterCount + "개";
+}
+
+private String buildUsageMonthlyEnergyDirectAnswer(String ctx) {
+    if (ctx == null || ctx.trim().isEmpty()) {
+        return "용도별 전력 사용량 데이터를 찾지 못했습니다.";
+    }
+    if (ctx.contains("usage token required")) {
+        return "용도를 지정해 주세요. 예: 동력 용도 전체 사용량은?";
+    }
+    if (ctx.contains("unavailable")) {
+        return "용도별 전력 사용량을 현재 조회할 수 없습니다.";
+    }
+    if (ctx.contains("no data")) {
+        return "요청한 용도의 전력 사용량 데이터가 없습니다.";
+    }
+    java.util.regex.Matcher um = java.util.regex.Pattern.compile("usage=([^;]+)").matcher(ctx);
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([0-9]{4}-[0-9]{2})").matcher(ctx);
+    java.util.regex.Matcher lm = java.util.regex.Pattern.compile("leaf_meter_count=([0-9]+)").matcher(ctx);
+    java.util.regex.Matcher mm = java.util.regex.Pattern.compile("measured_meter_count=([0-9]+)").matcher(ctx);
+    java.util.regex.Matcher am = java.util.regex.Pattern.compile("avg_kw=([0-9.\\-]+)").matcher(ctx);
+    java.util.regex.Matcher km = java.util.regex.Pattern.compile("sum_kwh=([0-9.\\-]+)").matcher(ctx);
+    String usage = um.find() ? trimToNull(um.group(1)) : null;
+    String period = pm.find() ? trimToNull(pm.group(1)) : null;
+    String leafMeterCount = lm.find() ? trimToNull(lm.group(1)) : "0";
+    String measuredMeterCount = mm.find() ? trimToNull(mm.group(1)) : "0";
+    String avgKw = am.find() ? trimToNull(am.group(1)) : "-";
+    String sumKwh = km.find() ? trimToNull(km.group(1)) : "-";
+    String label = (usage == null || usage.isEmpty()) ? "해당 용도" : usage + " 용도";
+    String prefix = (period == null || period.isEmpty()) ? (label + " 전력 사용량 조회 결과입니다.") : (label + " " + period + " 전력 사용량입니다.");
+    return prefix + "\n\n핵심 값:\n- 누적 전력량: " + sumKwh + "kWh\n- 평균전력: " + avgKw + "kW\n\n메타 정보:\n- 최종 리프 계측기 수: " + leafMeterCount + "개\n- 데이터 집계 리프 수: " + measuredMeterCount + "개";
+}
+
+private String buildUsagePowerTopDirectAnswer(String ctx) {
+    if (ctx == null || ctx.trim().isEmpty()) {
+        return "용도별 전력 TOP 데이터를 찾지 못했습니다.";
+    }
+    if (ctx.contains("unavailable")) {
+        return "용도별 전력 TOP을 현재 조회할 수 없습니다.";
+    }
+    if (ctx.contains("no data")) {
+        return "용도별 전력 TOP 데이터가 없습니다.";
+    }
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([0-9]{4}-[0-9]{2})").matcher(ctx);
+    String period = pm.find() ? pm.group(1) : "-";
+    java.util.regex.Matcher row = java.util.regex.Pattern.compile("\\s[0-9]+\\)([^:;]+):\\s*avg_kw=([0-9.\\-]+),\\s*sum_kwh=([0-9.\\-]+);").matcher(ctx);
+    java.util.ArrayList<String> parts = new java.util.ArrayList<String>();
+    while (row.find()) {
+        String usage = trimToNull(row.group(1));
+        String avgKw = trimToNull(row.group(2));
+        String sumKwh = trimToNull(row.group(3));
+        if (usage == null || avgKw == null || sumKwh == null) continue;
+        parts.add(usage + " 평균전력 " + avgKw + "kW, 누적 " + sumKwh + "kWh");
+    }
+    if (parts.isEmpty()) {
+        return "용도별 전력 TOP 데이터가 없습니다.";
+    }
+    return period + " 용도별 전력 TOP은 " + String.join(" / ", parts) + "입니다.";
+}
+
 private String buildVoltageUnbalanceTopDirectAnswer(String ctx) {
     String delegated = invokeAgentAnswerFormatter(
         "buildVoltageUnbalanceTopDirectAnswer",
@@ -4087,6 +5215,51 @@ private String buildHarmonicExceedDirectAnswer(String ctx) {
         if (i + 1 < items.size()) out.append("\n");
     }
     return out.toString();
+}
+
+private String buildHarmonicExceedCountDirectAnswer(String ctx) {
+    if (ctx == null || ctx.trim().isEmpty()) return "고조파 이상 건수를 찾지 못했습니다.";
+    if (ctx.contains("unavailable")) return "고조파 이상 건수를 현재 조회할 수 없습니다.";
+    if (ctx.contains("none") || ctx.contains("no data")) return "고조파 이상 계측기는 0개입니다.";
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
+    String period = pm.find() ? trimToNull(pm.group(1)) : null;
+    java.util.regex.Matcher row = java.util.regex.Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+    int count = 0;
+    while (row.find()) count++;
+    if (count <= 0) return "고조파 이상 계측기는 0개입니다.";
+    if (period == null || period.isEmpty()) return "고조파 이상 계측기는 총 " + count + "개입니다.";
+    return period + " 고조파 이상 계측기는 총 " + count + "개입니다.";
+}
+
+private String buildHarmonicExceedStandardDirectAnswer() {
+    return "현재 고조파 이상 기준은 THD_V 3.0% 초과 또는 THD_I 20.0% 초과입니다.";
+}
+
+private String buildPowerFactorThresholdDirectAnswer() {
+    return "운영 기준으로는 보통 역률 0.90 미만을 이상으로 보고, 관리 목표는 0.95 이상으로 둡니다.";
+}
+
+private String buildEpmsKnowledgeDirectAnswer() {
+    return "네. 이 EPMS에서는 계측기 상태(전압/전루/역률/주파수), 알람, 전력량, 주파수, 역률, 고조파, 불평형 같은 전력 품질 정보를 조회하고 요약해서 답하도록 구성돼 있습니다.";
+}
+
+private String buildFrequencyOutlierStandardDirectAnswer() {
+    return "현재 주파수 이상치는 59.5Hz 미만이거나 60.5Hz 초과인 경우로 판단합니다.";
+}
+
+private String buildCurrentUnbalanceCountDirectAnswer(String ctx) {
+    if (ctx == null || ctx.trim().isEmpty()) return "전류 불평형 계측기 수를 찾지 못했습니다.";
+    if (ctx.contains("unavailable")) return "전류 불평형 계측기 수를 현재 조회할 수 없습니다.";
+    java.util.regex.Matcher tm = java.util.regex.Pattern.compile("threshold=([0-9.\\-]+)").matcher(ctx);
+    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
+    java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(ctx);
+    String threshold = tm.find() ? trimToNull(tm.group(1)) : "10.00";
+    String period = pm.find() ? trimToNull(pm.group(1)) : null;
+    String count = cm.find() ? trimToNull(cm.group(1)) : "0";
+    if (period == null || period.isEmpty()) {
+        return "전류 불평형 10% 초과 계측기는 총 " + count + "개입니다.".replace("10", threshold);
+    }
+    return period + " 기준 전류 불평형 " + threshold + "% 초과 계측기는 총 " + count + "개입니다.";
 }
 
 private String buildPowerFactorOutlierDirectAnswer(String ctx, int noSignalCount) {
@@ -4449,15 +5622,37 @@ private String buildDirectDbSummary(String userMessage, String meterCtx, String 
 }
 
 private String buildUserDbContext(String dbContext) {
+    String ctx = dbContext == null ? "" : dbContext.trim();
+    if (ctx.isEmpty()) return "";
+    if (ctx.contains("[Power factor outlier]")) {
+        int noSignalCount = getPowerFactorNoSignalCount();
+        String answer = buildPowerFactorOutlierDirectAnswer(ctx, noSignalCount);
+        if ((ctx.contains("none") || ctx.contains("no data")) && noSignalCount > 0) {
+            String noSignalCtx = getPowerFactorNoSignalListContext(10, null, null, null);
+            String snippet = buildPowerFactorNoSignalListSnippet(noSignalCtx);
+            if (snippet != null && !snippet.trim().isEmpty()) {
+                answer = answer + "\n\n" + snippet.trim();
+            }
+        }
+        return answer;
+    }
+
     String delegated = invokeAgentAnswerFormatter(
         "buildUserDbContext",
         new Class<?>[] { String.class },
         new Object[] { dbContext }
     );
     if (delegated != null) return delegated;
-
-    String ctx = dbContext == null ? "" : dbContext.trim();
-    if (ctx.isEmpty()) return "";
+    if (ctx.contains("[Harmonic exceed standard]")) return buildHarmonicExceedStandardDirectAnswer();
+    if (ctx.contains("[EPMS knowledge]")) return buildEpmsKnowledgeDirectAnswer();
+    if (ctx.contains("[Frequency outlier standard]")) return buildFrequencyOutlierStandardDirectAnswer();
+    if (ctx.contains("[PF threshold]")) return buildPowerFactorThresholdDirectAnswer();
+    if (ctx.contains("[Current unbalance count]")) return buildCurrentUnbalanceCountDirectAnswer(ctx);
+    if (ctx.contains("[Scoped monthly energy]")) return buildScopedMonthlyEnergyDirectAnswer(ctx);
+    if (ctx.contains("[Panel monthly energy]")) return buildPanelMonthlyEnergyDirectAnswer(ctx);
+    if (ctx.contains("[Usage monthly energy]")) return buildUsageMonthlyEnergyDirectAnswer(ctx);
+    if (ctx.contains("[Usage power TOP]")) return buildUsagePowerTopDirectAnswer(ctx);
+    if (ctx.contains("[Building power TOP]")) return buildBuildingPowerTopDirectAnswer(ctx);
 
     String fallback = ctx
         .replace("STATE=NO_SIGNAL", "신호없음")

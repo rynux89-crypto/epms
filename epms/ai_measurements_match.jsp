@@ -1,8 +1,30 @@
 ﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
+<%@ page import="java.text.DecimalFormat" %>
 <%@ include file="../includes/dbconn.jsp" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%!
+    private static final DecimalFormat DF_2 = new DecimalFormat("0.00");
+
+    private static String fmtNum2(Object value) {
+        if (value == null) return "-";
+        if (value instanceof Number) return DF_2.format(((Number)value).doubleValue());
+        return String.valueOf(value);
+    }
+
+    private static String classifyTokenGroup(String token) {
+        if (token == null) return "기타";
+        String t = token.trim().toUpperCase(Locale.ROOT);
+        if (t.startsWith("H_V")) return "전압 고조파";
+        if (t.startsWith("H_I")) return "전류 고조파";
+        if (t.startsWith("PV") || t.startsWith("PI")) return "위상각";
+        if ("PF".equals(t) || "HZ".equals(t) || "KW".equals(t) || "KWH".equals(t) || "KVAR".equals(t) || "KVARH".equals(t) || "PEAK".equals(t)) return "전력/에너지";
+        if (t.startsWith("A")) return "전류";
+        if (t.startsWith("V")) return "전압";
+        return "기타";
+    }
+%>
 <%
     String plcParam = request.getParameter("plc_id");
     String meterParam = request.getParameter("meter_id");
@@ -16,6 +38,8 @@
     List<Map<String, Object>> mappingRows = new ArrayList<>();
     List<Map<String, Object>> latestTokenRows = new ArrayList<>();
     Map<String, Object> latestMeasurement = new HashMap<>();
+    Map<String, Object> latestHarmonicMeasurement = new HashMap<>();
+    Map<String, List<Map<String, Object>>> latestTokenGroups = new LinkedHashMap<>();
     String error = null;
 
     try {
@@ -114,11 +138,37 @@
                     }
                 }
             }
+
+            String latestHarmonicSql =
+                "SELECT TOP 1 * FROM dbo.harmonic_measurements WHERE meter_id = ? ORDER BY measured_at DESC";
+            try (PreparedStatement ps = conn.prepareStatement(latestHarmonicSql)) {
+                ps.setInt(1, meterId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        ResultSetMetaData md = rs.getMetaData();
+                        for (int i = 1; i <= md.getColumnCount(); i++) {
+                            latestHarmonicMeasurement.put(md.getColumnName(i), rs.getObject(i));
+                        }
+                    }
+                }
+            }
         }
     } catch (Exception e) {
         error = e.getMessage();
     } finally {
         try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
+    }
+
+    String[] groupOrder = new String[]{"전압", "전류", "전력/에너지", "전압 고조파", "전류 고조파", "위상각", "기타"};
+    for (String groupName : groupOrder) latestTokenGroups.put(groupName, new ArrayList<Map<String, Object>>());
+    for (Map<String, Object> r : latestTokenRows) {
+        String groupName = classifyTokenGroup((String)r.get("token"));
+        List<Map<String, Object>> bucket = latestTokenGroups.get(groupName);
+        if (bucket == null) {
+            bucket = new ArrayList<Map<String, Object>>();
+            latestTokenGroups.put(groupName, bucket);
+        }
+        bucket.add(r);
     }
 %>
 <html>
@@ -136,6 +186,30 @@
         .b-no { background: #fff3e0; color: #b45309; border: 1px solid #ffd8a8; }
         .mono { font-family: Consolas, "Courier New", monospace; }
         td { font-size: 12px; }
+        .match-groups { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; }
+        .match-group { border: 1px solid #d8e2ee; border-radius: 14px; background: #f9fbfd; overflow: hidden; }
+        .match-group-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #eef4fa; border-bottom: 1px solid #d8e2ee; }
+        .match-group-title { font-size: 15px; font-weight: 700; color: #1f3347; }
+        .match-group-count { font-size: 12px; color: #54708b; }
+        .match-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 12px; }
+        .match-card { border: 1px solid #dbe6f0; border-radius: 12px; background: #fff; padding: 12px; box-shadow: 0 1px 2px rgba(20, 48, 76, 0.06); }
+        .match-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .match-card-token { font-size: 15px; font-weight: 700; color: #15324b; }
+        .match-card-index { font-size: 11px; color: #6b7f93; }
+        .match-card-meta { display: grid; grid-template-columns: 96px 1fr; gap: 4px 8px; font-size: 12px; margin-top: 8px; }
+        .match-card-meta dt { margin: 0; color: #70859a; font-weight: 700; }
+        .match-card-meta dd { margin: 0; color: #1f3347; }
+        .match-values { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .match-value-box { border-radius: 10px; padding: 10px; }
+        .match-value-box.plc { background: #edf7ff; border: 1px solid #cfe7fb; }
+        .match-value-box.target { background: #eef9f0; border: 1px solid #d7efd8; }
+        .match-value-label { font-size: 11px; color: #587086; margin-bottom: 4px; }
+        .match-value-num { font-size: 20px; font-weight: 700; color: #14324a; line-height: 1.1; }
+        .match-empty { padding: 16px; border: 1px dashed #c7d4e2; border-radius: 12px; background: #f8fbfe; color: #60768a; font-size: 13px; }
+        @media (max-width: 768px) {
+            .match-card-grid { grid-template-columns: 1fr; }
+            .match-values { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -182,7 +256,65 @@
         <button type="submit">검증 조회</button>
     </form>
 
-    <div class="section-title">1) 태그 매핑 정의</div>
+    <div class="section-title">1) 실측 비교 결과</div>
+    <% if (latestTokenRows.isEmpty()) { %>
+    <div class="match-empty">PLC와 Meter를 선택한 뒤 검증 데이터를 조회하세요.</div>
+    <% } else { %>
+    <div class="match-groups">
+        <% for (Map.Entry<String, List<Map<String, Object>>> entry : latestTokenGroups.entrySet()) { %>
+            <% if (entry.getValue().isEmpty()) continue; %>
+            <div class="match-group">
+                <div class="match-group-head">
+                    <div class="match-group-title"><%= h(entry.getKey()) %></div>
+                    <div class="match-group-count"><%= entry.getValue().size() %>개 항목</div>
+                </div>
+                <div class="match-card-grid">
+                    <% for (Map<String, Object> r : entry.getValue()) { %>
+                        <%
+                            String col = (String)r.get("measurement_column");
+                            String targetTable = null;
+                            for (Map<String, Object> mr : mappingRows) {
+                                if (col != null && col.equals(mr.get("measurement_column")) && String.valueOf(r.get("float_index")).equals(String.valueOf(mr.get("float_index")))) {
+                                    targetTable = (String)mr.get("target_table");
+                                    break;
+                                }
+                            }
+                            Object mv = null;
+                            if (col != null) {
+                                if ("harmonic_measurements".equalsIgnoreCase(targetTable)) mv = latestHarmonicMeasurement.get(col);
+                                else mv = latestMeasurement.get(col);
+                            }
+                        %>
+                        <div class="match-card">
+                            <div class="match-card-top">
+                                <div class="match-card-token mono"><%= h(r.get("token")) %></div>
+                                <div class="match-card-index mono">#<%= r.get("float_index") %></div>
+                            </div>
+                            <div class="match-values">
+                                <div class="match-value-box plc">
+                                    <div class="match-value-label">PLC 샘플값</div>
+                                    <div class="match-value-num mono"><%= h(fmtNum2(r.get("value_float"))) %></div>
+                                </div>
+                                <div class="match-value-box target">
+                                    <div class="match-value-label">최신 적재값</div>
+                                    <div class="match-value-num mono"><%= h(fmtNum2(mv)) %></div>
+                                </div>
+                            </div>
+                            <dl class="match-card-meta">
+                                <dt>컬럼</dt><dd class="mono"><%= h(col) %></dd>
+                                <dt>대상 테이블</dt><dd class="mono"><%= targetTable == null ? "-" : h(targetTable) %></dd>
+                                <dt>레지스터</dt><dd class="mono"><%= r.get("reg_address") %></dd>
+                                <dt>PLC 샘플시각</dt><dd><%= r.get("measured_at") == null ? "-" : h(r.get("measured_at")) %></dd>
+                            </dl>
+                        </div>
+                    <% } %>
+                </div>
+            </div>
+        <% } %>
+    </div>
+    <% } %>
+
+    <div class="section-title">2) 매핑 정의</div>
     <table>
         <thead>
         <tr>
@@ -208,44 +340,6 @@
             <td class="mono"><%= h(r.get("target_table")) %></td>
             <td><%= r.get("note") == null ? "-" : h(r.get("note")) %></td>
         </tr>
-        <% } %>
-        </tbody>
-    </table>
-
-    <div class="section-title">2) 선택 PLC/Meter의 최신 PLC 샘플 vs measurements 최신값 비교</div>
-    <table>
-        <thead>
-        <tr>
-            <th>float_index</th>
-            <th>tag</th>
-            <th>measurement_column</th>
-            <th>reg_address</th>
-            <th>PLC value_float</th>
-            <th>PLC measured_at</th>
-            <th>measurements latest value</th>
-        </tr>
-        </thead>
-        <tbody>
-        <% if (latestTokenRows.isEmpty()) { %>
-        <tr><td colspan="7">PLC와 Meter를 선택한 뒤 검증 데이터를 조회하세요.</td></tr>
-        <% } else { %>
-            <% for (Map<String, Object> r : latestTokenRows) { %>
-            <tr>
-                <td class="mono"><%= r.get("float_index") %></td>
-                <td class="mono"><%= h(r.get("token")) %></td>
-                <td class="mono"><%= h(r.get("measurement_column")) %></td>
-                <td class="mono"><%= r.get("reg_address") %></td>
-                <td class="mono"><%= r.get("value_float") == null ? "-" : h(r.get("value_float")) %></td>
-                <td><%= r.get("measured_at") == null ? "-" : h(r.get("measured_at")) %></td>
-                <td class="mono">
-                    <%
-                        String col = (String)r.get("measurement_column");
-                        Object mv = (col == null) ? null : latestMeasurement.get(col);
-                    %>
-                    <%= mv == null ? "-" : h(mv) %>
-                </td>
-            </tr>
-            <% } %>
         <% } %>
         </tbody>
     </table>

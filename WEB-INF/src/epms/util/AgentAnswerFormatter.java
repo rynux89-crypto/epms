@@ -690,6 +690,7 @@ public final class AgentAnswerFormatter {
         if (ctx.contains("[Phase voltage]")) return buildPhaseValueCard(ctx, true);
         if (ctx.contains("[Line voltage]")) return buildLineVoltageCard(ctx);
         if (ctx.contains("[Latest alarms]")) return buildLatestAlarmsDirectAnswer(ctx);
+        if (ctx.contains("[Scoped monthly energy]")) return buildScopedMonthlyEnergyDirectAnswer(ctx);
         if (ctx.contains("[Monthly frequency avg]")) {
             Matcher mid = Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
             Integer meterId = mid.find() ? Integer.valueOf(mid.group(1)) : null;
@@ -712,6 +713,34 @@ public final class AgentAnswerFormatter {
             .replace("no data", "데이터 없음")
             .replace("unavailable", "조회 불가");
         return clip(fallback, 600);
+    }
+
+    public static String buildScopedMonthlyEnergyDirectAnswer(String ctx) {
+        if (ctx == null || ctx.trim().isEmpty()) {
+            return "구역별 전력 사용량 데이터를 찾지 못했습니다.";
+        }
+        if (ctx.contains("scope required")) {
+            return "건물이나 구역을 지정해 주세요. 예: 동관의 전체 사용량은?";
+        }
+        if (ctx.contains("unavailable")) {
+            return "구역별 전력 사용량을 현재 조회할 수 없습니다.";
+        }
+        if (ctx.contains("no data")) {
+            return "요청한 구역의 전력 사용량 데이터가 없습니다.";
+        }
+        Matcher sm = Pattern.compile("scope=([^;]+)").matcher(ctx);
+        Matcher pm = Pattern.compile("period=([0-9]{4}-[0-9]{2})").matcher(ctx);
+        Matcher mm = Pattern.compile("meter_count=([0-9]+)").matcher(ctx);
+        Matcher am = Pattern.compile("avg_kw=([0-9.\\-]+)").matcher(ctx);
+        Matcher km = Pattern.compile("sum_kwh=([0-9.\\-]+)").matcher(ctx);
+        String scope = sm.find() ? trimToNull(sm.group(1)) : null;
+        String period = pm.find() ? trimToNull(pm.group(1)) : null;
+        String meterCount = mm.find() ? trimToNull(mm.group(1)) : "0";
+        String avgKw = am.find() ? trimToNull(am.group(1)) : "-";
+        String sumKwh = km.find() ? trimToNull(km.group(1)) : "-";
+        String label = (scope == null || scope.isEmpty()) ? "해당 구역" : scope;
+        String prefix = (period == null || period.isEmpty()) ? (label + " 전체 사용량 조회 결과입니다.") : (label + " " + period + " 전력 사용량입니다.");
+        return prefix + "\n\n핵심 값:\n- 누적 전력량: " + sumKwh + "kWh\n- 평균전력: " + avgKw + "kW\n\n메타 정보:\n- 집계 계측기 수: " + meterCount + "개";
     }
 
     private static String trimToNull(String s) {

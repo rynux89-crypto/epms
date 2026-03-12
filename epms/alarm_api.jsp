@@ -10,6 +10,7 @@
 <%!
     private static final ConcurrentHashMap<String, Integer> LAST_DI_VALUE_MAP = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> AI_PENDING_ON_MS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> DI_PENDING_ON_MS = new ConcurrentHashMap<>();
 
     private static class AlarmRule {
         int ruleId;
@@ -36,6 +37,30 @@
         int plcId;
         Timestamp measuredAt;
         List<Map<String, Object>> rows = Collections.emptyList();
+    }
+
+    private static class DiGroupMapRule {
+        String groupKey;
+        String metricKey;
+        String matchType;
+        String matchValue;
+        int priority;
+    }
+
+    private static class DiGroupRule {
+        String metricKey;
+        String matchMode;
+        Integer countThreshold;
+    }
+
+    private static class DiGroupState {
+        int pointId;
+        String metricKey;
+        int bitCount;
+        int onCount;
+        String itemName;
+        String panelName;
+        List<String> samples = new ArrayList<>();
     }
 
     private static class AiRequestPayload {
@@ -124,72 +149,9 @@
         return t.contains("WLIGHT") || t.contains("LIGHT");
     }
 
-    private static String normalizeTagKey(String tagName) {
-        if (tagName == null) return "";
-        String t = tagName.trim().toUpperCase(Locale.ROOT);
-        if (t.isEmpty()) return "";
-        t = t.replaceAll("[^A-Z0-9]+", "_");
-        t = t.replaceAll("_+", "_");
-        t = t.replaceAll("^_+|_+$", "");
-        if (t.length() > 64) t = t.substring(0, 64);
-        return t;
-    }
-
-    private static String compactEventToken(String normalizedTagKey, String... dropTokens) {
-        if (normalizedTagKey == null || normalizedTagKey.isEmpty()) return "";
-        Set<String> drop = new HashSet<>();
-        if (dropTokens != null) {
-            for (String d : dropTokens) {
-                if (d == null) continue;
-                String x = d.trim().toUpperCase(Locale.ROOT);
-                if (!x.isEmpty()) drop.add(x);
-            }
-        }
-        LinkedHashSet<String> uniq = new LinkedHashSet<>();
-        String[] parts = normalizedTagKey.split("_+");
-        for (String p : parts) {
-            if (p == null) continue;
-            String x = p.trim().toUpperCase(Locale.ROOT);
-            if (x.isEmpty()) continue;
-            if (drop.contains(x)) continue;
-            uniq.add(x);
-        }
-        if (uniq.isEmpty()) return "";
-        return String.join("_", uniq);
-    }
-
-    private static String buildDiEventType(int diAddress, int bitNo, String tagName) {
-        String tagKey = normalizeTagKey(tagName);
-        if (isTripAlarmBit(tagName)) {
-            String suffix = compactEventToken(tagKey, "DI", "TRIP", "TR", "ALARM");
-            if ("TM".equals(suffix)) return "DI_TR_ALARM";
-            return suffix.isEmpty() ? "DI_TRIP" : ("DI_TRIP_" + suffix);
-        }
-        if (isEldAlarmBit(tagName)) {
-            String suffix = compactEventToken(tagKey, "DI", "ELD");
-            if (suffix.matches("\\d+")) return "DI_ELD";
-            return suffix.isEmpty() ? "DI_ELD" : ("DI_ELD_" + suffix);
-        }
-        if (isTmAlarmBit(tagName)) {
-            String suffix = compactEventToken(tagKey, "DI", "TM", "TEMP");
-            return suffix.isEmpty() ? "DI_TM" : ("DI_TM_" + suffix);
-        }
-        if (isLightAlarmBit(tagName)) {
-            String suffix = compactEventToken(tagKey, "DI", "LIGHT", "WLIGHT");
-            return suffix.isEmpty() ? "DI_LIGHT" : ("DI_LIGHT_" + suffix);
-        }
-        if (!tagKey.isEmpty()) {
-            String suffix = compactEventToken(tagKey, "DI", "TAG");
-            if ("ON1_OFF1_ST1".equals(suffix) || "ON2_OFF2_ST2".equals(suffix)) return "DI_ON_OFF";
-            return suffix.isEmpty() ? "DI_TAG" : ("DI_TAG_" + suffix);
-        }
-        return "DI_BIT_" + bitNo;
-    }
-
-    private static String buildDiSeverity(String tagName) {
-        if (isTripAlarmBit(tagName) || isEldAlarmBit(tagName) || isTmAlarmBit(tagName)) return "ALARM";
-        if (isLightAlarmBit(tagName)) return "WARN";
-        return "WARN";
+    private static String normalizeMatchText(String s) {
+        if (s == null) return "";
+        return s.toUpperCase(Locale.ROOT).replace(" ", "").replace("\n", "").replace("\r", "").trim();
     }
 
     private static String b64urlDecode(String s) {
@@ -295,6 +257,14 @@
         insAlarm.setString(3, severity);
         insAlarm.setTimestamp(4, measuredAt);
         insAlarm.setString(5, description);
+        insAlarm.setNull(6, Types.INTEGER);
+        insAlarm.setNull(7, Types.VARCHAR);
+        insAlarm.setNull(8, Types.VARCHAR);
+        insAlarm.setNull(9, Types.VARCHAR);
+        insAlarm.setNull(10, Types.FLOAT);
+        insAlarm.setNull(11, Types.VARCHAR);
+        insAlarm.setNull(12, Types.FLOAT);
+        insAlarm.setNull(13, Types.FLOAT);
         insAlarm.executeUpdate();
     }
 
@@ -315,46 +285,6 @@
         insAlarm.executeUpdate();
     }
 
-    private static String buildDiOnDescription(int plcId, int pointId, int diAddress, int bitNo, String tagName, String itemName, String panelName) {
-        return "PLC " + plcId + " DI ON: point=" + pointId +
-               ", addr=" + diAddress + ", bit=" + bitNo +
-               ", tag=" + tagName + ", item=" + itemName + ", panel=" + panelName;
-    }
-
-    private static String buildGroupedAlarmDescription(String groupName, int plcId, int pointId, int diAddress, List<String> bitValues, String itemName, String panelName) {
-        return "PLC " + plcId + " " + groupName + " ALL ON: point=" + pointId +
-               ", addr=" + diAddress +
-               ", bits=" + String.join(",", bitValues) +
-               ", item=" + itemName + ", panel=" + panelName;
-    }
-
-    private static Map<String, Object> ensureDiGroup(Map<String, Map<String, Object>> groups, int pointId, int diAddress, String itemName, String panelName, String tagName) {
-        String gk = pointId + ":" + diAddress;
-        Map<String, Object> g = groups.get(gk);
-        if (g == null) {
-            g = new HashMap<>();
-            g.put("point_id", pointId);
-            g.put("di_address", diAddress);
-            g.put("item_name", itemName);
-            g.put("panel_name", panelName);
-            g.put("tag_name", tagName);
-            g.put("bit_count", 0);
-            g.put("on_count", 0);
-            g.put("bit_values", new ArrayList<String>());
-            groups.put(gk, g);
-        }
-        return g;
-    }
-
-    private static void accumulateDiGroup(Map<String, Map<String, Object>> groups, int plcId, int pointId, int diAddress, int bitNo, int value, String itemName, String panelName, String tagName) {
-        Map<String, Object> g = ensureDiGroup(groups, pointId, diAddress, itemName, panelName, tagName);
-        g.put("bit_count", ((Integer)g.get("bit_count")) + 1);
-        if (value == 1) g.put("on_count", ((Integer)g.get("on_count")) + 1);
-        @SuppressWarnings("unchecked")
-        List<String> bitValues = (List<String>)g.get("bit_values");
-        bitValues.add(bitNo + ":" + value);
-        LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
-    }
 
     private static int closeStaleAiStages(
             PreparedStatement selOpenAnyRule,
@@ -388,36 +318,6 @@
             clearOpenAlarm(clearAlarm, measuredAt, findOpenAlarmId(selAlarmOpen, meterId, et));
         }
         return closed;
-    }
-
-    private static OpenCloseCount applyGroupedDiAlarm(
-            PreparedStatement selOpen,
-            PreparedStatement ins,
-            PreparedStatement close,
-            PreparedStatement selAlarmOpen,
-            PreparedStatement insAlarm,
-            PreparedStatement clearAlarm,
-            Timestamp measuredAt,
-            int deviceId,
-            String eventType,
-            String description,
-            boolean shouldOpen) throws Exception {
-        OpenCloseCount count = new OpenCloseCount();
-        Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
-        if (shouldOpen) {
-            if (openEventId == null) {
-                String sev = "ALARM";
-                count.opened += insertDeviceEvent(ins, deviceId, eventType, measuredAt, sev, description);
-                Long openAlarmId = findOpenAlarmId(selAlarmOpen, deviceId, eventType);
-                if (openAlarmId == null) {
-                    insertDiAlarm(insAlarm, deviceId, eventType, sev, measuredAt, description);
-                }
-            }
-        } else if (openEventId != null) {
-            count.closed += closeOpenEvent(close, measuredAt, openEventId);
-            clearOpenAlarm(clearAlarm, measuredAt, findOpenAlarmId(selAlarmOpen, deviceId, eventType));
-        }
-        return count;
     }
 
     private static boolean evalOpen(String operator, Double t1, Double t2, double value) {
@@ -509,6 +409,16 @@
         return false;
     }
 
+    private static boolean looksLikeVoltageVariationKey(String k) {
+        if (k == null) return false;
+        return k.contains("VOLTAGE_VARIATION") || k.startsWith("V_VAR");
+    }
+
+    private static boolean looksLikeCurrentVariationKey(String k) {
+        if (k == null) return false;
+        return k.contains("CURRENT_VARIATION") || k.startsWith("I_VAR");
+    }
+
     private static void enrichGroupedMetrics(Map<String, Double> metricValues) {
         if (metricValues == null || metricValues.isEmpty()) return;
 
@@ -518,6 +428,8 @@
         List<Double> thdVoltage = new ArrayList<>();
         List<Double> thdCurrent = new ArrayList<>();
         List<Double> unbalance = new ArrayList<>();
+        List<Double> voltageVariation = new ArrayList<>();
+        List<Double> currentVariation = new ArrayList<>();
         List<Double> variation = new ArrayList<>();
 
         Double pf = null;
@@ -536,6 +448,8 @@
             if (looksLikeCurrentThdKey(k)) thdCurrent.add(v);
 
             if (k.contains("UNBALANCE")) unbalance.add(v);
+            if (looksLikeVoltageVariationKey(k)) voltageVariation.add(v);
+            if (looksLikeCurrentVariationKey(k)) currentVariation.add(v);
             if (k.contains("VARIATION") || k.endsWith("_VAR")) variation.add(v);
 
             if ("PF".equals(k) || "POWER_FACTOR".equals(k) || "PF_TOTAL".equals(k)) pf = v;
@@ -549,6 +463,8 @@
         Double thdVoltageMax = maxAbs(thdVoltage);
         Double thdCurrentMax = maxAbs(thdCurrent);
         Double unbMax = maxAbs(unbalance);
+        Double vVarMax = maxAbs(voltageVariation);
+        Double iVarMax = maxAbs(currentVariation);
         Double varMax = maxAbs(variation);
 
         if (vMax != null) {
@@ -575,6 +491,14 @@
         if (unbMax != null) {
             metricValues.put("UNBALANCE", unbMax);
             metricValues.put("UNBALANCE_MAX", unbMax);
+        }
+        if (vVarMax != null) {
+            metricValues.put("V_VARIATION", vVarMax);
+            metricValues.put("VOLTAGE_VARIATION", vVarMax);
+        }
+        if (iVarMax != null) {
+            metricValues.put("I_VARIATION", iVarMax);
+            metricValues.put("CURRENT_VARIATION", iVarMax);
         }
         if (varMax != null) {
             metricValues.put("VARIATION", varMax);
@@ -651,6 +575,16 @@
     private static List<AlarmRule> loadEnabledAiRules(Connection conn) throws Exception {
         List<AlarmRule> out = new ArrayList<>();
         String sql =
+            "IF OBJECT_ID('dbo.metric_catalog','U') IS NOT NULL " +
+            "SELECT r.rule_id, r.rule_code, r.target_scope, r.metric_key, r.source_token, r.message_template, r.operator, r.threshold1, r.threshold2, r.duration_sec, r.hysteresis, r.severity " +
+            "FROM dbo.alarm_rule r " +
+            "JOIN dbo.metric_catalog mc ON mc.metric_key = r.metric_key " +
+            "WHERE r.enabled = 1 " +
+            "  AND UPPER(r.target_scope) IN ('METER','AI') " +
+            "  AND mc.enabled = 1 " +
+            "  AND UPPER(ISNULL(mc.source_type,'AI')) IN ('AI','SYSTEM') " +
+            "ORDER BY r.rule_id " +
+            "ELSE " +
             "SELECT rule_id, rule_code, target_scope, metric_key, source_token, message_template, operator, threshold1, threshold2, duration_sec, hysteresis, severity " +
             "FROM dbo.alarm_rule " +
             "WHERE enabled = 1 AND UPPER(target_scope) IN ('METER','AI') " +
@@ -680,6 +614,128 @@
             }
         }
         return out;
+    }
+
+    private static List<AlarmRule> loadEnabledDiRules(Connection conn) throws Exception {
+        List<AlarmRule> out = new ArrayList<>();
+        String sql =
+            "SELECT rule_id, rule_code, target_scope, metric_key, source_token, message_template, operator, threshold1, threshold2, duration_sec, hysteresis, severity " +
+            "FROM dbo.alarm_rule " +
+            "WHERE enabled = 1 AND UPPER(target_scope) = 'PLC' " +
+            "ORDER BY rule_id";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                AlarmRule r = new AlarmRule();
+                r.ruleId = rs.getInt("rule_id");
+                r.ruleCode = rs.getString("rule_code");
+                r.targetScope = rs.getString("target_scope");
+                r.metricKey = rs.getString("metric_key");
+                r.sourceToken = rs.getString("source_token");
+                r.messageTemplate = rs.getString("message_template");
+                r.operator = rs.getString("operator");
+                Object t1 = rs.getObject("threshold1");
+                Object t2 = rs.getObject("threshold2");
+                Object hy = rs.getObject("hysteresis");
+                r.threshold1 = (t1 instanceof Number) ? ((Number)t1).doubleValue() : null;
+                r.threshold2 = (t2 instanceof Number) ? ((Number)t2).doubleValue() : null;
+                r.durationSec = rs.getInt("duration_sec");
+                r.hysteresis = (hy instanceof Number) ? ((Number)hy).doubleValue() : null;
+                r.severity = rs.getString("severity");
+                if (r.ruleCode == null || r.ruleCode.trim().isEmpty()) continue;
+                if (r.metricKey == null || r.metricKey.trim().isEmpty()) continue;
+                out.add(r);
+            }
+        }
+        return out;
+    }
+
+    private static List<DiGroupMapRule> loadEnabledDiGroupMapRules(Connection conn) {
+        List<DiGroupMapRule> out = new ArrayList<>();
+        String sql =
+            "IF OBJECT_ID('dbo.di_signal_group_map','U') IS NOT NULL " +
+            "SELECT group_key, metric_key, match_type, match_value, priority " +
+            "FROM dbo.di_signal_group_map WHERE enabled = 1 ORDER BY priority, group_map_id";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                DiGroupMapRule r = new DiGroupMapRule();
+                r.groupKey = rs.getString("group_key");
+                r.metricKey = rs.getString("metric_key");
+                r.matchType = rs.getString("match_type");
+                r.matchValue = rs.getString("match_value");
+                r.priority = rs.getInt("priority");
+                if (r.metricKey == null || r.metricKey.trim().isEmpty()) continue;
+                out.add(r);
+            }
+        } catch (Exception ignore) {
+        }
+        return out;
+    }
+
+    private static Map<String, DiGroupRule> loadEnabledDiGroupRules(Connection conn) {
+        Map<String, DiGroupRule> out = new HashMap<>();
+        String sql =
+            "IF OBJECT_ID('dbo.di_group_rule_map','U') IS NOT NULL " +
+            "SELECT metric_key, match_mode, count_threshold FROM dbo.di_group_rule_map WHERE enabled = 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                DiGroupRule r = new DiGroupRule();
+                r.metricKey = rs.getString("metric_key");
+                r.matchMode = rs.getString("match_mode");
+                Object x = rs.getObject("count_threshold");
+                r.countThreshold = (x instanceof Number) ? Integer.valueOf(((Number)x).intValue()) : null;
+                if (r.metricKey == null || r.metricKey.trim().isEmpty()) continue;
+                out.put(r.metricKey.trim().toUpperCase(Locale.ROOT), r);
+            }
+        } catch (Exception ignore) {
+        }
+        return out;
+    }
+
+    private static boolean matchesDiGroupRule(Map<String, Object> row, DiGroupMapRule rule) {
+        if (row == null || rule == null) return false;
+        String matchType = rule.matchType == null ? "" : rule.matchType.trim().toUpperCase(Locale.ROOT);
+        String matchValue = normalizeMatchText(rule.matchValue);
+        if (matchValue.isEmpty()) return false;
+        if ("TAG_NAME".equals(matchType)) return normalizeMatchText(String.valueOf(row.get("tag_name") == null ? "" : row.get("tag_name"))).contains(matchValue);
+        if ("ITEM_NAME".equals(matchType)) return normalizeMatchText(String.valueOf(row.get("item_name") == null ? "" : row.get("item_name"))).contains(matchValue);
+        if ("PANEL_NAME".equals(matchType)) return normalizeMatchText(String.valueOf(row.get("panel_name") == null ? "" : row.get("panel_name"))).contains(matchValue);
+        if ("POINT_ID".equals(matchType)) return String.valueOf(((Number)row.get("point_id")).intValue()).equals(matchValue);
+        if ("ADDRESS_BIT".equals(matchType)) {
+            String key = ((Number)row.get("di_address")).intValue() + ":" + ((Number)row.get("bit_no")).intValue();
+            return key.equals(matchValue) || key.equals(matchValue.replace('.', ':'));
+        }
+        return false;
+    }
+
+    private static boolean evalDiGroupActive(DiGroupRule groupRule, DiGroupState state) {
+        if (state == null || state.bitCount <= 0) return false;
+        String mode = groupRule == null || groupRule.matchMode == null ? "ANY_ON" : groupRule.matchMode.trim().toUpperCase(Locale.ROOT);
+        if ("ALL_ON".equals(mode)) return state.onCount == state.bitCount;
+        if ("COUNT_GE".equals(mode)) {
+            int threshold = (groupRule == null || groupRule.countThreshold == null || groupRule.countThreshold.intValue() <= 0) ? 1 : groupRule.countThreshold.intValue();
+            return state.onCount >= threshold;
+        }
+        return state.onCount >= 1;
+    }
+
+    private static void insertDiRuleAlarm(PreparedStatement insAlarm, int deviceId, String eventType, String severity, Timestamp measuredAt, String description, AlarmRule rule, double value) throws Exception {
+        insAlarm.setInt(1, deviceId);
+        insAlarm.setString(2, eventType);
+        insAlarm.setString(3, severity);
+        insAlarm.setTimestamp(4, measuredAt);
+        insAlarm.setString(5, description);
+        insAlarm.setInt(6, rule.ruleId);
+        insAlarm.setString(7, rule.ruleCode);
+        insAlarm.setString(8, rule.metricKey);
+        insAlarm.setString(9, (rule.sourceToken == null || rule.sourceToken.trim().isEmpty()) ? rule.metricKey : rule.sourceToken);
+        insAlarm.setDouble(10, value);
+        insAlarm.setString(11, rule.operator);
+        if (rule.threshold1 == null) insAlarm.setNull(12, Types.FLOAT); else insAlarm.setDouble(12, rule.threshold1.doubleValue());
+        if (rule.threshold2 == null) insAlarm.setNull(13, Types.FLOAT); else insAlarm.setDouble(13, rule.threshold2.doubleValue());
+        insAlarm.executeUpdate();
     }
 
     private static int[] processAiEvents(int plcId, List<AiRow> aiRows, Timestamp measuredAt) throws Exception {
@@ -834,8 +890,8 @@
             "WHERE meter_id = ? AND alarm_type = ? AND cleared_at IS NULL " +
             "ORDER BY alarm_id DESC";
         String insAlarmSql =
-            "INSERT INTO dbo.alarm_log (meter_id, alarm_type, severity, triggered_at, description) " +
-            "VALUES (?, ?, ?, ?, ?)";
+            "INSERT INTO dbo.alarm_log (meter_id, alarm_type, severity, triggered_at, description, rule_id, rule_code, metric_key, source_token, measured_value, operator, threshold1, threshold2) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         String clearAlarmSql =
             "UPDATE dbo.alarm_log SET cleared_at = ? WHERE alarm_id = ?";
 
@@ -849,9 +905,20 @@
 
             ensureAlarmSchema(conn);
 
-            Map<String, Map<String, Object>> ocrGroups = new LinkedHashMap<>();
-            Map<String, Map<String, Object>> ocgrGroups = new LinkedHashMap<>();
-            Map<String, Map<String, Object>> ovrGroups = new LinkedHashMap<>();
+            List<AlarmRule> diRules = loadEnabledDiRules(conn);
+            Map<String, AlarmRule> diRuleByMetric = new HashMap<>();
+            for (AlarmRule r : diRules) {
+                diRuleByMetric.put(r.metricKey.trim().toUpperCase(Locale.ROOT), r);
+            }
+            List<DiGroupMapRule> dbGroupMapRules = loadEnabledDiGroupMapRules(conn);
+            Map<String, DiGroupRule> dbGroupRules = loadEnabledDiGroupRules(conn);
+            Map<String, DiGroupState> dbGroupStates = new LinkedHashMap<>();
+            Set<String> dbGroupMetricKeys = new HashSet<>();
+            for (DiGroupMapRule gm : dbGroupMapRules) {
+                if (gm.metricKey != null && !gm.metricKey.trim().isEmpty()) {
+                    dbGroupMetricKeys.add(gm.metricKey.trim().toUpperCase(Locale.ROOT));
+                }
+            }
 
             for (Map<String, Object> row : diRows) {
                 int pointId = ((Number)row.get("point_id")).intValue();
@@ -862,136 +929,112 @@
                 String itemName = String.valueOf(row.get("item_name") == null ? "" : row.get("item_name"));
                 String panelName = String.valueOf(row.get("panel_name") == null ? "" : row.get("panel_name"));
 
-                if (isOcrAlarmBit(tagName)) {
-                    accumulateDiGroup(ocrGroups, plcId, pointId, diAddress, bitNo, value, itemName, panelName, tagName);
-                    continue;
-                }
-                if (isOcgrAlarmBit(tagName)) {
-                    accumulateDiGroup(ocgrGroups, plcId, pointId, diAddress, bitNo, value, itemName, panelName, tagName);
-                    continue;
-                }
-                if (isOvrAlarmBit(tagName)) {
-                    accumulateDiGroup(ovrGroups, plcId, pointId, diAddress, bitNo, value, itemName, panelName, tagName);
-                    continue;
-                }
-
-                int deviceId = pointId;
-                String eventType = buildDiEventType(diAddress, bitNo, tagName);
-                String diKey = plcId + ":" + pointId + ":" + diAddress + ":" + bitNo;
-                Integer prev = LAST_DI_VALUE_MAP.get(diKey);
-
-                if (prev == null) {
-                    if (value == 1) {
-                        Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
-                        if (openEventId == null) {
-                            String desc = buildDiOnDescription(plcId, pointId, diAddress, bitNo, tagName, itemName, panelName);
-                            String sev = buildDiSeverity(tagName);
-                            opened += insertDeviceEvent(ins, deviceId, eventType, measuredAt, sev, desc);
-                            if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
-                                Long openAlarmId = findOpenAlarmId(selAlarmOpen, deviceId, eventType);
-                                if (openAlarmId == null) {
-                                    insertDiAlarm(insAlarm, deviceId, eventType, sev, measuredAt, desc);
-                                }
-                            }
-                        }
+                boolean matchedByDbGroup = false;
+                for (DiGroupMapRule gm : dbGroupMapRules) {
+                    if (!matchesDiGroupRule(row, gm)) continue;
+                    matchedByDbGroup = true;
+                    String metricKey = gm.metricKey == null ? "" : gm.metricKey.trim().toUpperCase(Locale.ROOT);
+                    String groupStateKey = pointId + "|" + metricKey;
+                    DiGroupState gs = dbGroupStates.get(groupStateKey);
+                    if (gs == null) {
+                        gs = new DiGroupState();
+                        gs.pointId = pointId;
+                        gs.metricKey = metricKey;
+                        gs.itemName = itemName;
+                        gs.panelName = panelName;
+                        dbGroupStates.put(groupStateKey, gs);
                     }
-                    LAST_DI_VALUE_MAP.put(diKey, value);
+                    gs.bitCount++;
+                    if (value == 1) gs.onCount++;
+                    if (gs.samples.size() < 8) {
+                        gs.samples.add("addr=" + diAddress + ", bit=" + bitNo + ", tag=" + tagName);
+                    }
+                }
+                if (matchedByDbGroup) {
+                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
                     continue;
                 }
 
-                if (prev.intValue() == 0 && value == 1) {
-                    Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
-                    if (openEventId == null) {
-                        String desc = buildDiOnDescription(plcId, pointId, diAddress, bitNo, tagName, itemName, panelName);
-                        String sev = buildDiSeverity(tagName);
-                        opened += insertDeviceEvent(ins, deviceId, eventType, measuredAt, sev, desc);
-                        if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
-                            Long openAlarmId = findOpenAlarmId(selAlarmOpen, deviceId, eventType);
-                            if (openAlarmId == null) {
-                                insertDiAlarm(insAlarm, deviceId, eventType, sev, measuredAt, desc);
-                            }
-                        }
-                    }
-                } else if (prev.intValue() == 1 && value == 0) {
-                    Long openEventId = findOpenEventId(selOpen, deviceId, eventType);
-                    if (openEventId != null) {
+                // If a corresponding DI_GROUP_* mapping exists, do not fall back to legacy hardcoded path.
+                // This keeps DI evaluation on the DB-driven group/rule path when the project defines that group.
+                if ((isTripAlarmBit(tagName) && dbGroupMetricKeys.contains("DI_GROUP_TRIP")) ||
+                    (isEldAlarmBit(tagName) && dbGroupMetricKeys.contains("DI_GROUP_ELD")) ||
+                    (isTmAlarmBit(tagName) && dbGroupMetricKeys.contains("DI_GROUP_TM")) ||
+                    (isOcrAlarmBit(tagName) && dbGroupMetricKeys.contains("DI_GROUP_OCR")) ||
+                    (isOcgrAlarmBit(tagName) && dbGroupMetricKeys.contains("DI_GROUP_OCGR")) ||
+                    (isOvrAlarmBit(tagName) && dbGroupMetricKeys.contains("DI_GROUP_OVR"))) {
+                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
+                    continue;
+                }
+
+                // LIGHT is treated as a DO bit in this project and should not generate DI alarms.
+                if (isLightAlarmBit(tagName)) {
+                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
+                    continue;
+                }
+
+                // No DB DI group matched. Keep last sampled bit state, but do not create alarms.
+                LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
+            }
+
+            for (DiGroupState state : dbGroupStates.values()) {
+                AlarmRule rule = diRuleByMetric.get(state.metricKey);
+                if (rule == null) continue;
+                DiGroupRule groupRule = dbGroupRules.get(state.metricKey);
+                boolean active = evalDiGroupActive(groupRule, state);
+                double evalValue = active ? 1.0d : 0.0d;
+                boolean shouldOpen = evalOpen(rule.operator, rule.threshold1, rule.threshold2, evalValue);
+                String eventType = "DI_RULE_" + rule.ruleCode.trim().toUpperCase(Locale.ROOT);
+                Long openEventId = findOpenEventId(selOpen, state.pointId, eventType);
+
+                if (!shouldOpen) {
+                    DI_PENDING_ON_MS.remove(plcId + ":" + state.pointId + ":" + eventType);
+                    if (openEventId != null && shouldCloseOpenEvent(rule, evalValue)) {
                         closed += closeOpenEvent(close, measuredAt, openEventId);
-                        clearOpenAlarm(clearAlarm, measuredAt, findOpenAlarmId(selAlarmOpen, deviceId, eventType));
+                        clearOpenAlarm(clearAlarm, measuredAt, findOpenAlarmId(selAlarmOpen, state.pointId, eventType));
                     }
+                    continue;
                 }
-                LAST_DI_VALUE_MAP.put(diKey, value);
+
+                if (openEventId != null) {
+                    DI_PENDING_ON_MS.remove(plcId + ":" + state.pointId + ":" + eventType);
+                    continue;
+                }
+
+                String pendingKey = plcId + ":" + state.pointId + ":" + eventType;
+                long nowMs = measuredAt.getTime();
+                long startMs = DI_PENDING_ON_MS.containsKey(pendingKey) ? DI_PENDING_ON_MS.get(pendingKey).longValue() : nowMs;
+                DI_PENDING_ON_MS.putIfAbsent(pendingKey, Long.valueOf(nowMs));
+                int holdSec = Math.max(0, rule.durationSec);
+                if (holdSec > 0 && (nowMs - startMs) < (holdSec * 1000L)) {
+                    continue;
+                }
+
+                String desc =
+                    "PLC " + plcId + " DI grouped alarm: point=" + state.pointId +
+                    ", rule=" + rule.ruleCode +
+                    ", metric=" + rule.metricKey +
+                    ", on=" + state.onCount + "/" + state.bitCount +
+                    ", panel=" + state.panelName +
+                    ", item=" + state.itemName +
+                    ", samples=" + String.join(" ; ", state.samples);
+                if (rule.messageTemplate != null && !rule.messageTemplate.trim().isEmpty()) {
+                    String mt = rule.messageTemplate;
+                    mt = mt.replace("{metric_key}", rule.metricKey == null ? "" : rule.metricKey);
+                    mt = mt.replace("{value}", String.format(Locale.US, "%.0f", evalValue));
+                    mt = mt.replace("{source_token}", rule.sourceToken == null ? "" : rule.sourceToken);
+                    if (!mt.trim().isEmpty()) desc = mt + " | " + desc;
+                }
+
+                String sev = (rule.severity == null || rule.severity.trim().isEmpty()) ? "ALARM" : rule.severity.trim().toUpperCase(Locale.ROOT);
+                opened += insertDeviceEvent(ins, state.pointId, eventType, measuredAt, sev, desc);
+                Long openAlarmId = findOpenAlarmId(selAlarmOpen, state.pointId, eventType);
+                if (openAlarmId == null) {
+                    insertDiRuleAlarm(insAlarm, state.pointId, eventType, sev, measuredAt, desc, rule, evalValue);
+                }
+                DI_PENDING_ON_MS.remove(pendingKey);
             }
 
-            for (Map<String, Object> g : ocrGroups.values()) {
-                int pointId = (Integer)g.get("point_id");
-                int diAddress = (Integer)g.get("di_address");
-                int bitCount = (Integer)g.get("bit_count");
-                int onCount = (Integer)g.get("on_count");
-                String itemName = String.valueOf(g.get("item_name") == null ? "" : g.get("item_name"));
-                String panelName = String.valueOf(g.get("panel_name") == null ? "" : g.get("panel_name"));
-                String tagName = String.valueOf(g.get("tag_name") == null ? "" : g.get("tag_name"));
-                @SuppressWarnings("unchecked")
-                List<String> bitValues = (List<String>)g.get("bit_values");
-
-                if (bitCount <= 0) continue;
-                boolean allOn = (onCount == bitCount);
-                int deviceId = pointId;
-                String tagKey = compactEventToken(normalizeTagKey(tagName), "DI", "OCR");
-                String eventType = tagKey.isEmpty() ? "DI_OCR_ALL" : ("DI_OCR_ALL_" + tagKey);
-
-                String desc = buildGroupedAlarmDescription("OCR", plcId, pointId, diAddress, bitValues, itemName, panelName);
-                OpenCloseCount count = applyGroupedDiAlarm(selOpen, ins, close, selAlarmOpen, insAlarm, clearAlarm, measuredAt, deviceId, eventType, desc, allOn);
-                opened += count.opened;
-                closed += count.closed;
-            }
-
-            for (Map<String, Object> g : ocgrGroups.values()) {
-                int pointId = (Integer)g.get("point_id");
-                int diAddress = (Integer)g.get("di_address");
-                int bitCount = (Integer)g.get("bit_count");
-                int onCount = (Integer)g.get("on_count");
-                String itemName = String.valueOf(g.get("item_name") == null ? "" : g.get("item_name"));
-                String panelName = String.valueOf(g.get("panel_name") == null ? "" : g.get("panel_name"));
-                String tagName = String.valueOf(g.get("tag_name") == null ? "" : g.get("tag_name"));
-                @SuppressWarnings("unchecked")
-                List<String> bitValues = (List<String>)g.get("bit_values");
-
-                if (bitCount <= 0) continue;
-                boolean allOn = (onCount == bitCount);
-                int deviceId = pointId;
-                String tagKey = compactEventToken(normalizeTagKey(tagName), "DI", "OCGR");
-                String eventType;
-                if ("51G".equals(tagKey)) eventType = "DI_OCGR_51G";
-                else eventType = tagKey.isEmpty() ? "DI_OCGR_ALL" : ("DI_OCGR_ALL_" + tagKey);
-
-                String desc = buildGroupedAlarmDescription("OCGR", plcId, pointId, diAddress, bitValues, itemName, panelName);
-                OpenCloseCount count = applyGroupedDiAlarm(selOpen, ins, close, selAlarmOpen, insAlarm, clearAlarm, measuredAt, deviceId, eventType, desc, allOn);
-                opened += count.opened;
-                closed += count.closed;
-            }
-
-            for (Map<String, Object> g : ovrGroups.values()) {
-                int pointId = (Integer)g.get("point_id");
-                int diAddress = (Integer)g.get("di_address");
-                int bitCount = (Integer)g.get("bit_count");
-                int onCount = (Integer)g.get("on_count");
-                String itemName = String.valueOf(g.get("item_name") == null ? "" : g.get("item_name"));
-                String panelName = String.valueOf(g.get("panel_name") == null ? "" : g.get("panel_name"));
-                String tagName = String.valueOf(g.get("tag_name") == null ? "" : g.get("tag_name"));
-                @SuppressWarnings("unchecked")
-                List<String> bitValues = (List<String>)g.get("bit_values");
-
-                if (bitCount <= 0) continue;
-                boolean allOn = (onCount == bitCount);
-                int deviceId = pointId;
-                String tagKey = compactEventToken(normalizeTagKey(tagName), "DI", "OVR");
-                String eventType = tagKey.isEmpty() ? "DI_OVR_ALL" : ("DI_OVR_ALL_" + tagKey);
-
-                String desc = buildGroupedAlarmDescription("OVR", plcId, pointId, diAddress, bitValues, itemName, panelName);
-                OpenCloseCount count = applyGroupedDiAlarm(selOpen, ins, close, selAlarmOpen, insAlarm, clearAlarm, measuredAt, deviceId, eventType, desc, allOn);
-                opened += count.opened;
-                closed += count.closed;
-            }
         }
         return new int[]{opened, closed};
     }

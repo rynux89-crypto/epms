@@ -1,4 +1,5 @@
 ﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
+<%@ include file="/WEB-INF/include/app_version.jspf" %>
 <html>
 <head>
     <title>EPMS 전력 품질 관리 메인</title>
@@ -7,7 +8,7 @@
         body{max-width:1400px;margin:20px auto;padding:0 16px}
         .page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:18px}
         .page-head p{margin:0;color:var(--muted)}
-        .container{align-items:start;gap:26px}
+        .container{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:start;gap:18px}
         .section{position:relative;padding:18px 18px 20px;border-width:2px;box-shadow:0 16px 30px rgba(15,23,42,.08)}
         .section::before{content:"";position:absolute;left:0;top:0;right:0;height:12px;border-radius:14px 14px 0 0}
         .section.monitoring{background:linear-gradient(180deg,#ffffff 0%,#f4f9ff 100%);border-color:#cfe0ff}
@@ -29,8 +30,8 @@
         .section-eyebrow .eyebrow-icon svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
         .section-header{padding-top:6px}
         .section h2{padding-bottom:10px;border-bottom:1px solid rgba(148,163,184,.22);margin-bottom:4px}
-        .section-links{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:12px;align-items:start}
-        .app-card{min-height:168px;height:auto;padding:0;overflow:hidden;border:1px solid #cbd7e6;border-radius:14px;background:#fff;box-shadow:0 10px 22px rgba(15,23,42,.08);align-self:start}
+        .section-links{display:flex !important;flex-direction:column;gap:12px;align-items:stretch}
+        .app-card{min-height:0;height:auto;padding:0;overflow:hidden;border:1px solid #cbd7e6;border-radius:14px;background:#fff;box-shadow:0 10px 22px rgba(15,23,42,.08);align-self:stretch}
         .app-card a.sub-card-link{display:grid;grid-template-rows:auto auto auto;gap:10px;height:auto;min-height:168px;padding:16px 14px;color:inherit;text-decoration:none;background:linear-gradient(180deg,#ffffff 0%,#f8fbfd 100%);border-top:6px solid #b8c7da;transition:transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease}
         .app-card a.sub-card-link:hover{transform:translateY(-3px);background:linear-gradient(180deg,#ffffff 0%,#eef5ff 100%);border-top-color:#4f83cc}
         .tile-head{display:flex;align-items:flex-start;gap:10px}
@@ -49,8 +50,9 @@
         .section.energy .app-card a.sub-card-link{border-top-color:#e7b85c}
         .section.system .app-card a.sub-card-link{border-top-color:#9f8ae0}
         .section.plc .app-card a.sub-card-link{border-top-color:#6cc8c5}
-        @media (max-width:1100px){.section-links{grid-template-columns:repeat(2,minmax(0,1fr)) !important}}
-        @media (max-width:768px){.page-head{flex-direction:column;align-items:flex-start}.container{gap:18px}.section{padding:16px}.section-links{grid-template-columns:1fr !important}}
+        @media (max-width:1280px){.container{grid-template-columns:repeat(3,minmax(0,1fr))}}
+        @media (max-width:900px){.container{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media (max-width:768px){.page-head{flex-direction:column;align-items:flex-start}.container{grid-template-columns:1fr;gap:18px}.section{padding:16px}}
     </style>
 </head>
 <body>
@@ -59,7 +61,7 @@
         <h1>EPMS 전력 품질 관리 시스템</h1>
         <p>모니터링, 에너지 관리, 알람, PLC 운영 화면을 공통 대시보드 스타일로 제공합니다.</p>
     </div>
-    <div class="meta-info" style="width:auto;">Version 0.5.1</div>
+    <div class="meta-info" style="width:auto;">Version <%= APP_VERSION %></div>
 </div>
 
 <div class="container">
@@ -216,6 +218,13 @@
                 <a href="metric_catalog_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16v10H4z"/><path d="M9 7V5h6v2"/></svg></span><h3>지표키 카탈로그</h3></div>
                     <p>알람 및 품질 지표 키를 관리합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="di_group_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M5 7h6v4H5z"/><path d="M13 7h6v4h-6z"/><path d="M9 13h6v4H9z"/><path d="M11 9h2v4"/></svg></span><h3>DI 그룹 관리</h3></div>
+                    <p>DI bit를 기반으로 그룹 후보를 추론하고 규칙용 그룹을 등록합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>

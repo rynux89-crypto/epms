@@ -124,7 +124,20 @@
         .b-on { background: #e8f7ec; color: #1b7f3b; border: 1px solid #b9e6c6; }
         .b-off { background: #fff3e0; color: #b45309; border: 1px solid #ffd8a8; }
         td { font-size: 12px; }
+        th { font-size: 12px; white-space: nowrap; }
+        .th-wrap { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
         .mono { font-family: Consolas, "Courier New", monospace; }
+        .sort-btn {
+            padding: 3px 8px;
+            font-size: 12px;
+            line-height: 1.4;
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            background: #f8fafc;
+            color: #334155;
+            cursor: pointer;
+        }
+        .sort-btn:hover { background: #eef2f7; }
     </style>
 </head>
 <body>
@@ -172,20 +185,20 @@
     <table>
         <thead>
         <tr>
-            <th>map_id</th>
-            <th>plc_id</th>
-            <th>meter_id</th>
-            <th>meter_name</th>
-            <th>panel</th>
-            <th>building</th>
-            <th>DB start_address</th>
-            <th>float_count</th>
-            <th>byte_order</th>
-            <th>enabled</th>
-            <th>updated_at</th>
+            <th><span class="th-wrap"><span>map_id</span><button type="button" class="sort-btn" data-col="0">ASC</button></span></th>
+            <th><span class="th-wrap"><span>plc_id</span><button type="button" class="sort-btn" data-col="1">ASC</button></span></th>
+            <th><span class="th-wrap"><span>meter_id</span><button type="button" class="sort-btn" data-col="2">ASC</button></span></th>
+            <th><span class="th-wrap"><span>meter_name</span><button type="button" class="sort-btn" data-col="3">ASC</button></span></th>
+            <th><span class="th-wrap"><span>panel</span><button type="button" class="sort-btn" data-col="4">ASC</button></span></th>
+            <th><span class="th-wrap"><span>building</span><button type="button" class="sort-btn" data-col="5">ASC</button></span></th>
+            <th><span class="th-wrap"><span>DB start_address</span><button type="button" class="sort-btn" data-col="6">ASC</button></span></th>
+            <th><span class="th-wrap"><span>float_count</span><button type="button" class="sort-btn" data-col="7">ASC</button></span></th>
+            <th><span class="th-wrap"><span>byte_order</span><button type="button" class="sort-btn" data-col="8">ASC</button></span></th>
+            <th><span class="th-wrap"><span>enabled</span><button type="button" class="sort-btn" data-col="9">ASC</button></span></th>
+            <th><span class="th-wrap"><span>updated_at</span><button type="button" class="sort-btn" data-col="10">ASC</button></span></th>
         </tr>
         </thead>
-        <tbody>
+        <tbody id="aiMappingBody">
         <% if (rows.isEmpty()) { %>
         <tr><td colspan="11">데이터가 없습니다.</td></tr>
         <% } else { %>
@@ -215,6 +228,40 @@
     </table>
 </div>
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<script>
+(function(){
+  const tbody = document.getElementById('aiMappingBody');
+  if (!tbody) return;
+
+  function cellValue(tr, colIdx) {
+    const td = tr.children[colIdx];
+    return td ? String(td.textContent || '').trim() : '';
+  }
+
+  function compareAsc(a, b, colIdx) {
+    const av = cellValue(a, colIdx);
+    const bv = cellValue(b, colIdx);
+    const an = Number(av);
+    const bn = Number(bv);
+    if (av !== '' && bv !== '' && Number.isFinite(an) && Number.isFinite(bn)) {
+      return an - bn;
+    }
+    return av.localeCompare(bv, 'ko', { numeric: true, sensitivity: 'base' });
+  }
+
+  document.querySelectorAll('.sort-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const colIdx = parseInt(btn.getAttribute('data-col') || '-1', 10);
+      if (colIdx < 0) return;
+      const rows = Array.from(tbody.querySelectorAll('tr')).filter(function(tr){
+        return tr.children.length > 1;
+      });
+      rows.sort(function(a, b){ return compareAsc(a, b, colIdx); });
+      rows.forEach(function(tr){ tbody.appendChild(tr); });
+    });
+  });
+})();
+</script>
 </body>
 </html>
 

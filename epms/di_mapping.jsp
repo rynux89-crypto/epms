@@ -5,10 +5,17 @@
 <%
     String plcParam = request.getParameter("plc_id");
     String pointParam = request.getParameter("point_id");
+    String diAddressParam = request.getParameter("di_address");
+    String panelNameParam = request.getParameter("panel_name");
+    String enabledParam = request.getParameter("enabled");
     Integer plcId = null;
     Integer pointId = null;
+    Integer diAddress = null;
+    String panelName = panelNameParam == null ? "" : panelNameParam.trim();
+    String enabledFilter = enabledParam == null ? "Y" : enabledParam.trim().toUpperCase(Locale.ROOT);
     try { if (plcParam != null && !plcParam.trim().isEmpty()) plcId = Integer.parseInt(plcParam.trim()); } catch (Exception ignore) {}
     try { if (pointParam != null && !pointParam.trim().isEmpty()) pointId = Integer.parseInt(pointParam.trim()); } catch (Exception ignore) {}
+    try { if (diAddressParam != null && !diAddressParam.trim().isEmpty()) diAddress = Integer.parseInt(diAddressParam.trim()); } catch (Exception ignore) {}
 
     List<Map<String, Object>> plcList = new ArrayList<>();
     List<Map<String, Object>> mapRows = new ArrayList<>();
@@ -60,10 +67,15 @@
         List<Integer> params = new ArrayList<>();
         if (plcId != null) { tagSql.append("AND plc_id = ? "); params.add(plcId); }
         if (pointId != null) { tagSql.append("AND point_id = ? "); params.add(pointId); }
+        if (diAddress != null) { tagSql.append("AND di_address = ? "); params.add(diAddress); }
+        if (!panelName.isEmpty()) { tagSql.append("AND ISNULL(panel_name,'') LIKE ? "); }
+        if ("Y".equals(enabledFilter)) { tagSql.append("AND enabled = 1 "); }
+        else if ("N".equals(enabledFilter)) { tagSql.append("AND enabled = 0 "); }
         tagSql.append("ORDER BY plc_id, di_address, bit_no");
 
         try (PreparedStatement ps = conn.prepareStatement(tagSql.toString())) {
             for (int i = 0; i < params.size(); i++) ps.setInt(i + 1, params.get(i));
+            if (!panelName.isEmpty()) ps.setString(params.size() + 1, "%" + panelName + "%");
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     Map<String, Object> r = new HashMap<>();
@@ -153,6 +165,16 @@
 
         <label for="point_id">Point ID:</label>
         <input id="point_id" type="number" name="point_id" min="1" value="<%= pointId == null ? "" : pointId %>">
+        <label for="di_address">Address:</label>
+        <input id="di_address" type="number" name="di_address" min="0" value="<%= diAddress == null ? "" : diAddress %>">
+        <label for="panel_name">판넬명:</label>
+        <input id="panel_name" type="text" name="panel_name" value="<%= panelName %>">
+        <label for="enabled">Enabled:</label>
+        <select id="enabled" name="enabled">
+            <option value="" <%= enabledFilter.isEmpty() ? "selected" : "" %>>전체</option>
+            <option value="Y" <%= "Y".equals(enabledFilter) ? "selected" : "" %>>ACTIVE</option>
+            <option value="N" <%= "N".equals(enabledFilter) ? "selected" : "" %>>INACTIVE</option>
+        </select>
         <button type="submit">조회</button>
         <span style="margin-left:8px;font-size:12px;color:#475569;">DI Map <%= mapRows.size() %>건 / Tag <%= tagRows.size() %>건</span>
     </form>
@@ -238,5 +260,21 @@
     </table>
 </div>
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<script>
+(function(){
+  const titles = Array.from(document.querySelectorAll('.section-title'));
+  if (titles.length < 2) return;
+  const addressTitle = titles[0];
+  const tagTitle = titles[1];
+  const addressTable = addressTitle.nextElementSibling;
+  const tagTable = tagTitle.nextElementSibling;
+  if (!addressTable || !tagTable) return;
+  const parent = addressTitle.parentNode;
+  addressTitle.textContent = '2) DI Address Map';
+  tagTitle.textContent = '1) DI Tag Map';
+  parent.insertBefore(tagTitle, addressTitle);
+  parent.insertBefore(tagTable, addressTitle);
+})();
+</script>
 </body>
 </html>

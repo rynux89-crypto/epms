@@ -1,4 +1,5 @@
 ﻿<%@ page import="java.io.*,java.util.*" contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ include file="/WEB-INF/include/app_version.jspf" %>
 <%!
 private int parseIntOrDefault(String v, int defVal, int min, int max) {
     try {
@@ -49,6 +50,7 @@ try {
   <div class="card">
     <h1>EPMS 대시보드</h1>
     <p>전력 모니터링 시스템에 오신 것을 환영합니다.</p>
+    <p>Version <%= APP_VERSION %></p>
     <div class="links">
       <a href="/epms/epms_main.jsp">EPMS 상세 화면 보기</a>
     </div>
@@ -62,6 +64,6 @@ try {
       fontSizePx: <%= chatFontSizePx %>
     };
   </script>
-  <script src="<%= request.getContextPath() %>/js/epms_agent.js?v=20260309-5"></script>
+  <script src="<%= request.getContextPath() %>/js/epms_agent.js?v=<%= ASSET_VERSION %>"></script>
 </body>
 </html>
