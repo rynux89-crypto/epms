@@ -199,20 +199,60 @@
     <script src="../js/echarts.js"></script>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
+      .pq-overview-layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+        gap: 12px;
+        align-items: stretch;
+      }
       .summary-wrap h3 {
         margin: 0 0 12px 0;
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 700;
         color: #16324f;
       }
-      .summary-wrap { margin: 0; padding: 14px; }
+      .summary-wrap {
+        margin: 0;
+        padding: 14px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
       .summary-meta { margin-bottom:10px; }
-      .split-grid.one-side-one-main .summary-wrap { max-width:none; }
-      .split-grid.one-side-one-main .chart-container { min-width: 0; height: 700px; margin: 0; }
+      .summary-wrap .badge {
+        font-size: 12px;
+        padding: 3px 8px;
+      }
+      .summary-wrap .summary-table {
+        font-size: 12px;
+      }
+      .summary-wrap .summary-table th {
+        font-size: 12px;
+        padding: 6px 5px;
+      }
+      .summary-wrap .summary-table td {
+        font-size: 12px;
+        padding: 6px 5px;
+      }
+      .pq-overview-layout .summary-wrap { max-width:none; }
+      .pq-overview-layout .chart-container {
+        min-width: 0;
+        height: calc(100vh - 245px);
+        min-height: 520px;
+        margin: 0;
+      }
       .chart-stack { display:flex; flex-direction:column; gap:12px; width:100%; height:100%; }
       .chart-box { flex:1 1 0; min-height: 0; background:#fff; border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow-soft); padding:10px; }
       .chart-title { margin:0 0 8px 0; font-size: 15px; }
       .chart-inner { width:100%; height: calc(100% - 26px); }
+      @media (max-width: 1100px) {
+        .pq-overview-layout {
+          grid-template-columns: 1fr;
+        }
+        .pq-overview-layout .chart-container {
+          height: 700px;
+        }
+      }
     </style>
 </head>
 <body>
@@ -269,7 +309,7 @@
 <div class="msg-box">데이터가 없습니다</div>
 <% } %>
 
-<div class="split-grid one-side-one-main">
+<div class="split-grid one-side-one-main pq-overview-layout">
   <div class="summary-wrap panel">
       <h3>요약</h3>
       <div class="summary-meta">

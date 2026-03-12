@@ -29,7 +29,14 @@ public final class AgentAnswerFormatter {
         String samples = n.find() ? n.group(1) : "-";
         String min = mn.find() ? mn.group(1) : "-";
         String max = mx.find() ? mx.group(1) : "-";
-        return subject + " " + period + " \ud3c9\uade0 \uc8fc\ud30c\uc218\ub294 " + avg + "Hz \uc785\ub2c8\ub2e4. (\ucd5c\uc18c " + min + ", \ucd5c\ub300 " + max + ", \uc0d8\ud50c " + samples + ")";
+        StringBuilder out = new StringBuilder();
+        out.append(subject).append(" ").append(period).append(" \ud3c9\uade0 \uc8fc\ud30c\uc218\uc785\ub2c8\ub2e4.\n\n")
+            .append("\ud575\uc2ec \uac12:\n")
+            .append("- \ud3c9\uade0 \uc8fc\ud30c\uc218: ").append(avg).append("Hz\n")
+            .append("- \ucd5c\uc18c: ").append(min).append("Hz\n")
+            .append("- \ucd5c\ub300: ").append(max).append("Hz\n")
+            .append("- \uc0d8\ud50c \uc218: ").append(samples);
+        return out.toString();
     }
 
     public static String buildPowerValueDirectAnswer(String meterCtx, boolean reactive) {
@@ -58,9 +65,15 @@ public final class AgentAnswerFormatter {
         if (meterName != null && !meterName.isEmpty() && !"-".equals(meterName)) label += "(" + meterName + ")";
         String unit = reactive ? "kVAr" : "kW";
         String subject = reactive ? "\ubb34\ud6a8\uc804\ub825" : "\uc720\ud6a8\uc804\ub825";
-        String out = label + "\uc758 \ud604\uc7ac " + subject + "\uc740 " + value + unit + "\uc785\ub2c8\ub2e4.";
-        if (time != null && !time.isEmpty()) out += " \uce21\uc815 \uc2dc\uac01: " + clip(time, 19);
-        return out;
+        StringBuilder out = new StringBuilder();
+        out.append(label).append(" ").append(subject).append(" \uc870\ud68c \uacb0\uacfc\uc785\ub2c8\ub2e4.\n\n")
+            .append("\ud575\uc2ec \uac12:\n")
+            .append("- ").append(subject).append(": ").append(value).append(unit);
+        if (time != null && !time.isEmpty()) {
+            out.append("\n\n\uba54\ud0c0 \uc815\ubcf4:\n")
+                .append("- \uce21\uc815 \uc2dc\uac01: ").append(clip(time, 19));
+        }
+        return out.toString();
     }
 
     public static String buildEnergyValueDirectAnswer(String energyCtx, boolean reactive) {
@@ -89,9 +102,15 @@ public final class AgentAnswerFormatter {
         if (meterName != null && !meterName.isEmpty() && !"-".equals(meterName)) label += "(" + meterName + ")";
         String subject = reactive ? "\ubb34\ud6a8\uc804\ub825\ub7c9" : "\uc804\ub825\ub7c9";
         String unit = reactive ? "kVArh" : "kWh";
-        String out = label + "\uc758 \ud604\uc7ac " + subject + "\uc740 " + value + unit + "\uc785\ub2c8\ub2e4.";
-        if (time != null && !time.isEmpty()) out += " \uce21\uc815 \uc2dc\uac01: " + clip(time, 19);
-        return out;
+        StringBuilder out = new StringBuilder();
+        out.append(label).append(" ").append(subject).append(" \uc870\ud68c \uacb0\uacfc\uc785\ub2c8\ub2e4.\n\n")
+            .append("\ud575\uc2ec \uac12:\n")
+            .append("- ").append(subject).append(": ").append(value).append(unit);
+        if (time != null && !time.isEmpty()) {
+            out.append("\n\n\uba54\ud0c0 \uc815\ubcf4:\n")
+                .append("- \uce21\uc815 \uc2dc\uac01: ").append(clip(time, 19));
+        }
+        return out.toString();
     }
 
     public static String buildEnergyDeltaDirectAnswer(String ctx, boolean reactive) {
@@ -122,7 +141,8 @@ public final class AgentAnswerFormatter {
         String subject = reactive ? "\ubb34\ud6a8\uc804\ub825\ub7c9 \uc99d\uac00\ub7c9" : "\uc804\ub825\ub7c9 \uc99d\uac00\ub7c9";
         String unit = reactive ? "kVArh" : "kWh";
         String periodText = (period == null || period.isEmpty() || "-".equals(period)) ? "\uc9c0\uc815 \uae30\uac04" : period;
-        return label + "\uc758 " + periodText + " " + subject + "\uc740 " + delta + unit + "\uc785\ub2c8\ub2e4.";
+        return label + " " + periodText + " " + subject + " \uc870\ud68c \uacb0\uacfc\uc785\ub2c8\ub2e4.\n\n"
+            + "\ud575\uc2ec \uac12:\n- " + subject + ": " + delta + unit;
     }
 
     public static String buildAlarmSeverityDirectAnswer(String ctx) {
@@ -144,10 +164,19 @@ public final class AgentAnswerFormatter {
             parts.add(sev + " " + cnt + "\uac74");
         }
         if (parts.isEmpty()) return "\uc2ec\uac01\ub3c4\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        String prefix = periodLabel != null && !periodLabel.isEmpty()
-            ? periodLabel + " \uc2ec\uac01\ub3c4\ubcc4 \uc54c\ub78c\uc740 "
-            : (daysLabel != null && !daysLabel.isEmpty() ? "\ucd5c\uadfc " + daysLabel + "\uc77c \uc2ec\uac01\ub3c4\ubcc4 \uc54c\ub78c\uc740 " : "\uc2ec\uac01\ub3c4\ubcc4 \uc54c\ub78c\uc740 ");
-        return prefix + String.join(", ", parts) + "\uc785\ub2c8\ub2e4.";
+        StringBuilder out = new StringBuilder();
+        if (periodLabel != null && !periodLabel.isEmpty()) {
+            out.append(periodLabel).append(" \uc2ec\uac01\ub3c4\ubcc4 \uc54c\ub78c \uc9d1\uacc4\uc785\ub2c8\ub2e4.\n");
+        } else if (daysLabel != null && !daysLabel.isEmpty()) {
+            out.append("\ucd5c\uadfc ").append(daysLabel).append("\uc77c \uc2ec\uac01\ub3c4\ubcc4 \uc54c\ub78c \uc9d1\uacc4\uc785\ub2c8\ub2e4.\n");
+        } else {
+            out.append("\uc2ec\uac01\ub3c4\ubcc4 \uc54c\ub78c \uc9d1\uacc4\uc785\ub2c8\ub2e4.\n");
+        }
+        for (int i = 0; i < parts.size(); i++) {
+            out.append("- ").append(parts.get(i));
+            if (i + 1 < parts.size()) out.append("\n");
+        }
+        return out.toString();
     }
 
     public static String buildAlarmTypeDirectAnswer(String ctx) {
@@ -170,11 +199,18 @@ public final class AgentAnswerFormatter {
             parts.add(type + " " + cnt + "\uac74");
         }
         if (parts.isEmpty()) return "\uc54c\ub78c \uc885\ub958\ubcc4 \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        String prefix = periodLabel != null && !periodLabel.isEmpty()
-            ? periodLabel + " "
-            : (daysLabel != null && !daysLabel.isEmpty() ? "\ucd5c\uadfc " + daysLabel + "\uc77c " : "");
-        prefix += "trip".equalsIgnoreCase(scopeLabel) ? "TRIP \uc54c\ub78c \uc885\ub958\ub294 " : "\uc54c\ub78c \uc885\ub958\ub294 ";
-        return prefix + String.join(", ", parts) + "\uc785\ub2c8\ub2e4.";
+        StringBuilder out = new StringBuilder();
+        if (periodLabel != null && !periodLabel.isEmpty()) {
+            out.append(periodLabel).append(" ");
+        } else if (daysLabel != null && !daysLabel.isEmpty()) {
+            out.append("\ucd5c\uadfc ").append(daysLabel).append("\uc77c ");
+        }
+        out.append("trip".equalsIgnoreCase(scopeLabel) ? "TRIP \uc54c\ub78c \uc885\ub958\ubcc4 \uc9d1\uacc4\uc785\ub2c8\ub2e4.\n" : "\uc54c\ub78c \uc885\ub958\ubcc4 \uc9d1\uacc4\uc785\ub2c8\ub2e4.\n");
+        for (int i = 0; i < parts.size(); i++) {
+            out.append("- ").append(parts.get(i));
+            if (i + 1 < parts.size()) out.append("\n");
+        }
+        return out.toString();
     }
 
     public static String buildBuildingPowerTopDirectAnswer(String ctx) {
@@ -215,8 +251,14 @@ public final class AgentAnswerFormatter {
             parts.add(item);
         }
         if (parts.isEmpty()) return "\uc804\uc555 \ubd88\ud3c9\ud615 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        String prefix = (period == null || period.isEmpty()) ? "\uc804\uc555 \ubd88\ud3c9\ud615 \uc0c1\uc704\ub294 " : (period + " \uc804\uc555 \ubd88\ud3c9\ud615 \uc0c1\uc704\ub294 ");
-        return prefix + String.join(" / ", parts) + "\uc785\ub2c8\ub2e4.";
+        StringBuilder out = new StringBuilder();
+        if (period == null || period.isEmpty()) out.append("\uc804\uc555 \ubd88\ud3c9\ud615 \uc0c1\uc704 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        else out.append(period).append(" \uc804\uc555 \ubd88\ud3c9\ud615 \uc0c1\uc704 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        for (int i = 0; i < parts.size(); i++) {
+            out.append("- ").append(parts.get(i).replace(" @ ", " / "));
+            if (i + 1 < parts.size()) out.append("\n");
+        }
+        return out.toString();
     }
 
     public static String buildHarmonicExceedDirectAnswer(String ctx) {
@@ -237,15 +279,21 @@ public final class AgentAnswerFormatter {
             String thdI = trimToNull(row.group(6));
             if (meterId == null || meterName == null) continue;
             String item = meterName + "(" + meterId + ")";
-            if (panel != null && !panel.isEmpty() && !"-".equals(panel)) item += " [" + panel + "]";
-            if (thdV != null) item += " THD_V " + thdV;
-            if (thdI != null) item += ", THD_I " + thdI;
-            if (ts != null && !ts.isEmpty()) item += " @ " + clip(ts, 19);
+            if (panel != null && !panel.isEmpty() && !"-".equals(panel)) item += " / " + panel;
+            if (thdV != null) item += " / THD_V " + thdV;
+            if (thdI != null) item += " / THD_I " + thdI;
+            if (ts != null && !ts.isEmpty()) item += " / " + clip(ts, 19);
             items.add(item);
         }
         if (items.isEmpty()) return "\uace0\uc870\ud30c \uc774\uc0c1 \uacc4\uce21\uae30\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        String prefix = (period == null || period.isEmpty()) ? "\uace0\uc870\ud30c \uc774\uc0c1 \uacc4\uce21\uae30\ub294 " : (period + " \uace0\uc870\ud30c \uc774\uc0c1 \uacc4\uce21\uae30\ub294 ");
-        return prefix + String.join(" / ", items) + "\uc785\ub2c8\ub2e4.";
+        StringBuilder out = new StringBuilder();
+        if (period == null || period.isEmpty()) out.append("\uace0\uc870\ud30c \uc774\uc0c1 \uacc4\uce21\uae30 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        else out.append(period).append(" \uace0\uc870\ud30c \uc774\uc0c1 \uacc4\uce21\uae30 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        for (int i = 0; i < items.size(); i++) {
+            out.append("- ").append(items.get(i));
+            if (i + 1 < items.size()) out.append("\n");
+        }
+        return out.toString();
     }
 
     public static String buildPowerFactorOutlierDirectAnswer(String ctx, int noSignalCount) {
@@ -268,9 +316,9 @@ public final class AgentAnswerFormatter {
             String ts = trimToNull(row.group(5));
             if (meterId == null || meterName == null || pf == null) continue;
             String item = meterName + "(" + meterId + ")";
-            if (panel != null && !panel.isEmpty() && !"-".equals(panel)) item += " [" + panel + "]";
-            item += " PF " + pf;
-            if (ts != null && !ts.isEmpty()) item += " @ " + clip(ts, 19);
+            if (panel != null && !panel.isEmpty() && !"-".equals(panel)) item += " / " + panel;
+            item += " / PF " + pf;
+            if (ts != null && !ts.isEmpty()) item += " / " + clip(ts, 19);
             items.add(item);
         }
         if (items.isEmpty()) {
@@ -278,9 +326,17 @@ public final class AgentAnswerFormatter {
                 ? "\uc5ed\ub960 \uc774\uc0c1(\uc720\ud6a8\uc2e0\ud638 \uae30\uc900, \uc784\uacc4 \ubbf8\ub9cc) \uacc4\uce21\uae30\uac00 \uc5c6\uc2b5\ub2c8\ub2e4. (\uc2e0\ud638\uc5c6\uc74c " + noSignalCount + "\uac1c \ubcc4\ub3c4)"
                 : "\uc5ed\ub960 \uc774\uc0c1(\uc720\ud6a8\uc2e0\ud638 \uae30\uc900, \uc784\uacc4 \ubbf8\ub9cc) \uacc4\uce21\uae30\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
         }
-        String prefix = (period == null || period.isEmpty()) ? "\uc5ed\ub960 \uc774\uc0c1 \uacc4\uce21\uae30\ub294 " : (period + " \uc5ed\ub960 \uc774\uc0c1 \uacc4\uce21\uae30\ub294 ");
-        String suffix = noSignalCount >= 0 ? " (\uc2e0\ud638\uc5c6\uc74c " + noSignalCount + "\uac1c \ubcc4\ub3c4)" : "";
-        return prefix + String.join(" / ", items) + "\uc785\ub2c8\ub2e4." + suffix;
+        StringBuilder out = new StringBuilder();
+        if (period == null || period.isEmpty()) out.append("\uc5ed\ub960 \uc774\uc0c1 \uacc4\uce21\uae30 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        else out.append(period).append(" \uc5ed\ub960 \uc774\uc0c1 \uacc4\uce21\uae30 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        for (int i = 0; i < items.size(); i++) {
+            out.append("- ").append(items.get(i));
+            if (i + 1 < items.size()) out.append("\n");
+        }
+        if (noSignalCount >= 0) {
+            out.append("\n\n\uba54\ud0c0 \uc815\ubcf4:\n- \uc2e0\ud638\uc5c6\uc74c \ubcc4\ub3c4 \uacc4\uce21\uae30: ").append(noSignalCount).append("\uac1c");
+        }
+        return out.toString();
     }
 
     public static String buildFrequencyOutlierDirectAnswer(String ctx) {
@@ -291,20 +347,29 @@ public final class AgentAnswerFormatter {
         Matcher pm = Pattern.compile("period=([^;]+)").matcher(ctx);
         String period = pm.find() ? trimToNull(pm.group(1)) : null;
         ArrayList<String> items = new ArrayList<String>();
-        Matcher row = Pattern.compile("\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*Hz=([0-9.\\-]+),\\s*t=([^;]+);").matcher(ctx);
+        Matcher row = Pattern.compile("\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+)(?:,\\s*panel=([^,;]*))?,\\s*Hz=([0-9.\\-]+),\\s*t=([^;]+);").matcher(ctx);
         while (row.find()) {
             String meterId = trimToNull(row.group(1));
             String meterName = trimToNull(row.group(2));
-            String hz = trimToNull(row.group(3));
-            String ts = trimToNull(row.group(4));
+            String panel = trimToNull(row.group(3));
+            String hz = trimToNull(row.group(4));
+            String ts = trimToNull(row.group(5));
             if (meterId == null || meterName == null || hz == null) continue;
-            String item = meterName + "(" + meterId + ") " + hz + "Hz";
-            if (ts != null && !ts.isEmpty()) item += " @ " + clip(ts, 19);
+            String item = meterName + "(" + meterId + ")";
+            if (panel != null && !panel.isEmpty() && !"-".equals(panel)) item += " / " + panel;
+            item += " / " + hz + "Hz";
+            if (ts != null && !ts.isEmpty()) item += " / " + clip(ts, 19);
             items.add(item);
         }
         if (items.isEmpty()) return "\uc8fc\ud30c\uc218 \uc774\uc0c1\uce58\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        String prefix = (period == null || period.isEmpty()) ? "\uc8fc\ud30c\uc218 \uc774\uc0c1\uce58\ub294 " : (period + " \uc8fc\ud30c\uc218 \uc774\uc0c1\uce58\ub294 ");
-        return prefix + String.join(" / ", items) + "\uc785\ub2c8\ub2e4.";
+        StringBuilder out = new StringBuilder();
+        if (period == null || period.isEmpty()) out.append("\uc8fc\ud30c\uc218 \uc774\uc0c1\uce58 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        else out.append(period).append(" \uc8fc\ud30c\uc218 \uc774\uc0c1\uce58 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        for (int i = 0; i < items.size(); i++) {
+            out.append("- ").append(items.get(i));
+            if (i + 1 < items.size()) out.append("\n");
+        }
+        return out.toString();
     }
 
     public static String buildMonthlyPowerStatsDirectAnswer(String ctx) {
@@ -323,8 +388,16 @@ public final class AgentAnswerFormatter {
         String maxKw = mm.find() ? trimToNull(mm.group(1)) : null;
         String samples = sm.find() ? trimToNull(sm.group(1)) : null;
         if (meterId == null || period == null || avgKw == null || maxKw == null) return "\uc694\uccad\ud55c \uc6d4 \uc804\ub825 \ud1b5\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        String suffix = (samples == null || samples.isEmpty()) ? "" : " (\ud45c\ubcf8 " + samples + "\uac74)";
-        return meterId + "\ubc88 \uacc4\uce21\uae30\uc758 " + period + " \ud3c9\uade0\uc804\ub825\uc740 " + avgKw + "kW, \ucd5c\ub300\uc804\ub825\uc740 " + maxKw + "kW\uc785\ub2c8\ub2e4." + suffix;
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("\ubc88 \uacc4\uce21\uae30 ").append(period).append(" \uc6d4 \uc804\ub825 \ud1b5\uacc4\uc785\ub2c8\ub2e4.\n\n")
+            .append("\ud575\uc2ec \uac12:\n")
+            .append("- \ud3c9\uade0\uc804\ub825: ").append(avgKw).append("kW\n")
+            .append("- \ucd5c\ub300\uc804\ub825: ").append(maxKw).append("kW");
+        if (samples != null && !samples.isEmpty()) {
+            out.append("\n\n\uba54\ud0c0 \uc815\ubcf4:\n")
+                .append("- \ud45c\ubcf8 \uc218: ").append(samples).append("\uac74");
+        }
+        return out.toString();
     }
 
     public static String buildLatestAlarmsDirectAnswer(String ctx) {
@@ -352,8 +425,35 @@ public final class AgentAnswerFormatter {
         if (rowsOut.isEmpty()) {
             return unresolved != null ? "\ucd5c\uadfc \uc54c\ub78c \uc694\uc57d\uc785\ub2c8\ub2e4. \ud604\uc7ac \ubbf8\ud574\uacb0 \uc54c\ub78c\uc740 " + unresolved + "\uac74\uc785\ub2c8\ub2e4." : "\ucd5c\uadfc \uc54c\ub78c\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.";
         }
-        String prefix = unresolved == null ? "\ucd5c\uadfc \uc54c\ub78c\uc740 " : ("\ucd5c\uadfc \uc54c\ub78c\uc785\ub2c8\ub2e4. \ud604\uc7ac \ubbf8\ud574\uacb0 \uc54c\ub78c\uc740 " + unresolved + "\uac74\uc774\uba70, ");
-        return compactAlarmList(rowsOut, prefix);
+        StringBuilder out = new StringBuilder();
+        if (unresolved != null) {
+            out.append("\ud604\uc7ac \ubbf8\ud574\uacb0 \uc54c\ub78c\uc740 ").append(unresolved).append("\uac74\uc785\ub2c8\ub2e4.\n\n");
+        } else {
+            out.append("\ucd5c\uadfc \uc54c\ub78c \uc694\uc57d\uc785\ub2c8\ub2e4.\n\n");
+        }
+        out.append("\ucd5c\uadfc \uc54c\ub78c:\n");
+        int limit = Math.min(rowsOut.size(), 3);
+        for (int i = 0; i < limit; i++) {
+            String[] rowData = rowsOut.get(i);
+            String sev = trimToNull(rowData[0]);
+            String type = trimToNull(rowData[1]);
+            String meter = trimToNull(rowData[2]);
+            String ts = trimToNull(rowData[3]);
+            String state = trimToNull(rowData[4]);
+            String desc = trimToNull(rowData[5]);
+            out.append("- ");
+            if (sev != null && !sev.isEmpty()) out.append("[").append(sev).append("] ");
+            out.append(type == null ? "-" : type);
+            out.append(" / ").append(meter == null ? "-" : meter);
+            if (ts != null && !ts.isEmpty()) out.append(" / ").append(clip(ts, 19));
+            if (state != null && !state.isEmpty()) out.append(" / ").append(state);
+            if (desc != null && !desc.isEmpty()) out.append(" / ").append(desc);
+            if (i + 1 < limit) out.append("\n");
+        }
+        if (rowsOut.size() > limit) {
+            out.append("\n\n\uadf8 \uc678 ").append(rowsOut.size() - limit).append("\uac74\uc758 \ucd5c\uadfc \uc54c\ub78c\uc774 \ub354 \uc788\uc2b5\ub2c8\ub2e4.");
+        }
+        return out.toString();
     }
 
     public static String buildOpenAlarmsDirectAnswer(String ctx) {
@@ -372,7 +472,28 @@ public final class AgentAnswerFormatter {
             rowsOut.add(new String[] { sev, type, meter, ts, "\ubbf8\ud574\uacb0", shortenAlarmDescription(desc) });
         }
         if (rowsOut.isEmpty()) return "\ud604\uc7ac \ubbf8\ud574\uacb0 \uc54c\ub78c\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        return compactAlarmList(rowsOut, "\ud604\uc7ac \ubbf8\ud574\uacb0 \uc54c\ub78c\uc740 ");
+        StringBuilder out = new StringBuilder();
+        out.append("\ud604\uc7ac \ubbf8\ud574\uacb0 \uc54c\ub78c \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        int limit = Math.min(rowsOut.size(), 5);
+        for (int i = 0; i < limit; i++) {
+            String[] rowData = rowsOut.get(i);
+            String sev = trimToNull(rowData[0]);
+            String type = trimToNull(rowData[1]);
+            String meter = trimToNull(rowData[2]);
+            String ts = trimToNull(rowData[3]);
+            String desc = trimToNull(rowData[5]);
+            out.append("- ");
+            if (sev != null && !sev.isEmpty()) out.append("[").append(sev).append("] ");
+            out.append(type == null ? "-" : type);
+            out.append(" / ").append(meter == null ? "-" : meter);
+            if (ts != null && !ts.isEmpty()) out.append(" / ").append(clip(ts, 19));
+            if (desc != null && !desc.isEmpty()) out.append(" / ").append(desc);
+            if (i + 1 < limit) out.append("\n");
+        }
+        if (rowsOut.size() > limit) {
+            out.append("\n\n\uadf8 \uc678 ").append(rowsOut.size() - limit).append("\uac74\uc758 \ubbf8\ud574\uacb0 \uc54c\ub78c\uc774 \ub354 \uc788\uc2b5\ub2c8\ub2e4.");
+        }
+        return out.toString();
     }
 
     public static String buildVoltageAverageDirectAnswer(String voltageCtx, Integer meterId) {
@@ -427,6 +548,170 @@ public final class AgentAnswerFormatter {
             return "IEEE\uc5d0\ub294 \ubaa8\ub4e0 \uc124\ube44\uc5d0 \uacf5\ud1b5\uc73c\ub85c \uc801\uc6a9\ub418\ub294 \ub2e8\uc77c \uc5ed\ub960 \ucd5c\uc18c \uae30\uc900\uce58\uac00 \uba85\uc2dc\ub3fc \uc788\ub2e4\uace0 \ubcf4\uae30 \uc5b4\ub835\uc2b5\ub2c8\ub2e4. \uc2e4\ubb34\uc5d0\uc11c\ub294 \ubcf4\ud1b5 0.9 \uc774\uc0c1\uc744 \ucd5c\uc18c \uad00\ub9ac \uae30\uc900\uc73c\ub85c \ubcf4\uace0, \uc6b4\uc601 \ubaa9\ud45c\ub294 0.95 \uc774\uc0c1\uc73c\ub85c \ub450\ub294 \uacbd\uc6b0\uac00 \ub9ce\uc2b5\ub2c8\ub2e4.";
         }
         return "\uc5ed\ub960 \uae30\uc900\uc740 \uc801\uc6a9 \uaddc\uc815\uacfc \uacc4\uc57d \uc870\uac74\uc5d0 \ub530\ub77c \ub2ec\ub77c\uc9c8 \uc218 \uc788\uc9c0\ub9cc, \uc2e4\ubb34\uc5d0\uc11c\ub294 \ubcf4\ud1b5 0.9 \uc774\uc0c1\uc744 \ucd5c\uc18c \uad00\ub9ac \uae30\uc900\uc73c\ub85c \ubcf4\uace0 0.95 \uc774\uc0c1\uc744 \ubaa9\ud45c\ub85c \uad00\ub9ac\ud558\ub294 \uacbd\uc6b0\uac00 \ub9ce\uc2b5\ub2c8\ub2e4.";
+    }
+
+    public static String buildUserDbContext(String dbContext) {
+        String ctx = dbContext == null ? "" : dbContext.trim();
+        if (ctx.isEmpty()) return "";
+
+        if (ctx.startsWith("Meter:") || ctx.startsWith("Alarm:")) {
+            String meterPart = null;
+            String alarmPart = null;
+            int meterIdx = ctx.indexOf("Meter:");
+            int alarmIdx = ctx.indexOf("Alarm:");
+            if (meterIdx >= 0 && alarmIdx >= 0) {
+                if (meterIdx < alarmIdx) {
+                    meterPart = trimToNull(ctx.substring(meterIdx + 6, alarmIdx));
+                    alarmPart = trimToNull(ctx.substring(alarmIdx + 6));
+                } else {
+                    alarmPart = trimToNull(ctx.substring(alarmIdx + 6, meterIdx));
+                    meterPart = trimToNull(ctx.substring(meterIdx + 6));
+                }
+            } else if (meterIdx >= 0) {
+                meterPart = trimToNull(ctx.substring(meterIdx + 6));
+            } else if (alarmIdx >= 0) {
+                alarmPart = trimToNull(ctx.substring(alarmIdx + 6));
+            }
+            StringBuilder combined = new StringBuilder();
+            if (meterPart != null) {
+                String meterText = buildUserDbContext(meterPart);
+                if (meterText != null && !meterText.trim().isEmpty()) combined.append(meterText.trim());
+            }
+            if (alarmPart != null) {
+                String alarmText = buildLatestAlarmsDirectAnswer(alarmPart);
+                if (alarmText != null && !alarmText.trim().isEmpty()) {
+                    if (combined.length() > 0) combined.append("\n\n");
+                    combined.append(alarmText.trim());
+                }
+            }
+            if (combined.length() > 0) return combined.toString();
+        }
+
+        if (ctx.contains("[Latest meter readings")) {
+            if (ctx.contains("unavailable")) return "계측 데이터를 현재 조회할 수 없습니다.";
+            if (ctx.contains("no data")) return "요청한 조건의 계측 데이터가 없습니다.";
+            Matcher m = Pattern.compile(
+                "meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^@;]+)\\s*@\\s*([0-9\\-:\\s]+)\\s*V=([0-9.\\-]+),\\s*I=([0-9.\\-]+),\\s*PF=([0-9.\\-]+),\\s*kW=([0-9.\\-]+)(?:,\\s*kVAr=([0-9.\\-]+))?(?:,\\s*Hz=([0-9.\\-]+))?",
+                Pattern.CASE_INSENSITIVE
+            ).matcher(ctx);
+            if (m.find()) {
+                String meterId = m.group(1);
+                String meterName = clip(m.group(2), 40);
+                String panelName = clip(m.group(3), 40);
+                String ts = clip(m.group(4), 19);
+                String v = m.group(5);
+                String i = m.group(6);
+                String pf = m.group(7);
+                String kw = m.group(8);
+                String kvar = m.group(9);
+                String hz = m.group(10);
+                boolean noSignal = ctx.contains("STATE=NO_SIGNAL");
+                StringBuilder out = new StringBuilder();
+                out.append(meterId).append("번 계측기");
+                if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) {
+                    out.append("(").append(meterName.trim()).append(")");
+                }
+                out.append(" 현재 상태입니다.\n\n")
+                    .append("핵심 값:\n")
+                    .append("- 전압(V, 평균 우선): ").append(v).append("V\n")
+                    .append("- 전류(I): ").append(i).append("A\n")
+                    .append("- 역률(PF): ").append(pf).append("\n");
+                if (hz != null && !hz.trim().isEmpty()) out.append("- 주파수(Hz): ").append(hz).append("Hz\n");
+                out.append("- 유효전력(kW): ").append(kw).append("kW\n");
+                if (kvar != null && !kvar.trim().isEmpty()) out.append("- 무효전력(kVAr): ").append(kvar).append("kVAr\n");
+                out.append("\n메타 정보:\n")
+                    .append("- 측정 시각: ").append(ts);
+                if (panelName != null && !panelName.trim().isEmpty() && !"-".equals(panelName.trim())) out.append("\n- 패널: ").append(panelName.trim());
+                if (noSignal) out.append("\n- 상태: 신호 없음(NO_SIGNAL), 데이터 미수신 가능성이 큽니다.");
+                return out.toString();
+            }
+        }
+        if (ctx.contains("[Alarm count]")) {
+            if (ctx.contains("unavailable")) return "알람 건수를 현재 조회할 수 없습니다.";
+            Matcher p = Pattern.compile("period=([^;]+)").matcher(ctx);
+            Matcher d = Pattern.compile("days=([0-9]+)").matcher(ctx);
+            Matcher s = Pattern.compile("scope=([^;]+)").matcher(ctx);
+            Matcher a = Pattern.compile("area=([^;]+)").matcher(ctx);
+            Matcher mid = Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+            Matcher c = Pattern.compile("count=([0-9]+)").matcher(ctx);
+            String period = p.find() ? p.group(1) : null;
+            String days = d.find() ? d.group(1) : null;
+            String scopeRaw = s.find() ? s.group(1) : "all";
+            String area = a.find() ? a.group(1) : null;
+            String meterId = mid.find() ? mid.group(1) : null;
+            String cnt = c.find() ? c.group(1) : "0";
+            String scope = "";
+            if (meterId != null) scope += meterId + "번 계측기 ";
+            if (area != null && !area.trim().isEmpty()) scope += area.trim() + " ";
+            String alarmLabel = "알람";
+            if (scopeRaw != null && scopeRaw.toLowerCase(java.util.Locale.ROOT).startsWith("type:")) {
+                String t = scopeRaw.substring(5).trim();
+                if (!t.isEmpty()) alarmLabel = t + " 알람";
+            }
+            String periodText = null;
+            if (period != null && !period.trim().isEmpty() && !"-".equals(period.trim())) periodText = period.trim();
+            else if (days != null) periodText = "최근 " + days + "일";
+            StringBuilder out = new StringBuilder();
+            if (scope != null && !scope.trim().isEmpty()) out.append(scope.trim()).append(" ");
+            out.append(alarmLabel).append(" 건수 조회 결과입니다.\n\n")
+                .append("핵심 값:\n")
+                .append("- 건수: ").append(cnt).append("건");
+            if (periodText != null && !periodText.isEmpty()) {
+                out.append("\n\n메타 정보:\n")
+                    .append("- 기간: ").append(periodText);
+            }
+            return out.toString();
+        }
+        if (ctx.contains("[Meter list]")) {
+            if (ctx.contains("unavailable")) return "계측기 목록을 현재 조회할 수 없습니다.";
+            if (ctx.contains("no data")) return "조건에 맞는 계측기 목록이 없습니다.";
+            Matcher sc = Pattern.compile("scope=([^;]+)").matcher(ctx);
+            Matcher row = Pattern.compile("\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^,;]*)(?:,\\s*building=([^,;]*))?(?:,\\s*usage=([^;]*))?;").matcher(ctx);
+            String scope = sc.find() ? sc.group(1) : null;
+            StringBuilder out = new StringBuilder();
+            out.append(scope != null && !scope.trim().isEmpty() ? scope.trim() + " 관련 계측기 목록입니다:\n" : "계측기 목록입니다:\n");
+            int i = 0;
+            while (row.find() && i < 20) {
+                i++;
+                String panel = row.group(3) == null ? "-" : row.group(3).trim();
+                String building = row.group(4) == null ? "-" : row.group(4).trim();
+                String usage = row.group(5) == null ? "-" : row.group(5).trim();
+                out.append("- ").append(row.group(1)).append("번(").append(row.group(2).trim()).append(")")
+                    .append(" / 패널 ").append(panel);
+                if (!"-".equals(building) || !"-".equals(usage)) out.append(" / ").append(building).append(" / ").append(usage);
+                out.append("\n");
+            }
+            if (i == 0) return "조건에 맞는 계측기 목록을 찾지 못했습니다.";
+            return out.toString().trim();
+        }
+        if (ctx.contains("[Voltage phase angle]")) return buildPhaseAngleCard(ctx, true);
+        if (ctx.contains("[Current phase angle]")) return buildPhaseAngleCard(ctx, false);
+        if (ctx.contains("[Phase current]")) return buildPhaseValueCard(ctx, false);
+        if (ctx.contains("[Phase voltage]")) return buildPhaseValueCard(ctx, true);
+        if (ctx.contains("[Line voltage]")) return buildLineVoltageCard(ctx);
+        if (ctx.contains("[Latest alarms]")) return buildLatestAlarmsDirectAnswer(ctx);
+        if (ctx.contains("[Monthly frequency avg]")) {
+            Matcher mid = Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+            Integer meterId = mid.find() ? Integer.valueOf(mid.group(1)) : null;
+            return buildFrequencyDirectAnswer(ctx, meterId, null);
+        }
+        if (ctx.contains("[Latest energy")) return buildEnergyValueDirectAnswer(ctx, false);
+        if (ctx.contains("[Energy delta]")) return buildEnergyDeltaDirectAnswer(ctx, false);
+        if (ctx.contains("[Reactive energy delta]")) return buildEnergyDeltaDirectAnswer(ctx, true);
+        if (ctx.contains("[Monthly power stats]")) return buildMonthlyPowerStatsDirectAnswer(ctx);
+        if (ctx.contains("[Alarm types]")) return buildAlarmTypeDirectAnswer(ctx);
+        if (ctx.contains("[Voltage unbalance TOP")) return buildVoltageUnbalanceTopDirectAnswer(ctx);
+        if (ctx.contains("[Harmonic exceed]")) return buildHarmonicExceedDirectAnswer(ctx);
+        if (ctx.contains("[Power factor outlier]")) return buildPowerFactorOutlierDirectAnswer(ctx, -1);
+        if (ctx.contains("[Frequency outlier]")) return buildFrequencyOutlierDirectAnswer(ctx);
+        if (ctx.contains("[Open alarms]")) return buildOpenAlarmsDirectAnswer(ctx);
+
+        String fallback = ctx
+            .replace("STATE=NO_SIGNAL", "신호없음")
+            .replace("meter_id=", "계측기 ")
+            .replace("no data", "데이터 없음")
+            .replace("unavailable", "조회 불가");
+        return clip(fallback, 600);
     }
 
     private static String trimToNull(String s) {
@@ -521,5 +806,99 @@ public final class AgentAnswerFormatter {
         String t = s.replaceAll("\\s+", " ").trim();
         if (t.isEmpty()) return "-";
         return t.length() > maxLen ? t.substring(0, maxLen) + "..." : t;
+    }
+
+    private static String buildPhaseAngleCard(String ctx, boolean voltage) {
+        if (ctx.contains("unavailable")) return voltage ? "전압 위상각 데이터를 현재 조회할 수 없습니다." : "전류 위상각 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("no data")) return voltage ? "요청한 계측기의 전압 위상각 데이터가 없습니다." : "요청한 계측기의 전류 위상각 데이터가 없습니다.";
+        Matcher mid = Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        Matcher mn = Pattern.compile("meter=([^,]+)").matcher(ctx);
+        Matcher pn = Pattern.compile("panel=([^,]+)").matcher(ctx);
+        Matcher ts = Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        Matcher aM = Pattern.compile((voltage ? "Va" : "Ia") + "=([0-9.\\-]+)").matcher(ctx);
+        Matcher bM = Pattern.compile((voltage ? "Vb" : "Ib") + "=([0-9.\\-]+)").matcher(ctx);
+        Matcher cM = Pattern.compile((voltage ? "Vc" : "Ic") + "=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String a = aM.find() ? aM.group(1) : "-";
+        String b = bM.find() ? bM.group(1) : "-";
+        String c = cM.find() ? cM.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) out.append("(").append(meterName.trim()).append(")");
+        out.append(voltage ? " 전압 위상각 조회 결과입니다.\n\n" : " 전류 위상각 조회 결과입니다.\n\n")
+            .append("핵심 값:\n")
+            .append("- ").append(voltage ? "Va" : "Ia").append(": ").append(a).append("°\n")
+            .append("- ").append(voltage ? "Vb" : "Ib").append(": ").append(b).append("°\n")
+            .append("- ").append(voltage ? "Vc" : "Ic").append(": ").append(c).append("°\n\n")
+            .append("메타 정보:\n")
+            .append("- 측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) out.append("\n- 패널: ").append(panel.trim());
+        return out.toString();
+    }
+
+    private static String buildPhaseValueCard(String ctx, boolean voltage) {
+        if (ctx.contains("unavailable")) return voltage ? "상전압 데이터를 현재 조회할 수 없습니다." : "상전류 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("phase required") || ctx.contains("invalid phase")) return "A/B/C 상을 지정해 주세요.";
+        if (ctx.contains("no data")) return voltage ? "요청한 계측기의 상전압 데이터가 없습니다." : "요청한 계측기의 상전류 데이터가 없습니다.";
+        Matcher mid = Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        Matcher mn = Pattern.compile("meter=([^,]+)").matcher(ctx);
+        Matcher pn = Pattern.compile("panel=([^,]+)").matcher(ctx);
+        Matcher ts = Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        Matcher ph = Pattern.compile("phase=([ABC])").matcher(ctx);
+        Matcher vm = Pattern.compile((voltage ? "V" : "I") + "=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String phase = ph.find() ? ph.group(1) : "-";
+        String value = vm.find() ? vm.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) out.append("(").append(meterName.trim()).append(")");
+        out.append(" ").append(phase).append("상 ").append(voltage ? "전압" : "전류").append(" 조회 결과입니다.\n\n")
+            .append("핵심 값:\n")
+            .append("- ").append(phase).append("상 ").append(voltage ? "전압" : "전류").append(": ").append(value).append(voltage ? "V" : "A").append("\n\n")
+            .append("메타 정보:\n")
+            .append("- 측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) out.append("\n- 패널: ").append(panel.trim());
+        return out.toString();
+    }
+
+    private static String buildLineVoltageCard(String ctx) {
+        if (ctx.contains("unavailable")) return "선간전압 데이터를 현재 조회할 수 없습니다.";
+        if (ctx.contains("meter_id required")) return "계측기를 지정해 주세요.";
+        if (ctx.contains("no data")) return "요청한 계측기의 선간전압 데이터가 없습니다.";
+        Matcher mid = Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        Matcher mn = Pattern.compile("meter=([^,]+)").matcher(ctx);
+        Matcher pn = Pattern.compile("panel=([^,]+)").matcher(ctx);
+        Matcher ts = Pattern.compile("t=([0-9\\-:\\s]+)").matcher(ctx);
+        Matcher pr = Pattern.compile("pair=([A-Z]+)").matcher(ctx);
+        Matcher vabm = Pattern.compile("Vab=([0-9.\\-]+)").matcher(ctx);
+        Matcher vbcm = Pattern.compile("Vbc=([0-9.\\-]+)").matcher(ctx);
+        Matcher vcam = Pattern.compile("Vca=([0-9.\\-]+)").matcher(ctx);
+        String meterId = mid.find() ? mid.group(1) : "-";
+        String meterName = mn.find() ? clip(mn.group(1), 40) : "-";
+        String panel = pn.find() ? clip(pn.group(1), 40) : "-";
+        String time = ts.find() ? clip(ts.group(1), 19) : "-";
+        String pair = pr.find() ? pr.group(1) : "ALL";
+        String vab = vabm.find() ? vabm.group(1) : "-";
+        String vbc = vbcm.find() ? vbcm.group(1) : "-";
+        String vca = vcam.find() ? vcam.group(1) : "-";
+        StringBuilder out = new StringBuilder();
+        out.append(meterId).append("번 계측기");
+        if (meterName != null && !meterName.trim().isEmpty() && !"-".equals(meterName.trim())) out.append("(").append(meterName.trim()).append(")");
+        out.append(" 선간전압 조회 결과입니다.\n\n");
+        if ("AB".equals(pair)) out.append("핵심 값:\n- AB 선간전압: ").append(vab).append("V\n");
+        else if ("BC".equals(pair)) out.append("핵심 값:\n- BC 선간전압: ").append(vbc).append("V\n");
+        else if ("CA".equals(pair)) out.append("핵심 값:\n- CA 선간전압: ").append(vca).append("V\n");
+        else out.append("핵심 값:\n- AB: ").append(vab).append("V\n- BC: ").append(vbc).append("V\n- CA: ").append(vca).append("V\n");
+        out.append("\n메타 정보:\n- 측정 시각: ").append(time);
+        if (panel != null && !panel.trim().isEmpty() && !"-".equals(panel.trim())) out.append("\n- 패널: ").append(panel.trim());
+        return out.toString();
     }
 }

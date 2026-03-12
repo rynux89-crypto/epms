@@ -198,11 +198,27 @@
       .replace(/```([\s\S]*?)```/g, '<div style="background:#1f2937;color:#f8fafc;padding:8px;border-radius:6px;overflow-x:auto;font-family:monospace;margin:4px 0">$1</div>');
   }
 
+  function enrichCurrentStatusAnswer(text) {
+    if (!text || text.indexOf("현재 상태") < 0) return text;
+    if (text.indexOf("값 기준:") >= 0) return text;
+    const guide = [
+      "",
+      "값 기준:",
+      "- 전압: average_voltage 우선, 없으면 line_voltage_avg -> phase_voltage_avg -> voltage_ab",
+      "- 전류: average_current",
+      "- 역률: power_factor 우선, 없으면 power_factor_avg 또는 3상 평균",
+      "- 유효전력: active_power_total",
+      "- 무효전력: reactive_power_total",
+      "- 주파수: frequency",
+    ].join("\n");
+    return text + "\n" + guide;
+  }
+
   function appendMsg(text, who, context) {
     const body = document.getElementById("epms-chat-body");
     if (!body) return;
     const box = el("div", "epms-msg " + (who === "user" ? "user" : "bot"));
-    if (who === "bot") box.innerHTML = formatText(text);
+    if (who === "bot") box.innerHTML = formatText(enrichCurrentStatusAnswer(text));
     else box.textContent = text;
 
     if (context) {
