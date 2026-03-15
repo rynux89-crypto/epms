@@ -108,7 +108,7 @@
     Integer plcId = null;
     String byteOrder = "CDAB";
     int floatCount = 62;
-    String excelPath = "docs/plc_mapping_template.xlsx";
+    String excelPath = "";
     String runExcelPathUsed = null;
     String uploadNameUsed = null;
     String uploadSourceUsed = null;
@@ -207,6 +207,9 @@
                         if (uploadSourceUsed == null) uploadSourceUsed = hasRequestUpload ? "request" : "session";
                     } else {
                         Path p = Paths.get(excelPath);
+                        if (excelPath == null || excelPath.trim().isEmpty()) {
+                            throw new IllegalArgumentException("파일 선택 없음");
+                        }
                         if (!p.isAbsolute()) {
                             String root = application.getRealPath("/");
                             if (root != null) p = Paths.get(root).resolve(excelPath);
@@ -408,30 +411,44 @@
         .fold-box { margin: 12px 0; border: 1px solid #dbe5f2; border-radius: 8px; background: #fff; }
         .fold-box summary { cursor: pointer; padding: 10px 12px; font-weight: 700; color: #1f3347; }
         .fold-box-body { padding: 0 12px 12px; }
+
+        .row-added td { background-color: #e8f5e9; }
+        .row-modified td { background-color: #fff8e1; }
+        .row-unchanged td { background-color: #f8fafc; color: #64748b; }
+        .row-unchanged .addr-input { color: #6c757d; }
+
+        #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: none; align-items: center; justify-content: center; }
+        #loadingOverlay .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        #result-container { margin-top: 20px; padding-top: 20px; border-top: 1px solid #dbe5f2; }
+
         @media (max-width: 980px) { .preview-split { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
+<div id="loadingOverlay"><div class="spinner"></div></div>
 <div class="page-wrap">
     <div class="title-bar">
         <h2>🤖 PLC Excel 자동 매핑 (AI + DI)</h2>
         <div class="inline-actions">
+            <a href="download_template.jsp" class="back-btn" style="text-decoration: none;">템플릿 다운로드</a>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
         </div>
     </div>
 
     <div class="info-box">
-        엑셀 파일을 선택하거나 서버 경로를 입력한 뒤 실행하면 아래 테이블이 자동 반영됩니다.<br/>
+        엑셀 파일을 선택한 뒤 실행하면 아래 테이블이 자동 반영됩니다.<br/>
         대상 테이블: <span class="mono">plc_meter_map</span>, <span class="mono">plc_di_map</span>, <span class="mono">plc_di_tag_map</span><br/>
         PLC를 선택하지 않으면 엑셀의 PLC 컬럼(F2)에서 PLC를 자동 판별해 순차 적용합니다.<br/>
         미리보기: DB 변경 없이 결과 확인 / 적용: DB upsert 실행
     </div>
 
-    <% if (error != null) { %>
+    <% if (error != null && !"POST".equalsIgnoreCase(request.getMethod())) { %>
     <div class="err-box"><%= h(error) %></div>
     <% } %>
 
-    <form method="POST" id="importForm">
+    <form method="POST" id="importForm" action="<%= request.getRequestURI() %>">
         <div class="toolbar">
             <label for="plc_id">PLC (선택)</label>
             <select id="plc_id" name="plc_id">
@@ -447,8 +464,8 @@
             <label for="excel_file">엑셀 파일</label>
             <input type="file" id="excel_file" accept=".xlsx,.xls">
 
-            <label for="excel_path">서버 경로</label>
-            <input type="text" id="excel_path" name="excel_path" value="<%= h(excelPath) %>" class="mono">
+            <label for="excel_path">서버 경로(선택)</label>
+            <input type="text" id="excel_path" name="excel_path" value="<%= h(excelPath) %>" class="mono" placeholder="필요할 때만 직접 입력">
 
             <label for="byte_order">Byte Order</label>
             <select id="byte_order" name="byte_order">
@@ -476,41 +493,52 @@
         <input type="hidden" name="mode_hidden" id="mode_hidden" value="preview">
     </form>
 
-    <div id="currentMappingPreview"></div>
+    <div id="result-container">
+    <% if ("POST".equalsIgnoreCase(request.getMethod())) { %>
+        <% if (error != null) { %>
+        <div class="err-box"><%= h(error) %></div>
+        <% } %>
 
-    <% if (resultText != null) { %>
-    <div class="ok-box"><%= "apply".equals(mode) ? "적용 완료" : "미리보기 완료" %></div>
-    <div class="info-box">
-        실제 실행 엑셀 경로: <span class="mono"><%= h(runExcelPathUsed == null ? "-" : runExcelPathUsed) %></span><br/>
-        업로드 파일명: <span class="mono"><%= h(uploadNameUsed == null ? "-" : uploadNameUsed) %></span><br/>
-        파일 사용 방식: <span class="mono"><%= h(uploadSourceUsed == null ? "-" : uploadSourceUsed) %></span>
-    </div>
-    <div id="resultSummary"></div>
-    <div id="tokenAddressPreview"></div>
-    <div id="postPreviewDecision"></div>
-    <details>
-        <summary class="muted">원본 결과(JSON) 보기</summary>
-        <pre id="resultRaw"><%= h(resultText) %></pre>
-    </details>
-    <% } %>
+        <% if (resultText != null) { %>
+        <div class="ok-box"><%= "apply".equals(mode) ? "적용 완료" : "미리보기 완료" %></div>
+        <div class="info-box">
+            실제 실행 엑셀 경로: <span class="mono"><%= h(runExcelPathUsed == null ? "-" : runExcelPathUsed) %></span><br/>
+            업로드 파일명: <span class="mono"><%= h(uploadNameUsed == null ? "-" : uploadNameUsed) %></span><br/>
+            파일 사용 방식: <span class="mono"><%= h(uploadSourceUsed == null ? "-" : uploadSourceUsed) %></span>
+        </div>
+        <div id="resultSummary"></div>
+        <div id="tokenAddressPreview"></div>
+        <div id="postPreviewDecision"></div>
+        <details>
+            <summary class="muted">원본 결과(JSON) 보기</summary>
+            <pre id="resultRaw"><%= h(resultText) %></pre>
+        </details>
+        <% } %>
 
-    <% if (!recentHistory.isEmpty()) { %>
-    <div class="history-box">
-        <b>최근 실행 이력</b>
-        <ul>
-            <% for (String line : recentHistory) { %>
-            <li class="mono"><%= h(line) %></li>
-            <% } %>
-        </ul>
-    </div>
+        <div id="currentMappingPreview"></div>
+
+        <% if (!recentHistory.isEmpty()) { %>
+        <div class="history-box">
+            <b>최근 실행 이력</b>
+            <ul>
+                <% for (String line : recentHistory) { %>
+                <li class="mono"><%= h(line) %></li>
+                <% } %>
+            </ul>
+        </div>
+        <% } %>
     <% } %>
+    </div>
 </div>
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 
 <script>
-(function(){
+function initializeScript() {
   const form = document.getElementById('importForm');
+  if (!form) return;
+
   const fileInput = document.getElementById('excel_file');
+  const excelPathInput = document.getElementById('excel_path');
   const uploadName = document.getElementById('upload_name');
   const uploadB64 = document.getElementById('upload_b64');
   const overridesJson = document.getElementById('overrides_json');
@@ -523,6 +551,8 @@
   const confirmDisable = document.getElementById('confirm_disable');
   const disableConfirmBox = document.getElementById('disableConfirmBox');
   const currentMappings = <%= toJsonValue(currentAiMappings) %>;
+  const resultTextB64 = <%= toJsonValue(resultText == null ? null : Base64.getEncoder().encodeToString(resultText.getBytes(StandardCharsets.UTF_8))) %>;
+  const selectedPlcId = <%= toJsonValue(plcId) %>;
   let currentDisableSummary = null;
   const currentMappingIndex = new Map();
 
@@ -673,7 +703,9 @@
     if (disableConfirmBox) {
       disableConfirmBox.style.display = disableTotal > 0 ? 'block' : 'none';
     }
-    resultSummary.innerHTML = html + perPlcInfo + warn + disableWarn + floatInfo + floatDistInfo + floatMeterInfo;
+    if (resultSummary) {
+        resultSummary.innerHTML = html + perPlcInfo + warn + disableWarn + floatInfo + floatDistInfo + floatMeterInfo;
+    }
   }
 
   function flattenAiPreviewRows(obj){
@@ -695,10 +727,9 @@
     return out;
   }
 
-  function renderPostPreviewDecision(){
+  function renderPostPreviewDecision(mode){
     if (!postPreviewDecision) return;
-    const currentMode = '<%= h(mode) %>';
-    if (currentMode !== 'preview') {
+    if (mode !== 'preview') {
       postPreviewDecision.innerHTML = '';
       return;
     }
@@ -740,12 +771,7 @@
           overridesJson.value = JSON.stringify(collectOverrides());
         }
         modeHidden.value = 'apply';
-        const hiddenModeInput = document.createElement('input');
-        hiddenModeInput.type = 'hidden';
-        hiddenModeInput.name = 'mode';
-        hiddenModeInput.value = 'apply';
-        form.appendChild(hiddenModeInput);
-        form.submit();
+        form.requestSubmit(applyBtn);
       });
     }
   }
@@ -849,32 +875,75 @@
     if (!tokenAddressPreview) return;
     const rows = flattenAiPreviewRows(obj);
     if (!rows.length) {
-      tokenAddressPreview.innerHTML = '';
+      const unmatched = Array.isArray(obj && obj.ai_unmatched) ? obj.ai_unmatched : [];
+      const aiRows = Number(obj && obj.ai_rows ? obj.ai_rows : 0);
+      const aiCandidates = Number(obj && obj.ai_candidates ? obj.ai_candidates : 0);
+      let reason = 'AI preview 대상이 없습니다.';
+      if (aiCandidates <= 0) {
+        reason = '엑셀에서 현재 PLC 대상 AI 행을 찾지 못했습니다.';
+      } else if (aiRows <= 0 && unmatched.length > 0) {
+        reason = '엑셀 행은 찾았지만 meter 매칭에 실패해 preview를 만들지 못했습니다.';
+      } else if (aiRows <= 0) {
+        reason = 'AI mapping row가 생성되지 않았습니다.';
+      }
+      tokenAddressPreview.innerHTML =
+        '<div class="section-title">Token / Address Preview</div>' +
+        '<div class="warn-box"><b>표시할 preview가 없습니다.</b><br/>' +
+        esc(reason) +
+        '<br/>ai_candidates: ' + esc(aiCandidates) +
+        ', ai_rows: ' + esc(aiRows) +
+        ', ai_unmatched: ' + esc(unmatched.length) +
+        (unmatched.length ? '<br/><br/>' + unmatched.slice(0, 10).map(function(x){ return '- ' + esc(x); }).join('<br/>') : '') +
+        '</div>';
       return;
     }
     const body = rows.map(function(entry){
       const row = entry.row || {};
       const tokenRows = Array.isArray(row.token_addresses) ? row.token_addresses : [];
       return tokenRows.map(function(t){
-        return '<tr data-table="preview" data-plc="' + esc(entry.plc_id) + '" data-meter="' + esc(row.meter_id) + '" data-item="' + esc(row.item_name || '-') + '" data-panel="' + esc(row.panel_name || '-') + '">' +
+        const meterKey = Number(entry.plc_id) + '|' + Number(row.meter_id);
+        const currentMeterTokens = currentMappingIndex.get(meterKey);
+        const currentTokenRow = currentMeterTokens ? currentMeterTokens.get(Number(t.float_index)) : null;
+
+        let rowClass = 'row-added';
+        let currentAddress = 'N/A';
+        let isUnchanged = false;
+
+        if (currentTokenRow) {
+            currentAddress = currentTokenRow.reg_address;
+            if (Number(currentAddress) === Number(t.reg_address)) {
+                rowClass = 'row-unchanged';
+                isUnchanged = true;
+            } else {
+                rowClass = 'row-modified';
+            }
+        }
+
+        return '<tr class="' + rowClass + '" data-table="preview" data-plc="' + esc(entry.plc_id) + '" data-meter="' + esc(row.meter_id) + '" data-item="' + esc(row.item_name || '-') + '" data-panel="' + esc(row.panel_name || '-') + '">' +
           '<td class="mono">' + esc(entry.plc_id) + '</td>' +
           '<td class="mono">' + esc(row.meter_id) + '</td>' +
           '<td>' + esc(row.item_name || '-') + '</td>' +
           '<td>' + esc(row.panel_name || '-') + '</td>' +
           '<td class="mono">' + esc(t.float_index) + '</td>' +
           '<td class="mono">' + esc(t.token) + '</td>' +
-          '<td class="mono"><input type="number" class="addr-input mono" data-plc="' + esc(entry.plc_id) + '" data-meter="' + esc(row.meter_id) + '" data-token="' + esc(t.token) + '" data-float-index="' + esc(t.float_index) + '" value="' + esc(t.reg_address) + '"></td>' +
+          '<td class="mono">' + esc(currentAddress) + '</td>' +
+          '<td class="mono"><input type="number" class="addr-input mono" data-plc="' + esc(entry.plc_id) + '" data-meter="' + esc(row.meter_id) + '" data-token="' + esc(t.token) + '" data-float-index="' + esc(t.float_index) + '" value="' + esc(t.reg_address) + '" ' + (isUnchanged ? 'readonly' : '') + '></td>' +
           '</tr>';
       }).join('');
     }).join('');
     tokenAddressPreview.innerHTML =
       '<div class="section-title">Token / Address Preview</div>' +
-      '<div class="info-box">위 token 목록에서 선택한 항목만 import 결과 주소로 반영합니다. 선택 해제한 token은 현재 DB 값을 그대로 둡니다.</div>' +
+      '<div class="info-box">' +
+      '아래 목록에서 변경사항을 확인하세요. ' +
+      '<span style="background-color: #e8f5e9; padding: 2px; border-radius: 3px;">초록색 행</span>은 새로 추가, ' +
+      '<span style="background-color: #fff8e1; padding: 2px; border-radius: 3px;">노란색 행</span>은 주소값이 변경된 항목, ' +
+      '<span style="background-color: #f8fafc; padding: 2px; border-radius: 3px;">회색 행</span>은 기존 DB와 동일한 항목입니다.' +
+      '</div>' +
       renderTokenSelector(rows) +
       renderTableFilters('preview') +
       '<div class="table-scroll">' +
       '<table class="preview-table">' +
-      '<thead><tr><th>plc_id</th><th>meter_id</th><th>item_name</th><th>panel_name</th><th>float_index</th><th>token</th><th>reg_address</th></tr></thead>' +
+      '<thead><tr><th>plc_id</th><th>meter_id</th><th>item_name</th><th>panel_name</th><th>float_index</th><th>token</th><th>현재 주소</th><th>새 주소</th></tr></thead>' +
       '<tbody>' + body + '</tbody>' +
       '</table>' +
       '</div>';
@@ -916,8 +985,8 @@
       }).join('');
     }).join('');
     currentMappingPreview.innerHTML =
-      '<details class="fold-box">' +
-      '<summary>현재 DB 매핑 보기</summary>' +
+      '<details class="fold-box" open>' +
+      '<summary>기존 DB 매핑과 비교</summary>' +
       '<div class="fold-box-body">' +
       '<div class="info-box">현재 <span class="mono">plc_meter_map.metric_order</span> 기준 token / register address 입니다.</div>' +
       renderTableFilters('current') +
@@ -932,21 +1001,52 @@
     applyTableFilters('current');
   }
 
+  // --- Main execution ---
   renderCurrentMappingPreview(null);
 
-  if (resultRaw) {
-    const raw = resultRaw.textContent.trim();
+  if (resultTextB64) {
+    if (selectedPlcId == null) {
+      if (tokenAddressPreview) {
+        tokenAddressPreview.innerHTML =
+          '<div class="section-title">Token / Address Preview</div>' +
+          '<div class="info-box">현재는 <b>AUTO(엑셀 기준)</b> 모드입니다. 이 모드에서는 전체 PLC preview 결과가 너무 커질 수 있어 token/address 상세표를 표시하지 않습니다.<br/>' +
+          '상단에서 특정 PLC를 선택한 뒤 다시 <b>미리보기</b>를 실행하면 상세 비교표를 볼 수 있습니다.</div>';
+      }
+      if (postPreviewDecision) {
+        postPreviewDecision.innerHTML =
+          '<div class="decision-box"><b>안내</b><br/>AUTO 모드에서는 상세 preview 없이 요약만 보여줍니다. 실제 token/address 비교나 선택 반영은 PLC를 선택한 뒤 진행하세요.</div>';
+      }
+      renderCurrentMappingPreview(null);
+      return;
+    }
+    let raw = '';
+    try {
+      const bytes = Uint8Array.from(atob(String(resultTextB64)), function(c){ return c.charCodeAt(0); });
+      raw = new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '').trim();
+    } catch (decodeErr) {
+      if (resultSummary) {
+        resultSummary.innerHTML = '<div class="err-box">미리보기 결과 디코딩에 실패했습니다.</div>';
+      }
+      console.error('Failed to decode result JSON', decodeErr);
+      raw = '';
+    }
     const s = raw.indexOf('{');
     const e = raw.lastIndexOf('}');
     if (s >= 0 && e > s) {
       const jsonText = raw.substring(s, e + 1);
       try {
         const obj = JSON.parse(jsonText);
+        const mode = obj.mode || '<%= h(mode) %>';
         renderSummary(obj);
-        renderPostPreviewDecision();
+        renderPostPreviewDecision(mode);
         renderCurrentMappingPreview(obj);
         renderTokenAddressPreview(obj);
-      } catch (ignore) {}
+      } catch (ignore) {
+          console.error("Failed to parse result JSON", ignore);
+          if (resultSummary) {
+            resultSummary.innerHTML = '<div class="err-box">미리보기 결과 JSON 파싱에 실패했습니다. 원본 결과(JSON) 보기를 확인하세요.</div>';
+          }
+      }
     }
   }
 
@@ -958,34 +1058,89 @@
   });
 
   form.addEventListener('submit', function(e){
+    e.preventDefault();
+    const loadingOverlay = document.getElementById('loadingOverlay');
     const submitter = e.submitter;
+    const submittedMode = (submitter && submitter.name === 'mode') ? submitter.value : 'preview';
+
     if (modeHidden) {
-      modeHidden.value = (submitter && submitter.value) ? submitter.value : (modeHidden.value || 'preview');
+      modeHidden.value = submittedMode;
     }
-    if (submitter && submitter.value === 'apply') {
+    if (submittedMode === 'apply') {
       const disable = currentDisableSummary || {};
       const disableTotal = Number(disable.ai_disabled || 0) + Number(disable.di_map_disabled || 0) + Number(disable.di_tag_disabled || 0);
       if (disableTotal > 0 && (!confirmDisable || !confirmDisable.checked)) {
-        e.preventDefault();
         alert('이번 적용은 기존 활성 매핑을 비활성화합니다. preview 결과를 확인한 뒤 체크박스를 선택해야 적용할 수 있습니다.');
         return;
       }
     }
-    if (submitter && submitter.value === 'apply' && overridesJson) {
+    if (submittedMode === 'apply' && overridesJson) {
       overridesJson.value = JSON.stringify(collectOverrides());
     }
+    
     const f = fileInput.files && fileInput.files[0];
-    if (!f) return;
-    e.preventDefault();
-    const reader = new FileReader();
-    reader.onload = function(ev){
-      uploadName.value = f.name || '';
-      uploadB64.value = String(ev.target.result || '');
-      form.submit();
+    const excelPathValue = excelPathInput ? String(excelPathInput.value || '').trim() : '';
+    if (!f && !excelPathValue) {
+      alert('파일 선택 없음');
+      if (fileInput) fileInput.focus();
+      return;
+    }
+    const runAjaxSubmit = function() {
+        loadingOverlay.style.display = 'flex';
+        const formData = new FormData(form);
+        fetch(form.action, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newPageWrap = doc.querySelector('.page-wrap');
+            if (newPageWrap) {
+                document.querySelector('.page-wrap').innerHTML = newPageWrap.innerHTML;
+                const newScript = doc.querySelector('script');
+                if (newScript) {
+                   // Re-run the script to initialize event handlers and render previews
+                   // A bit of a hack, but necessary in this architecture
+                   try {
+                       eval(newScript.innerText);
+                   } catch(e) {
+                       console.error("Error re-initializing script:", e);
+                   }
+                }
+            } else {
+                 document.getElementById('result-container').innerHTML = '<div class="err-box">응답 처리 중 오류가 발생했습니다. 페이지를 새로고침하세요.</div>';
+            }
+        })
+        .catch(err => {
+            console.error('Fetch error:', err);
+            document.getElementById('result-container').innerHTML = '<div class="err-box">요청 실패: ' + err.message + '</div>';
+        })
+        .finally(() => {
+            loadingOverlay.style.display = 'none';
+        });
     };
-    reader.readAsDataURL(f);
+
+    if (f) {
+        const reader = new FileReader();
+        reader.onload = function(ev){
+          uploadName.value = f.name || '';
+          uploadB64.value = String(ev.target.result || '');
+          runAjaxSubmit();
+        };
+        reader.readAsDataURL(f);
+    } else {
+        uploadName.value = '';
+        uploadB64.value = '';
+        runAjaxSubmit();
+    }
   });
-})();
+}
+
+// Initial call
+initializeScript();
 </script>
 </body>
 </html>
+

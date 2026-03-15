@@ -66,10 +66,78 @@ function Resolve-AiCanonicalToken([string]$rawToken, [string]$mainHeader, [strin
     if ($t -eq '') { return '' }
     $t = $t -replace '^[\\??]+', ''
     $t = ($t -replace '\s+', '').Trim().ToUpperInvariant()
-    if ($t -eq '') { return '' }
-    if ($t -eq 'KHH') { return 'KWH' }
-    if ($t -eq 'VAH') { return 'KVARH' }
     return $t
+}
+
+function Find-AiTokenRowIndex([System.Data.DataTable]$aiSheet){
+    if ($null -eq $aiSheet) { return -1 }
+    $anchors = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($a in @('V12','V23','V31','HZ','KW','KWH','KVAR','IR','H_VA_1','H_IA_1')) { [void]$anchors.Add($a) }
+    $bestIndex = -1
+    $bestAnchorCount = -1
+    $bestTokenCount = -1
+
+    for ($ri = 0; $ri -lt $aiSheet.Rows.Count; $ri++) {
+        $row = $aiSheet.Rows[$ri]
+        $tokenCount = 0
+        $anchorCount = 0
+        for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
+            $col = "F$c"
+            if (-not $aiSheet.Columns.Contains($col)) { continue }
+            $raw = Normalize-Str $row[$col]
+            if ($raw -eq '' -or $raw -match '^\d+(\.\d+)?$') { continue }
+            $token = Resolve-AiCanonicalToken -rawToken $raw -mainHeader '' -subHeader ''
+            if ($token -eq '') { continue }
+            $tokenCount++
+            if ($anchors.Contains($token)) { $anchorCount++ }
+        }
+        if ($tokenCount -lt 10 -or $anchorCount -lt 2) { continue }
+        if ($anchorCount -gt $bestAnchorCount -or ($anchorCount -eq $bestAnchorCount -and $tokenCount -gt $bestTokenCount)) {
+            $bestIndex = $ri
+            $bestAnchorCount = $anchorCount
+            $bestTokenCount = $tokenCount
+        }
+    }
+    return $bestIndex
+}
+
+function Find-DiHeaderRows([System.Data.DataTable]$diSheet){
+    if ($null -eq $diSheet) { return @{ title = $null; code = $null } }
+    $firstDataRowIndex = -1
+    for ($ri = 0; $ri -lt $diSheet.Rows.Count; $ri++) {
+        $row = $diSheet.Rows[$ri]
+        $pointId = To-IntOrNull $row['F1']
+        $baseAddr = To-IntOrNull $row['F5']
+        if ($null -ne $pointId -and $null -ne $baseAddr) {
+            $firstDataRowIndex = $ri
+            break
+        }
+    }
+    if ($firstDataRowIndex -lt 0) { return @{ title = $null; code = $null } }
+
+    $candidates = New-Object System.Collections.Generic.List[object]
+    for ($ri = 0; $ri -lt $firstDataRowIndex; $ri++) {
+        $row = $diSheet.Rows[$ri]
+        $textCount = 0
+        for ($c = 6; $c -le $diSheet.Columns.Count; $c++) {
+            $col = "F$c"
+            if (-not $diSheet.Columns.Contains($col)) { continue }
+            $raw = Normalize-Str $row[$col]
+            if ($raw -eq '' -or $raw -match '^\d+(\.\d+)?$') { continue }
+            $textCount++
+        }
+        if ($textCount -ge 5) {
+            $candidates.Add([PSCustomObject]@{ row_index = $ri; text_count = $textCount })
+        }
+    }
+    if ($candidates.Count -lt 1) { return @{ title = $null; code = $null } }
+    $ordered = @($candidates | Sort-Object row_index)
+    $last = $ordered[-1]
+    $prev = if ($ordered.Count -ge 2) { $ordered[-2] } else { $null }
+    return @{
+        title = $(if ($null -ne $prev) { $diSheet.Rows[[int]$prev.row_index] } else { $null })
+        code  = $diSheet.Rows[[int]$last.row_index]
+    }
 }
 
 function Get-RowCellValue([System.Data.DataRow]$row, [string]$col){
@@ -255,28 +323,8 @@ function Build-AiTokenByColumn([System.Data.DataTable]$aiSheet){
 function Build-AiTokenByColumnV2([System.Data.DataTable]$aiSheet){
     $map = @{}
     if ($null -eq $aiSheet) { return $map }
-    $bestRowIndex = -1
-    $bestCnt = 0
-    $seenTokenCount = @{}
-
-    for ($ri = 0; $ri -lt $aiSheet.Rows.Count; $ri++) {
-        $row = $aiSheet.Rows[$ri]
-        $cnt = 0
-        for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
-            $col = "F$c"
-            if (-not $aiSheet.Columns.Contains($col)) { continue }
-            $raw = Normalize-Str $row[$col]
-            if ($raw -eq '') { continue }
-            if ($raw -match '^\d+(\.\d+)?$') { continue }
-            $cnt++
-        }
-        if ($cnt -gt $bestCnt) {
-            $bestCnt = $cnt
-            $bestRowIndex = $ri
-        }
-    }
-
-    if ($bestRowIndex -lt 0 -or $bestCnt -lt 1) { return $map }
+    $bestRowIndex = Find-AiTokenRowIndex -aiSheet $aiSheet
+    if ($bestRowIndex -lt 0) { return $map }
     $tokenRow = $aiSheet.Rows[$bestRowIndex]
     $mainHeaderRow = if ($bestRowIndex -ge 3) { $aiSheet.Rows[$bestRowIndex - 3] } else { $null }
     $subHeaderRow = if ($bestRowIndex -ge 2) { $aiSheet.Rows[$bestRowIndex - 2] } else { $null }
@@ -292,11 +340,6 @@ function Build-AiTokenByColumnV2([System.Data.DataTable]$aiSheet){
             -mainHeader (Get-RowCellValue -row $mainHeaderRow -col $col) `
             -subHeader (Get-RowCellValue -row $subHeaderRow -col $col)
         if ($token -eq '') { continue }
-        if (-not $seenTokenCount.ContainsKey($token)) { $seenTokenCount[$token] = 0 }
-        $seenTokenCount[$token] = [int]$seenTokenCount[$token] + 1
-        if ($token -eq 'VA' -and [int]$seenTokenCount[$token] -ge 2) {
-            $token = 'KVAR'
-        }
         $map[$c] = $token
     }
     return $map
@@ -316,8 +359,45 @@ function Resolve-AiMetricOrderV2([System.Data.DataTable]$aiSheet, [string]$fallb
 }
 
 function New-SqlConnection {
+    $direct = Normalize-Str $env:EPMS_IMPORT_DB_CONN
+    if ($direct -eq '') { $direct = Normalize-Str $env:EPMS_DB_CONN }
+    if ($direct -ne '') {
+        $cn = New-Object System.Data.SqlClient.SqlConnection
+        $cn.ConnectionString = $direct
+        $cn.Open()
+        return $cn
+    }
+
+    $server = Normalize-Str $env:EPMS_DB_SERVER
+    if ($server -eq '') { $server = Normalize-Str $env:EPMS_IMPORT_DB_SERVER }
+    if ($server -eq '') { $server = 'localhost,1433' }
+    $database = Normalize-Str $env:EPMS_DB_NAME
+    if ($database -eq '') { $database = Normalize-Str $env:EPMS_IMPORT_DB_NAME }
+    if ($database -eq '') { $database = 'epms' }
+    $user = Normalize-Str $env:EPMS_DB_USER
+    if ($user -eq '') { $user = Normalize-Str $env:EPMS_IMPORT_DB_USER }
+    $password = Normalize-Str $env:EPMS_DB_PASSWORD
+    if ($password -eq '') { $password = Normalize-Str $env:EPMS_IMPORT_DB_PASSWORD }
+    $legacyConn = 'Server=localhost,1433;Database=epms;User ID=sa;Password=1234;TrustServerCertificate=True;Encrypt=True'
+    $connectionString = $null
+
+    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+    $builder['Data Source'] = $server
+    $builder['Initial Catalog'] = $database
+    $builder['Encrypt'] = $true
+    $builder['TrustServerCertificate'] = $true
+    if ($user -ne '' -and $password -ne '') {
+        $builder['User ID'] = $user
+        $builder['Password'] = $password
+        $builder['Integrated Security'] = $false
+        $connectionString = $builder.ConnectionString
+    } elseif ($user -eq '' -and $password -eq '') {
+        $connectionString = $legacyConn
+    } else {
+        throw 'DB credentials are incomplete. Set EPMS_IMPORT_DB_CONN or both EPMS_DB_USER and EPMS_DB_PASSWORD.'
+    }
     $cn = New-Object System.Data.SqlClient.SqlConnection
-    $cn.ConnectionString = 'Server=localhost,1433;Database=epms;User ID=sa;Password=1234;TrustServerCertificate=True;Encrypt=True'
+    $cn.ConnectionString = $connectionString
     $cn.Open()
     return $cn
 }
@@ -384,14 +464,18 @@ function Query-ExcelTable([string]$path, [string]$sheetName){
     }
 }
 
-function Get-MeterMatch([hashtable]$byName, [hashtable]$byPanel, [string]$name, [string]$panel){
+function Get-MeterMatch([hashtable]$byNamePanel, [hashtable]$byName, [hashtable]$byPanel, [string]$name, [string]$panel){
     if ($null -eq $name) { $name = '' }
     if ($null -eq $panel) { $panel = '' }
     $kName = $name.Trim().ToUpperInvariant()
+    $kPanel = $panel.Trim().ToUpperInvariant()
+    $kNamePanel = "$kName|$kPanel"
+    if ($kName -ne '' -and $kPanel -ne '' -and $byNamePanel.ContainsKey($kNamePanel)) {
+        return $byNamePanel[$kNamePanel]
+    }
     if ($kName -ne '' -and $byName.ContainsKey($kName)) {
         return $byName[$kName]
     }
-    $kPanel = $panel.Trim().ToUpperInvariant()
     if ($kPanel -ne '' -and $byPanel.ContainsKey($kPanel)) {
         $arr = $byPanel[$kPanel]
         if ($arr.Count -eq 1) {
@@ -586,6 +670,7 @@ try {
     try {
     $effectiveFloatCount = Resolve-AutoFloatCount -aiSheet $aiSheet -targetPlcId $PlcId -fallback $FloatCount
 
+    $meterByNamePanel = @{}
     $meterByName = @{}
     $meterByPanel = @{}
 
@@ -598,11 +683,17 @@ try {
         $panel = Normalize-Str $rMeters['panel_name']
 
         $nk = $name.ToUpperInvariant()
+        $pk = $panel.ToUpperInvariant()
+        if ($nk -ne '' -and $pk -ne '') {
+            $npk = "$nk|$pk"
+            if (-not $meterByNamePanel.ContainsKey($npk)) {
+                $meterByNamePanel[$npk] = $meterId
+            }
+        }
         if ($nk -ne '' -and -not $meterByName.ContainsKey($nk)) {
             $meterByName[$nk] = $meterId
         }
 
-        $pk = $panel.ToUpperInvariant()
         if ($pk -ne '') {
             if (-not $meterByPanel.ContainsKey($pk)) {
                 $meterByPanel[$pk] = New-Object System.Collections.Generic.List[int]
@@ -625,6 +716,9 @@ try {
         }
     }
     $tokenByCol = Build-AiTokenByColumnV2 -aiSheet $aiSheet
+    if ($null -eq $tokenByCol -or $tokenByCol.Count -lt 1) {
+        throw "AI token header row not detected in sheet PLC_IO_Address_AI."
+    }
 
     $aiRows = New-Object System.Collections.Generic.List[object]
     $aiUnmatched = New-Object System.Collections.Generic.List[string]
@@ -643,7 +737,7 @@ try {
         if ($itemName -eq '' -or $null -eq $baseAddr) { continue }
         $aiCandidateCount++
 
-        $meterId = Get-MeterMatch -byName $meterByName -byPanel $meterByPanel -name $itemName -panel $panelName
+        $meterId = Get-MeterMatch -byNamePanel $meterByNamePanel -byName $meterByName -byPanel $meterByPanel -name $itemName -panel $panelName
         if ($null -eq $meterId) {
             $aiUnmatched.Add("AI meter unresolved: NO=$no, item=$itemName, panel=$panelName")
             continue
@@ -758,8 +852,12 @@ try {
     $diMapByPoint = @{}
     $diTags = New-Object System.Collections.Generic.List[object]
     $diAllRows = $diSheet.Select()
-    $diHeaderTitleRow = if ($diAllRows.Count -gt 4) { $diAllRows[4] } else { $null }
-    $diHeaderCodeRow = if ($diAllRows.Count -gt 6) { $diAllRows[6] } else { $null }
+    $diHeaderRows = Find-DiHeaderRows -diSheet $diSheet
+    $diHeaderTitleRow = $diHeaderRows.title
+    $diHeaderCodeRow = $diHeaderRows.code
+    if ($null -eq $diHeaderCodeRow) {
+        throw "DI header rows not detected in sheet PLC_IO_Address_DI."
+    }
 
     foreach ($row in $diAllRows) {
         $pointId = To-IntOrNull $row['F1']
@@ -850,6 +948,9 @@ try {
     $disabledAiSamples = New-Object System.Collections.Generic.List[string]
     $disabledDiMapSamples = New-Object System.Collections.Generic.List[string]
     $disabledDiTagSamples = New-Object System.Collections.Generic.List[string]
+    $disabledAiMeterIds = New-Object System.Collections.Generic.List[int]
+    $disabledDiMapPointIds = New-Object System.Collections.Generic.List[int]
+    $disabledDiTagRows = New-Object System.Collections.Generic.List[object]
     $disabledAiCount = 0
     $disabledDiMapCount = 0
     $disabledDiTagCount = 0
@@ -869,6 +970,7 @@ WHERE m.plc_id = @plc_id AND m.enabled = 1
         $meterId = [int]$rExistingAi['meter_id']
         if (-not $newAiKeySet.Contains([string]$meterId)) {
             $disabledAiCount++
+            $disabledAiMeterIds.Add($meterId)
             if ($disabledAiSamples.Count -lt 10) {
                 $disabledAiSamples.Add(("meter_id={0}, name={1}" -f $meterId, (Normalize-Str $rExistingAi['name'])))
             }
@@ -890,6 +992,7 @@ WHERE plc_id = @plc_id AND enabled = 1
         $pointId = [int]$rExistingDiMap['point_id']
         if (-not $newDiMapKeySet.Contains([string]$pointId)) {
             $disabledDiMapCount++
+            $disabledDiMapPointIds.Add($pointId)
             if ($disabledDiMapSamples.Count -lt 10) {
                 $disabledDiMapSamples.Add(("point_id={0}, start_address={1}" -f $pointId, [int]$rExistingDiMap['start_address']))
             }
@@ -913,6 +1016,11 @@ WHERE plc_id = @plc_id AND enabled = 1
         $key = "{0}|{1}|{2}" -f ([int]$rExistingDiTag['point_id']), ([int]$rExistingDiTag['di_address']), ([int]$rExistingDiTag['bit_no'])
         if (-not $newDiTagKeySet.Contains($key)) {
             $disabledDiTagCount++
+            $disabledDiTagRows.Add([PSCustomObject]@{
+                point_id = [int]$rExistingDiTag['point_id']
+                di_address = [int]$rExistingDiTag['di_address']
+                bit_no = [int]$rExistingDiTag['bit_no']
+            })
             if ($disabledDiTagSamples.Count -lt 12) {
                 $disabledDiTagSamples.Add((
                     "point_id={0}, addr={1}, bit={2}, tag={3}, item={4}, panel={5}" -f
@@ -953,13 +1061,50 @@ WHERE plc_id = @plc_id AND enabled = 1
         try {
             $aiMatchSyncUpdated = Apply-AiMatchSync -sqlCn $sqlCn -tx $tx -syncMap $aiMatchSyncMap
 
-            # Soft-reset existing mappings for this PLC, then re-enable only rows present in Excel.
-            foreach ($tbl in @('dbo.plc_meter_map', 'dbo.plc_di_map', 'dbo.plc_di_tag_map')) {
+            foreach ($meterId in $disabledAiMeterIds) {
                 $cmdDisable = $sqlCn.CreateCommand()
                 $cmdDisable.Transaction = $tx
-                $cmdDisable.CommandText = "UPDATE $tbl SET enabled = 0, updated_at = SYSUTCDATETIME() WHERE plc_id = @plc_id"
+                $cmdDisable.CommandText = @"
+UPDATE dbo.plc_meter_map
+SET enabled = 0, updated_at = SYSUTCDATETIME()
+WHERE plc_id = @plc_id AND meter_id = @meter_id
+"@
                 [void]$cmdDisable.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+                [void]$cmdDisable.Parameters.Add('@meter_id', [System.Data.SqlDbType]::Int)
                 $cmdDisable.Parameters['@plc_id'].Value = $PlcId
+                $cmdDisable.Parameters['@meter_id'].Value = [int]$meterId
+                [void]$cmdDisable.ExecuteNonQuery()
+            }
+            foreach ($pointId in $disabledDiMapPointIds) {
+                $cmdDisable = $sqlCn.CreateCommand()
+                $cmdDisable.Transaction = $tx
+                $cmdDisable.CommandText = @"
+UPDATE dbo.plc_di_map
+SET enabled = 0, updated_at = SYSUTCDATETIME()
+WHERE plc_id = @plc_id AND point_id = @point_id
+"@
+                [void]$cmdDisable.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+                [void]$cmdDisable.Parameters.Add('@point_id', [System.Data.SqlDbType]::Int)
+                $cmdDisable.Parameters['@plc_id'].Value = $PlcId
+                $cmdDisable.Parameters['@point_id'].Value = [int]$pointId
+                [void]$cmdDisable.ExecuteNonQuery()
+            }
+            foreach ($rDisable in $disabledDiTagRows) {
+                $cmdDisable = $sqlCn.CreateCommand()
+                $cmdDisable.Transaction = $tx
+                $cmdDisable.CommandText = @"
+UPDATE dbo.plc_di_tag_map
+SET enabled = 0, updated_at = SYSUTCDATETIME()
+WHERE plc_id = @plc_id AND point_id = @point_id AND di_address = @di_address AND bit_no = @bit_no
+"@
+                [void]$cmdDisable.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+                [void]$cmdDisable.Parameters.Add('@point_id', [System.Data.SqlDbType]::Int)
+                [void]$cmdDisable.Parameters.Add('@di_address', [System.Data.SqlDbType]::Int)
+                [void]$cmdDisable.Parameters.Add('@bit_no', [System.Data.SqlDbType]::Int)
+                $cmdDisable.Parameters['@plc_id'].Value = $PlcId
+                $cmdDisable.Parameters['@point_id'].Value = [int]$rDisable.point_id
+                $cmdDisable.Parameters['@di_address'].Value = [int]$rDisable.di_address
+                $cmdDisable.Parameters['@bit_no'].Value = [int]$rDisable.bit_no
                 [void]$cmdDisable.ExecuteNonQuery()
             }
 
