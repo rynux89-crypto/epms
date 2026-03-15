@@ -374,7 +374,7 @@
         }
 
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT metric_key, display_name, source_type, enabled, updated_at FROM dbo.metric_catalog ORDER BY metric_key");
+                "SELECT metric_key, display_name, source_type, enabled FROM dbo.metric_catalog ORDER BY metric_key");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Map<String, Object> r = new HashMap<>();
@@ -382,7 +382,6 @@
                 r.put("display_name", rs.getString("display_name"));
                 r.put("source_type", rs.getString("source_type"));
                 r.put("enabled", rs.getBoolean("enabled"));
-                r.put("updated_at", rs.getTimestamp("updated_at"));
                 rows.add(r);
             }
         }
@@ -406,10 +405,57 @@
         .on { background:#e8f7ec; border:1px solid #b9e6c6; color:#1b7f3b; }
         .off { background:#fff3e0; border:1px solid #ffd8a8; color:#b45309; }
         .row-form { display:inline; margin:0; padding:0; box-shadow:none; background:transparent; }
-        .action-wrap { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-        .edit-input { width:160px; }
-        .edit-select { width:110px; }
-        .rename-input { width:120px; }
+        .action-wrap { display:flex; flex-wrap:nowrap; gap:4px; align-items:center; white-space:nowrap; }
+        td .action-wrap { justify-content:flex-start; }
+        .edit-input { width:130px; }
+        .edit-select { width:78px; }
+        .rename-input { width:84px; }
+        .row-form input,
+        .row-form select {
+            margin: 0;
+            padding: 5px 8px;
+            min-height: 34px;
+            font-size: 12px;
+            border-radius: 10px;
+        }
+        .row-form button {
+            padding: 4px 10px;
+            min-height: 32px;
+            font-size: 11px;
+            box-shadow: 0 4px 10px rgba(31, 111, 235, 0.16);
+        }
+        table td { vertical-align: middle; }
+        .catalog-table th:last-child,
+        .catalog-table td:last-child { white-space: nowrap; width: 1%; }
+        .table-scroll {
+            margin-top: 12px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding-bottom: 8px;
+            border: 1px solid #dbe4ee;
+            border-radius: 12px;
+            background: #fff;
+            scrollbar-gutter: stable both-edges;
+        }
+        .table-scroll::-webkit-scrollbar { height: 12px; }
+        .table-scroll::-webkit-scrollbar-track { background: #eaf0f6; border-radius: 999px; }
+        .table-scroll::-webkit-scrollbar-thumb { background: #9fb5cc; border-radius: 999px; }
+        .catalog-table {
+            width: max-content !important;
+            min-width: 1060px;
+            margin-top: 0 !important;
+            table-layout: auto !important;
+            overflow: visible !important;
+            border: none !important;
+            margin-bottom: 0 !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+        }
+        .catalog-table th,
+        .catalog-table td {
+            white-space: nowrap;
+            word-wrap: normal;
+        }
     </style>
 </head>
 <body>
@@ -440,30 +486,32 @@
         </div>
     </form>
 
-    <form method="POST" style="margin-top:8px;">
-        <input type="hidden" name="action" value="sync_ai">
-        <button type="submit">AI 지표 동기화</button>
-    </form>
+    <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+        <form method="POST" style="margin:0;">
+            <input type="hidden" name="action" value="sync_ai">
+            <button type="submit">AI 지표 동기화</button>
+        </form>
 
-    <form method="POST" style="margin-top:8px;">
-        <input type="hidden" name="action" value="sync_di">
-        <button type="submit">DI 지표 동기화</button>
-    </form>
+        <form method="POST" style="margin:0;">
+            <input type="hidden" name="action" value="sync_di">
+            <button type="submit">DI 지표 동기화</button>
+        </form>
+    </div>
 
-    <table style="margin-top:12px;">
+    <div class="table-scroll">
+    <table class="catalog-table" style="margin-top:12px;">
         <thead>
-            <tr><th>metric_key</th><th>display_name</th><th>source_type</th><th>enabled</th><th>updated_at</th><th>작업</th></tr>
+            <tr><th>metric_key</th><th>display_name</th><th>source_type</th><th>enabled</th><th>작업</th></tr>
         </thead>
         <tbody>
         <% if (rows.isEmpty()) { %>
-            <tr><td colspan="6">등록된 지표키가 없습니다.</td></tr>
+            <tr><td colspan="5">등록된 지표키가 없습니다.</td></tr>
         <% } else { for (Map<String, Object> r : rows) { %>
             <tr>
                 <td class="mono"><%= h(r.get("metric_key")) %></td>
                 <td><%= h(r.get("display_name")) %></td>
                 <td class="mono"><%= h(r.get("source_type")) %></td>
                 <td><% if ((Boolean)r.get("enabled")) { %><span class="badge on">ON</span><% } else { %><span class="badge off">OFF</span><% } %></td>
-                <td class="mono"><%= h(r.get("updated_at")) %></td>
                 <td>
                     <div class="action-wrap">
                     <form method="POST" class="row-form action-wrap">
@@ -500,6 +548,7 @@
         <% }} %>
         </tbody>
     </table>
+    </div>
 </div>
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>

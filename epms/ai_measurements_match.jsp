@@ -24,6 +24,25 @@
         if (t.startsWith("V")) return "전압";
         return "기타";
     }
+
+    private static String describeTokenMeaning(String token) {
+        if (token == null) return "";
+        String t = token.trim().toUpperCase(Locale.ROOT);
+        if ("PV1".equals(t)) return "A상 전압 위상각";
+        if ("PV2".equals(t)) return "B상 전압 위상각";
+        if ("PV3".equals(t)) return "C상 전압 위상각";
+        if ("PI1".equals(t)) return "A상 전류 위상각";
+        if ("PI2".equals(t)) return "B상 전류 위상각";
+        if ("PI3".equals(t)) return "C상 전류 위상각";
+        if ("PF".equals(t)) return "역률";
+        if ("HZ".equals(t)) return "주파수";
+        if ("KW".equals(t)) return "유효전력";
+        if ("KHH".equals(t)) return "유효전력량";
+        if ("VA".equals(t)) return "무효전력";
+        if ("VAH".equals(t)) return "무효전력량";
+        if ("PEAK".equals(t)) return "전력 피크";
+        return "";
+    }
 %>
 <%
     String plcParam = request.getParameter("plc_id");
@@ -223,8 +242,8 @@
     </div>
 
     <div class="info-box">
-        기준: <span class="mono">docs/IO_Address_Tag_List_20260209-전압고조파추가.xlsx</span>의 AI 태그(62개, float 2레지스터)<br/>
-        결과: <span class="mono">dbo.plc_ai_measurements_match</span> 매핑 테이블 기준(기존 measurements 구조는 변경하지 않음)
+        기준: <span class="mono">dbo.plc_ai_measurements_match</span>와 현재 <span class="mono">plc_meter_map</span> 매핑 기준 비교 화면입니다.<br/>
+        참고: <span class="mono">PV1/PV2/PV3</span>, <span class="mono">PI1/PI2/PI3</span>는 현재 화면에서 위상각 의미로 표시됩니다.
     </div>
 
     <% if (error != null) { %>
@@ -272,6 +291,7 @@
                     <% for (Map<String, Object> r : entry.getValue()) { %>
                         <%
                             String col = (String)r.get("measurement_column");
+                            String tokenMeaning = describeTokenMeaning((String)r.get("token"));
                             String targetTable = null;
                             for (Map<String, Object> mr : mappingRows) {
                                 if (col != null && col.equals(mr.get("measurement_column")) && String.valueOf(r.get("float_index")).equals(String.valueOf(mr.get("float_index")))) {
@@ -301,6 +321,7 @@
                                 </div>
                             </div>
                             <dl class="match-card-meta">
+                                <dt>실제 의미</dt><dd><%= tokenMeaning == null || tokenMeaning.isEmpty() ? "-" : h(tokenMeaning) %></dd>
                                 <dt>컬럼</dt><dd class="mono"><%= h(col) %></dd>
                                 <dt>대상 테이블</dt><dd class="mono"><%= targetTable == null ? "-" : h(targetTable) %></dd>
                                 <dt>레지스터</dt><dd class="mono"><%= r.get("reg_address") %></dd>

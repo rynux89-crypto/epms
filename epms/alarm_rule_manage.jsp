@@ -29,6 +29,78 @@
         return "기타";
     }
 
+    private static Map<String, List<String>> loadMeasurementColumnTokens(Connection conn) {
+        Map<String, List<String>> map = new HashMap<>();
+        String sql =
+            "IF OBJECT_ID('dbo.plc_ai_measurements_match','U') IS NOT NULL " +
+            "SELECT token, measurement_column FROM dbo.plc_ai_measurements_match WHERE is_supported = 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String token = normKey(rs.getString("token"));
+                String column = normKey(rs.getString("measurement_column"));
+                if (token.isEmpty() || column.isEmpty()) continue;
+                List<String> list = map.get(column);
+                if (list == null) {
+                    list = new ArrayList<>();
+                    map.put(column, list);
+                }
+                if (!list.contains(token)) list.add(token);
+            }
+        } catch (Exception ignore) {
+        }
+        for (List<String> list : map.values()) Collections.sort(list);
+        return map;
+    }
+
+    private static String joinTokens(Map<String, List<String>> columnTokens, String... columns) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        if (columnTokens == null || columns == null) return "";
+        for (String column : columns) {
+            String key = normKey(column);
+            if (key.isEmpty()) continue;
+            List<String> list = columnTokens.get(key);
+            if (list != null) out.addAll(list);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String token : out) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(token);
+        }
+        return sb.toString();
+    }
+
+    private static String resolveRuleInputDisplay(String metricKey, String sourceToken, String targetScope, Map<String, List<String>> columnTokens) {
+        String scope = normKey(targetScope);
+        String mk = normKey(metricKey);
+        String st = normKey(sourceToken);
+        if (!st.isEmpty()) return st;
+        if ("PLC".equals(scope)) return mk;
+
+        if ("POWER_FACTOR".equals(mk) || "PF_GROUP".equals(mk)) {
+            String x = joinTokens(columnTokens, "power_factor", "power_factor_avg");
+            return x.isEmpty() ? "PF 계열" : x;
+        }
+        if ("FREQUENCY_GROUP".equals(mk) || "HZ_GROUP".equals(mk)) {
+            String x = joinTokens(columnTokens, "frequency");
+            return x.isEmpty() ? "HZ" : x;
+        }
+        if ("THD_VOLTAGE".equals(mk) || "THD_VOLTAGE_MAX".equals(mk)) {
+            String x = joinTokens(columnTokens, "thd_voltage_a", "thd_voltage_b", "thd_voltage_c");
+            return x.isEmpty() ? "H_V*_1 계열" : x;
+        }
+        if ("THD_CURRENT".equals(mk) || "THD_CURRENT_MAX".equals(mk)) {
+            String x = joinTokens(columnTokens, "thd_current_a", "thd_current_b", "thd_current_c");
+            return x.isEmpty() ? "H_I*_1 계열" : x;
+        }
+        if ("UNBALANCE".equals(mk) || "UNBALANCE_MAX".equals(mk)) return "voltage_unbalance_rate / 상전압 계열";
+        if ("V_VARIATION".equals(mk) || "VOLTAGE_VARIATION".equals(mk)) return "V_VAR 계열";
+        if ("I_VARIATION".equals(mk) || "CURRENT_VARIATION".equals(mk)) return "I_VAR 계열";
+        if ("VARIATION".equals(mk) || "VARIATION_MAX".equals(mk)) return "V_VAR / I_VAR 계열";
+        if ("PEAK".equals(mk) || "MAX_POWER".equals(mk) || "PEAK_POWER".equals(mk)) return "PEAK";
+        return "";
+    }
+
     private static List<String> loadSystemMetricKeys(Connection conn) throws Exception {
         TreeSet<String> set = new TreeSet<>();
         // Fixed keys used by DI/protection logic.
@@ -211,6 +283,7 @@
     List<Map<String, Object>> rows = new ArrayList<>();
     List<String> metricKeys = new ArrayList<>();
     LinkedHashMap<String, List<String>> groupedMetricKeys = new LinkedHashMap<>();
+    Map<String, List<String>> columnTokens = new HashMap<>();
 
     try {
         String ensureSql =
@@ -358,6 +431,8 @@
             }
         }
 
+        columnTokens = loadMeasurementColumnTokens(conn);
+
         String q =
             "SELECT rule_id, rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, " +
             "       hysteresis, severity, source_token, message_template, enabled, description, updated_at " +
@@ -383,6 +458,12 @@
                 r.put("enabled", rs.getBoolean("enabled"));
                 r.put("description", rs.getString("description"));
                 r.put("updated_at", rs.getTimestamp("updated_at"));
+                r.put("resolved_input", resolveRuleInputDisplay(
+                    rs.getString("metric_key"),
+                    rs.getString("source_token"),
+                    rs.getString("target_scope"),
+                    columnTokens
+                ));
                 rows.add(r);
             }
         }
@@ -417,9 +498,43 @@
             padding: 6px 5px;
             line-height: 1.1;
         }
-        .rule-table td { font-size: 12px; vertical-align: middle; }
-        .act-wrap { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
-        .btn-sm { padding: 4px 8px; font-size: 11px; }
+        .rule-table-wrap {
+            overflow-x: auto;
+            overflow-y: visible;
+            margin-top: 12px;
+            border: 1px solid #d7e0ea;
+            border-radius: 14px;
+            background: #fff;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: #9cb7d3 #edf3fb;
+        }
+        .rule-table-wrap::-webkit-scrollbar { height: 10px; }
+        .rule-table-wrap::-webkit-scrollbar-track { background: #edf3fb; border-radius: 999px; }
+        .rule-table-wrap::-webkit-scrollbar-thumb { background: #9cb7d3; border-radius: 999px; }
+        .rule-table {
+            width: max-content !important;
+            min-width: 1720px;
+            table-layout: auto !important;
+            margin-bottom: 0;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+        }
+        .rule-table td {
+            font-size: 12px;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        .act-wrap {
+            display: flex;
+            gap: 4px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+        .btn-sm { padding: 4px 7px; font-size: 11px; white-space: nowrap; }
         .row-form { margin: 0; padding: 0; box-shadow: none; background: transparent; display: inline; }
         .rule-table tbody tr.pickable { cursor: pointer; }
         .rule-table tbody tr.pickable:hover { background: #f5f9ff; }
@@ -495,6 +610,7 @@
         </div>
     </form>
 
+    <div class="rule-table-wrap">
     <table class="rule-table">
         <thead>
         <tr>
@@ -511,6 +627,7 @@
             <th>히스테리시스</th>
             <th>기본심각도(단일임계)</th>
             <th>연결토큰</th>
+            <th>실제 판단 입력</th>
             <th>메시지템플릿</th>
             <th>사용여부</th>
             <th>설명</th>
@@ -520,7 +637,7 @@
         </thead>
         <tbody>
         <% if (rows.isEmpty()) { %>
-        <tr><td colspan="18">등록된 알람 규칙이 없습니다.</td></tr>
+        <tr><td colspan="19">등록된 알람 규칙이 없습니다.</td></tr>
         <% } else { %>
         <% for (Map<String, Object> r : rows) { %>
         <tr class="pickable"
@@ -552,6 +669,7 @@
             <td class="mono"><%= h(r.get("hysteresis")) %></td>
             <td class="mono"><%= h(r.get("severity")) %></td>
             <td class="mono"><%= h(r.get("source_token")) %></td>
+            <td class="mono"><%= h(r.get("resolved_input")) %></td>
             <td><%= h(r.get("message_template")) %></td>
             <td><% if ((Boolean)r.get("enabled")) { %><span class="badge b-on">사용</span><% } else { %><span class="badge b-off">미사용</span><% } %></td>
             <td><%= h(r.get("description")) %></td>
@@ -575,6 +693,7 @@
         <% } %>
         </tbody>
     </table>
+    </div>
 </div>
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 <script>

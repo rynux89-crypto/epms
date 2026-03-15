@@ -450,18 +450,18 @@
 
                     <label class="required">알람 규칙코드</label>
                     <div>
-                        <input type="text" id="ruleCode" name="rule_code" maxlength="50" placeholder="예: ALM_DI_TEMP_001" class="mono">
+                        <input type="text" id="ruleCode" name="rule_code" maxlength="50" placeholder="예: ALM_DI_TEMP_001" class="mono" title="규칙을 식별하는 고유 코드입니다. 영문/숫자/언더스코어를 권장합니다.">
                         <div class="hint">영문/숫자/언더스코어 권장, 중복 불가</div>
                     </div>
 
                     <label class="required">규칙명</label>
                     <div>
-                        <input type="text" id="ruleName" name="rule_name" maxlength="100" placeholder="예: Chiller High Temperature">
+                        <input type="text" id="ruleName" name="rule_name" maxlength="100" placeholder="예: Chiller High Temperature" title="화면과 목록에 표시될 규칙 이름입니다.">
                     </div>
 
                     <label class="required">적용대상</label>
                     <div>
-                        <select id="targetScope" name="target_scope" class="mono">
+                        <select id="targetScope" name="target_scope" class="mono" title="이 규칙이 적용될 데이터 범위입니다.">
                             <option value="PLC">PLC (DI)</option>
                             <option value="AI">AI</option>
                             <option value="METER">METER</option>
@@ -470,7 +470,7 @@
 
                     <label>설명</label>
                     <div class="full">
-                        <textarea id="descriptionRaw" placeholder="규칙 목적, 대상 설비, 운영 기준을 입력하세요."></textarea>
+                        <textarea id="descriptionRaw" placeholder="규칙 목적, 대상 설비, 운영 기준을 입력하세요." title="규칙의 목적과 운영 기준을 설명합니다."></textarea>
                     </div>
                 </div>
             </div>
@@ -482,30 +482,30 @@
                 <div class="grid">
                     <label class="required di-only">DI 신호종류</label>
                     <div class="di-only">
-                        <select id="diSignalType" name="diSignalType"></select>
+                        <select id="diSignalType" name="diSignalType" title="DI 그룹 규칙에 사용할 신호 종류를 선택합니다."></select>
                         <div class="hint">보호계전/경고 DI 의미별로 분류해서 규칙을 설정합니다.</div>
                     </div>
 
                     <label class="di-only">권장값</label>
                     <div class="di-only">
-                        <input type="text" id="diPresetInfo" readonly placeholder="DI 신호종류 선택 시 자동 표시">
+                        <input type="text" id="diPresetInfo" readonly placeholder="DI 신호종류 선택 시 자동 표시" title="선택한 DI 신호종류의 권장 규칙값이 표시됩니다.">
                     </div>
 
                     <label class="required">지표키</label>
                     <div>
-                        <select id="metricKeySelect" class="mono"></select>
+                        <select id="metricKeySelect" class="mono" title="알람 판단에 사용할 metric_key를 선택합니다."></select>
                         <div class="hint">자유 입력 대신 등록된 metric_key만 선택합니다.</div>
                     </div>
 
                     <label class="required">연결 Token/Tag</label>
                     <div>
-                        <select id="sourceTokenSelect" class="mono"></select>
+                        <select id="sourceTokenSelect" class="mono" title="실제 수집 토큰 또는 태그를 선택합니다."></select>
                         <div class="hint" id="sourceTokenHint">자유 입력 대신 수집/매핑된 토큰만 선택합니다.</div>
                     </div>
 
                     <label class="required">연산자</label>
                     <div>
-                        <select id="operator" name="operator">
+                        <select id="operator" name="operator" title="임계값 비교 연산자입니다.">
                             <option value="">선택</option>
                             <option value=">">&gt;</option>
                             <option value=">=">&gt;=</option>
@@ -518,13 +518,13 @@
 
                     <label class="required">임계값</label>
                     <div>
-                        <input type="number" step="0.0001" id="thresholdValue" name="threshold1" placeholder="예: 75">
+                        <input type="number" step="0.0001" id="thresholdValue" name="threshold1" placeholder="예: 75" title="알람 발생 기준값입니다.">
                     </div>
 
                     <label class="required">지속시간</label>
                     <div class="inline-group">
-                        <input type="number" min="0" id="durationValue" placeholder="예: 5">
-                        <select id="durationUnit">
+                        <input type="number" min="0" id="durationValue" placeholder="예: 5" title="조건이 유지되어야 하는 시간 값입니다.">
+                        <select id="durationUnit" title="지속시간 단위를 선택합니다.">
                             <option value="">단위</option>
                             <option value="sec">sec</option>
                             <option value="min">min</option>
@@ -541,7 +541,7 @@
                 <div class="grid">
                     <label class="required">심각도</label>
                     <div>
-                        <select id="severity" name="severity" class="mono">
+                        <select id="severity" name="severity" class="mono" title="알람 심각도를 선택합니다.">
                             <option value="">선택</option>
                             <option value="WARN">WARN</option>
                             <option value="ALARM">ALARM</option>
@@ -551,7 +551,7 @@
 
                     <label>알람 메시지 템플릿</label>
                     <div class="full">
-                        <input type="text" id="messageTemplate" name="message_template" placeholder="예: {metric_key}={value} 임계치 초과">
+                        <input type="text" id="messageTemplate" name="message_template" placeholder="예: {metric_key}={value} 임계치 초과" title="알람 발생 시 표시할 메시지 템플릿입니다.">
                     </div>
                 </div>
             </div>

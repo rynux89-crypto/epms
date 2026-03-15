@@ -46,6 +46,121 @@ function Normalize-AiFloatCount([int]$count){
     return $count
 }
 
+function Get-AiFloatIndex([int]$baseAddr, [int]$addr){
+    if ($addr -le $baseAddr) { return $null }
+    $delta = $addr - $baseAddr - 1
+    if ($delta -lt 0) { return $null }
+    if (($delta % 2) -ne 0) { return $null }
+    return [int]($delta / 2)
+}
+
+function Build-AiMatchSyncMap([string]$metricOrder){
+    $map = @{}
+    $order = Normalize-Str $metricOrder
+    if ($order -eq '') { return $map }
+    $tokens = @($order -split '\s*,\s*')
+    for ($i = 0; $i -lt $tokens.Count; $i++) {
+        $token = (Normalize-Str $tokens[$i]).ToUpperInvariant()
+        if ($token -eq '') { continue }
+        $map[$token] = $i + 1
+    }
+    if ($map.ContainsKey('KHH')) { $map['KWH'] = $map['KHH'] }
+    if ($map.ContainsKey('VA')) { $map['KVAR'] = $map['VA'] }
+    if ($map.ContainsKey('VAH')) { $map['KVARH'] = $map['VAH'] }
+    return $map
+}
+
+function Get-AiMatchSyncPlan($sqlCn, [hashtable]$syncMap){
+    $changed = 0
+    $missing = New-Object System.Collections.Generic.List[string]
+    $samples = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $syncMap -or $syncMap.Count -eq 0) {
+        return [PSCustomObject]@{
+            changed_count = 0
+            missing_count = 0
+            changed_samples = $samples
+            missing_tokens = $missing
+        }
+    }
+
+    $current = @{}
+    $cmd = $sqlCn.CreateCommand()
+    $cmd.CommandText = "IF OBJECT_ID('dbo.plc_ai_measurements_match','U') IS NOT NULL SELECT token, float_index FROM dbo.plc_ai_measurements_match"
+    $r = $cmd.ExecuteReader()
+    while ($r.Read()) {
+        $token = (Normalize-Str $r['token']).ToUpperInvariant()
+        if ($token -eq '') { continue }
+        $current[$token] = [int]$r['float_index']
+    }
+    $r.Close()
+
+    foreach ($token in @($syncMap.Keys | Sort-Object)) {
+        $desired = [int]$syncMap[$token]
+        if (-not $current.ContainsKey($token)) {
+            $missing.Add($token)
+            continue
+        }
+        $existing = [int]$current[$token]
+        if ($existing -ne $desired) {
+            $changed++
+            if ($samples.Count -lt 12) {
+                $samples.Add(("{0}:{1}->{2}" -f $token, $existing, $desired))
+            }
+        }
+    }
+
+    return [PSCustomObject]@{
+        changed_count = $changed
+        missing_count = $missing.Count
+        changed_samples = $samples
+        missing_tokens = $missing
+    }
+}
+
+function Apply-AiMatchSync($sqlCn, $tx, [hashtable]$syncMap){
+    if ($null -eq $syncMap -or $syncMap.Count -eq 0) { return 0 }
+    $affected = 0
+    foreach ($token in $syncMap.Keys) {
+        $check = $sqlCn.CreateCommand()
+        $check.Transaction = $tx
+        $check.CommandText = "SELECT COUNT(1) FROM dbo.plc_ai_measurements_match WHERE token = @token"
+        [void]$check.Parameters.Add('@token', [System.Data.SqlDbType]::VarChar, 100)
+        $check.Parameters['@token'].Value = [string]$token
+        $exists = [int]$check.ExecuteScalar()
+        if ($exists -le 0) {
+            $ins = $sqlCn.CreateCommand()
+            $ins.Transaction = $tx
+            $ins.CommandText = @"
+INSERT INTO dbo.plc_ai_measurements_match
+(token, float_index, float_registers, measurement_column, target_table, is_supported, note, updated_at)
+VALUES (@token, @float_index, 2, NULL, NULL, 0, 'AUTO_SYNC', SYSDATETIME())
+"@
+            [void]$ins.Parameters.Add('@token', [System.Data.SqlDbType]::VarChar, 100)
+            [void]$ins.Parameters.Add('@float_index', [System.Data.SqlDbType]::Int)
+            $ins.Parameters['@token'].Value = [string]$token
+            $ins.Parameters['@float_index'].Value = [int]$syncMap[$token]
+            $affected += [int]$ins.ExecuteNonQuery()
+            continue
+        }
+
+        $cmd = $sqlCn.CreateCommand()
+        $cmd.Transaction = $tx
+        $cmd.CommandText = @"
+UPDATE dbo.plc_ai_measurements_match
+SET float_index = @float_index,
+    updated_at = SYSDATETIME()
+WHERE token = @token
+  AND ISNULL(float_index, -1) <> @float_index
+"@
+        [void]$cmd.Parameters.Add('@float_index', [System.Data.SqlDbType]::Int)
+        [void]$cmd.Parameters.Add('@token', [System.Data.SqlDbType]::VarChar, 100)
+        $cmd.Parameters['@float_index'].Value = [int]$syncMap[$token]
+        $cmd.Parameters['@token'].Value = [string]$token
+        $affected += [int]$cmd.ExecuteNonQuery()
+    }
+    return $affected
+}
+
 function Resolve-AiMetricOrder([System.Data.DataTable]$aiSheet, [string]$fallback){
     if ($null -eq $aiSheet) { return $fallback }
     $best = New-Object System.Collections.Generic.List[string]
@@ -224,7 +339,7 @@ try {
         throw "Excel file not found: $ExcelPath"
     }
 
-    $tokenDefault = 'V12,V23,V31,VVA,V1N,V2N,V3N,VA,A1,A2,A3,AN,AA,PF,HZ,KW,KWH,KVAR,KVARH,PEAK,H_VA_1,H_VA_3,H_VA_5,H_VA_7,H_VA_9,H_VA_11,H_VB_1,H_VB_3,H_VB_5,H_VB_7,H_VB_9,H_VB_11,H_VC_1,H_VC_3,H_VC_5,H_VC_7,H_VC_9,H_VC_11,H_IA_1,H_IA_3,H_IA_5,H_IA_7,H_IA_9,H_IA_11,H_IB_1,H_IB_3,H_IB_5,H_IB_7,H_IB_9,H_IB_11,H_IC_1,H_IC_3,H_IC_5,H_IC_7,H_IC_9,H_IC_11,PV1,PV2,PV3,PI1,PI2,PI3'
+    $tokenDefault = 'V12,V23,V31,VVA,V1N,V2N,V3N,VA,A1,A2,A3,AN,AA,PF,HZ,KW,KHH,VA,VAH,PEAK,IR,H_VA_1,H_VA_3,H_VA_5,H_VA_7,H_VA_9,H_VA_11,H_VB_1,H_VB_3,H_VB_5,H_VB_7,H_VB_9,H_VB_11,H_VC_1,H_VC_3,H_VC_5,H_VC_7,H_VC_9,H_VC_11,H_IA_1,H_IA_3,H_IA_5,H_IA_7,H_IA_9,H_IA_11,H_IB_1,H_IB_3,H_IB_5,H_IB_7,H_IB_9,H_IB_11,H_IC_1,H_IC_3,H_IC_5,H_IC_7,H_IC_9,H_IC_11,PV1,PV2,PV3,PI1,PI2,PI3'
 
     $aiSheet = Query-ExcelTable -path $ExcelPath -sheetName 'PLC_IO_Address_AI'
     $diSheet = Query-ExcelTable -path $ExcelPath -sheetName 'PLC_IO_Address_DI'
@@ -422,9 +537,9 @@ try {
             continue
         }
 
-        $addrList = New-Object System.Collections.Generic.List[int]
-        $metricTokens = New-Object System.Collections.Generic.List[string]
-        $seenAddr = New-Object 'System.Collections.Generic.HashSet[int]'
+        $maxFloatIndex = -1
+        $maxPresentCol = 0
+        $tokenByIndex = @{}
         $nonEmptyCount = 0
         for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
             $col = "F$c"
@@ -433,18 +548,28 @@ try {
             if ($raw -ne '') { $nonEmptyCount++ }
             $addr = To-IntOrNull $row[$col]
             if ($null -ne $addr -and [int]$addr -gt [int]$baseAddr) {
-                $addrInt = [int]$addr
-                if ($seenAddr.Add($addrInt)) {
-                    $addrList.Add($addrInt)
+                $floatIndex = Get-AiFloatIndex -baseAddr ([int]$baseAddr) -addr ([int]$addr)
+                if ($null -ne $floatIndex) {
+                    if ($floatIndex -gt $maxFloatIndex) { $maxFloatIndex = $floatIndex }
+                    if ($c -gt $maxPresentCol) { $maxPresentCol = $c }
                     $token = ''
                     if ($tokenByCol.ContainsKey($c)) { $token = [string]$tokenByCol[$c] }
-                    if ((Normalize-Str $token) -eq '') { $token = "F$($metricTokens.Count + 1)" }
-                    $metricTokens.Add($token)
+                    if ((Normalize-Str $token) -eq '') { $token = "F$($floatIndex + 1)" }
+                    $tokenByIndex[[int]$floatIndex] = $token
                 }
             }
         }
 
-        $rowFloatCount = @($addrList | Sort-Object -Unique).Count
+        $metricTokens = New-Object System.Collections.Generic.List[string]
+        if ($maxPresentCol -gt 0) {
+            for ($c = 6; $c -le $maxPresentCol; $c++) {
+                if ($tokenByCol.ContainsKey($c)) {
+                    $metricTokens.Add([string]$tokenByCol[$c])
+                }
+            }
+        }
+
+        $rowFloatCount = if ($maxFloatIndex -ge 0) { $maxFloatIndex + 1 } else { 0 }
         if ($rowFloatCount -le 0 -and $nonEmptyCount -gt 0) { $rowFloatCount = $nonEmptyCount }
         if ($rowFloatCount -le 0) { $rowFloatCount = $effectiveFloatCount }
         $rowFloatCount = Normalize-AiFloatCount -count ([int]$rowFloatCount)
@@ -524,6 +649,18 @@ try {
             bit_count = [int]$bitCount
         }
     }
+
+    $canonicalAiMetricOrder = ''
+    foreach ($r in $aiRows) {
+        $mo = Normalize-Str $r.metric_order
+        if ($mo -eq '') { continue }
+        if ($canonicalAiMetricOrder -eq '' -or (@($mo -split ',').Count -gt @($canonicalAiMetricOrder -split ',').Count)) {
+            $canonicalAiMetricOrder = $mo
+        }
+    }
+    if ($canonicalAiMetricOrder -eq '') { $canonicalAiMetricOrder = $metricOrderFallback }
+    $aiMatchSyncMap = Build-AiMatchSyncMap -metricOrder $canonicalAiMetricOrder
+    $aiMatchSyncPlan = Get-AiMatchSyncPlan -sqlCn $sqlCn -syncMap $aiMatchSyncMap
 
     $newAiKeySet = New-StringSet
     foreach ($r in $aiRows) { [void]$newAiKeySet.Add([string]([int]$r.meter_id)) }
@@ -646,6 +783,8 @@ WHERE plc_id = @plc_id AND enabled = 1
     if ($Apply.IsPresent) {
         $tx = $sqlCn.BeginTransaction()
         try {
+            $aiMatchSyncUpdated = Apply-AiMatchSync -sqlCn $sqlCn -tx $tx -syncMap $aiMatchSyncMap
+
             # Soft-reset existing mappings for this PLC, then re-enable only rows present in Excel.
             foreach ($tbl in @('dbo.plc_meter_map', 'dbo.plc_di_map', 'dbo.plc_di_tag_map')) {
                 $cmdDisable = $sqlCn.CreateCommand()
@@ -752,6 +891,7 @@ WHEN NOT MATCHED THEN
             }
 
             $tx.Commit()
+            $aiMatchSyncPlan | Add-Member -NotePropertyName applied_count -NotePropertyValue $aiMatchSyncUpdated -Force
         } catch {
             $tx.Rollback()
             throw
@@ -790,6 +930,7 @@ WHEN NOT MATCHED THEN
         ai_rows_sample = $aiRowsSample
         di_map_rows = $diMapByPoint.Count
         di_tag_rows = $diTags.Count
+        ai_match_sync = $aiMatchSyncPlan
         disable_summary = $disableSummary
         allow_disable = [bool]$AllowDisable.IsPresent
     }
