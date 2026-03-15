@@ -33,6 +33,64 @@
         }
         return sum;
     }
+
+    private static String jsonEscape(String s) {
+        if (s == null) return "null";
+        StringBuilder out = new StringBuilder();
+        out.append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            switch (ch) {
+                case '\\': out.append("\\\\"); break;
+                case '"': out.append("\\\""); break;
+                case '\b': out.append("\\b"); break;
+                case '\f': out.append("\\f"); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                default:
+                    if (ch < 0x20) {
+                        out.append(String.format("\\u%04x", (int) ch));
+                    } else {
+                        out.append(ch);
+                    }
+            }
+        }
+        out.append('"');
+        return out.toString();
+    }
+
+    private static String toJsonValue(Object v) {
+        if (v == null) return "null";
+        if (v instanceof String) return jsonEscape((String) v);
+        if (v instanceof Number || v instanceof Boolean) return String.valueOf(v);
+        if (v instanceof Map) {
+            StringBuilder out = new StringBuilder();
+            out.append('{');
+            boolean first = true;
+            for (Object eObj : ((Map<?, ?>) v).entrySet()) {
+                Map.Entry<?, ?> e = (Map.Entry<?, ?>) eObj;
+                if (!first) out.append(',');
+                first = false;
+                out.append(jsonEscape(String.valueOf(e.getKey()))).append(':').append(toJsonValue(e.getValue()));
+            }
+            out.append('}');
+            return out.toString();
+        }
+        if (v instanceof Iterable) {
+            StringBuilder out = new StringBuilder();
+            out.append('[');
+            boolean first = true;
+            for (Object item : (Iterable<?>) v) {
+                if (!first) out.append(',');
+                first = false;
+                out.append(toJsonValue(item));
+            }
+            out.append(']');
+            return out.toString();
+        }
+        return jsonEscape(String.valueOf(v));
+    }
 %>
 <%
     request.setCharacterEncoding("UTF-8");
@@ -42,6 +100,7 @@
     final String SESSION_UPLOAD_SOURCE = "plcExcelImport.uploadSource";
 
     List<Map<String, Object>> plcList = new ArrayList<>();
+    List<Map<String, Object>> currentAiMappings = new ArrayList<>();
     List<String> recentHistory = new ArrayList<>();
     String error = null;
     String resultText = null;
@@ -53,6 +112,7 @@
     String runExcelPathUsed = null;
     String uploadNameUsed = null;
     String uploadSourceUsed = null;
+    String overrideJsonUsed = null;
     Path importLogPath = null;
     boolean confirmDisable = "Y".equalsIgnoreCase(request.getParameter("confirm_disable"));
     int previewDisableTotal = 0;
@@ -98,14 +158,6 @@
                 byteOrder = byteOrderParam;
             }
 
-            String floatCountStr = request.getParameter("float_count");
-            if (floatCountStr != null && !floatCountStr.trim().isEmpty()) {
-                try {
-                    int parsed = Integer.parseInt(floatCountStr.trim());
-                    if (parsed >= 1 && parsed <= 200) floatCount = parsed;
-                } catch (Exception ignore) {}
-            }
-
             String excelPathParam = request.getParameter("excel_path");
             if (excelPathParam != null && !excelPathParam.trim().isEmpty()) {
                 excelPath = excelPathParam.trim();
@@ -116,7 +168,9 @@
                 try {
                     String uploadB64 = request.getParameter("upload_b64");
                     String uploadName = request.getParameter("upload_name");
+                    String overridesJson = request.getParameter("overrides_json");
                     String runExcelPath;
+                    Path overrideFile = null;
                     boolean hasRequestUpload = uploadB64 != null && !uploadB64.trim().isEmpty();
                     if (hasRequestUpload) {
                         session.setAttribute(SESSION_UPLOAD_B64, uploadB64);
@@ -163,6 +217,11 @@
                     runExcelPathUsed = runExcelPath;
 
                     String scriptPath = Paths.get(rootPath).resolve("scripts").resolve("import_plc_mapping.ps1").toString();
+                    if (overridesJson != null && !overridesJson.trim().isEmpty()) {
+                        overrideFile = Files.createTempFile("plc_map_override_", ".json");
+                        Files.write(overrideFile, overridesJson.getBytes(StandardCharsets.UTF_8));
+                        overrideJsonUsed = overrideFile.toString();
+                    }
 
                     List<String> cmd = new ArrayList<>();
                     cmd.add("powershell");
@@ -181,6 +240,10 @@
                     cmd.add(byteOrder);
                     cmd.add("-FloatCount");
                     cmd.add(String.valueOf(floatCount));
+                    if (overrideJsonUsed != null) {
+                        cmd.add("-OverrideJsonPath");
+                        cmd.add(overrideJsonUsed);
+                    }
                     if ("apply".equals(mode)) cmd.add("-Apply");
                     if (confirmDisable) cmd.add("-AllowDisable");
 
@@ -229,6 +292,52 @@
                     if (tempFile != null) {
                         try { Files.deleteIfExists(tempFile); } catch (Exception ignore) {}
                     }
+                    if (overrideJsonUsed != null) {
+                        try { Files.deleteIfExists(Paths.get(overrideJsonUsed)); } catch (Exception ignore) {}
+                        overrideJsonUsed = null;
+                    }
+                }
+            }
+        }
+
+        String currentMappingSql =
+            "SELECT pm.plc_id, pm.meter_id, m.name AS item_name, m.panel_name, pm.start_address, pm.float_count, pm.metric_order " +
+            "FROM dbo.plc_meter_map pm " +
+            "LEFT JOIN dbo.meters m ON m.meter_id = pm.meter_id " +
+            "WHERE pm.enabled = 1 " +
+            (plcId != null ? "AND pm.plc_id = ? " : "") +
+            "ORDER BY pm.plc_id, pm.meter_id";
+        try (PreparedStatement ps = conn.prepareStatement(currentMappingSql)) {
+            if (plcId != null) ps.setInt(1, plcId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> r = new LinkedHashMap<>();
+                    int startAddress = rs.getInt("start_address");
+                    String metricOrder = rs.getString("metric_order");
+                    List<Map<String, Object>> tokenAddresses = new ArrayList<>();
+                    if (metricOrder != null && !metricOrder.trim().isEmpty()) {
+                        String[] tokens = metricOrder.split("\\s*,\\s*");
+                        int regAddress = startAddress;
+                        for (int i = 0; i < tokens.length; i++) {
+                            String token = tokens[i] == null ? "" : tokens[i].trim();
+                            if (token.isEmpty()) continue;
+                            Map<String, Object> t = new LinkedHashMap<>();
+                            t.put("float_index", i + 1);
+                            t.put("token", token);
+                            t.put("reg_address", regAddress);
+                            tokenAddresses.add(t);
+                            regAddress += 2;
+                        }
+                    }
+                    r.put("plc_id", rs.getInt("plc_id"));
+                    r.put("meter_id", rs.getInt("meter_id"));
+                    r.put("item_name", rs.getString("item_name"));
+                    r.put("panel_name", rs.getString("panel_name"));
+                    r.put("start_address", startAddress);
+                    r.put("float_count", rs.getInt("float_count"));
+                    r.put("metric_order", metricOrder);
+                    r.put("token_addresses", tokenAddresses);
+                    currentAiMappings.add(r);
                 }
             }
         }
@@ -275,6 +384,31 @@
         .history-box li { margin: 4px 0; word-break: break-all; }
         .confirm-box { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-size: 13px; }
         .confirm-check { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+        .decision-box { margin: 12px 0; padding: 12px; border-radius: 8px; background: #f8fbff; border: 1px solid #cfe2ff; }
+        .decision-check { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+        .preview-list { display: grid; gap: 10px; margin-top: 12px; }
+        .preview-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+        .preview-meter { border: 1px solid #dbe5f2; border-radius: 8px; background: #fff; }
+        .preview-meter summary { cursor: pointer; padding: 10px 12px; font-weight: 700; color: #1f3347; }
+        .preview-meter-body { padding: 0 12px 12px; }
+        .preview-meta { margin: 4px 0 10px; font-size: 12px; color: #64748b; }
+        .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+        .preview-table th, .preview-table td { border: 1px solid #dbe5f2; padding: 6px 8px; text-align: left; }
+        .preview-table th { background: #f1f5f9; color: #334155; }
+        .table-scroll { max-height: 420px; overflow: auto; border: 1px solid #dbe5f2; border-radius: 8px; background: #fff; }
+        .table-scroll .preview-table { border: 0; }
+        .table-scroll .preview-table th { position: sticky; top: 0; z-index: 1; }
+        .addr-input { width: 100%; min-width: 0; box-sizing: border-box; }
+        .section-title { margin: 12px 0 6px; font-size: 16px; font-weight: 700; color: #1f3347; }
+        .apply-off { background: #f8fafc; color: #94a3b8; }
+        .filter-box { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; margin: 8px 0 10px; }
+        .filter-box input { width: 100%; }
+        .token-pick-box { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0 10px; padding: 10px 12px; border: 1px solid #dbe5f2; border-radius: 8px; background: #fff; }
+        .token-pick-box label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+        .fold-box { margin: 12px 0; border: 1px solid #dbe5f2; border-radius: 8px; background: #fff; }
+        .fold-box summary { cursor: pointer; padding: 10px 12px; font-weight: 700; color: #1f3347; }
+        .fold-box-body { padding: 0 12px 12px; }
+        @media (max-width: 980px) { .preview-split { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -295,20 +429,6 @@
 
     <% if (error != null) { %>
     <div class="err-box"><%= h(error) %></div>
-    <% } %>
-
-    <% if (resultText != null) { %>
-    <div class="ok-box"><%= "apply".equals(mode) ? "적용 완료" : "미리보기 완료" %></div>
-    <div class="info-box">
-        실제 실행 엑셀 경로: <span class="mono"><%= h(runExcelPathUsed == null ? "-" : runExcelPathUsed) %></span><br/>
-        업로드 파일명: <span class="mono"><%= h(uploadNameUsed == null ? "-" : uploadNameUsed) %></span><br/>
-        파일 사용 방식: <span class="mono"><%= h(uploadSourceUsed == null ? "-" : uploadSourceUsed) %></span>
-    </div>
-    <div id="resultSummary"></div>
-    <details>
-        <summary class="muted">원본 결과(JSON) 보기</summary>
-        <pre id="resultRaw"><%= h(resultText) %></pre>
-    </details>
     <% } %>
 
     <form method="POST" id="importForm">
@@ -337,10 +457,6 @@
                 <option value="CDAB" <%= "CDAB".equalsIgnoreCase(byteOrder) ? "selected" : "" %>>CDAB</option>
                 <option value="DCBA" <%= "DCBA".equalsIgnoreCase(byteOrder) ? "selected" : "" %>>DCBA</option>
             </select>
-
-            <label for="float_count">Float Count</label>
-            <input type="number" id="float_count" name="float_count" min="1" max="200" value="<%= floatCount %>">
-
             <div class="row-full confirm-box" id="disableConfirmBox" style="display:<%= previewDisableTotal > 0 ? "block" : "none" %>;">
                 기존 활성 매핑이 비활성화될 수 있습니다. preview 결과를 확인한 뒤, 정말 의도한 변경일 때만 적용하세요.
                 <label class="confirm-check">
@@ -356,8 +472,27 @@
         </div>
         <input type="hidden" name="upload_name" id="upload_name">
         <input type="hidden" name="upload_b64" id="upload_b64">
+        <input type="hidden" name="overrides_json" id="overrides_json">
         <input type="hidden" name="mode_hidden" id="mode_hidden" value="preview">
     </form>
+
+    <div id="currentMappingPreview"></div>
+
+    <% if (resultText != null) { %>
+    <div class="ok-box"><%= "apply".equals(mode) ? "적용 완료" : "미리보기 완료" %></div>
+    <div class="info-box">
+        실제 실행 엑셀 경로: <span class="mono"><%= h(runExcelPathUsed == null ? "-" : runExcelPathUsed) %></span><br/>
+        업로드 파일명: <span class="mono"><%= h(uploadNameUsed == null ? "-" : uploadNameUsed) %></span><br/>
+        파일 사용 방식: <span class="mono"><%= h(uploadSourceUsed == null ? "-" : uploadSourceUsed) %></span>
+    </div>
+    <div id="resultSummary"></div>
+    <div id="tokenAddressPreview"></div>
+    <div id="postPreviewDecision"></div>
+    <details>
+        <summary class="muted">원본 결과(JSON) 보기</summary>
+        <pre id="resultRaw"><%= h(resultText) %></pre>
+    </details>
+    <% } %>
 
     <% if (!recentHistory.isEmpty()) { %>
     <div class="history-box">
@@ -378,12 +513,27 @@
   const fileInput = document.getElementById('excel_file');
   const uploadName = document.getElementById('upload_name');
   const uploadB64 = document.getElementById('upload_b64');
+  const overridesJson = document.getElementById('overrides_json');
   const modeHidden = document.getElementById('mode_hidden');
   const resultSummary = document.getElementById('resultSummary');
+  const postPreviewDecision = document.getElementById('postPreviewDecision');
+  const currentMappingPreview = document.getElementById('currentMappingPreview');
+  const tokenAddressPreview = document.getElementById('tokenAddressPreview');
   const resultRaw = document.getElementById('resultRaw');
   const confirmDisable = document.getElementById('confirm_disable');
   const disableConfirmBox = document.getElementById('disableConfirmBox');
+  const currentMappings = <%= toJsonValue(currentAiMappings) %>;
   let currentDisableSummary = null;
+  const currentMappingIndex = new Map();
+
+  (Array.isArray(currentMappings) ? currentMappings : []).forEach(function(row){
+    const meterKey = Number(row.plc_id) + '|' + Number(row.meter_id);
+    const byFloatIndex = new Map();
+    (Array.isArray(row.token_addresses) ? row.token_addresses : []).forEach(function(t){
+      byFloatIndex.set(Number(t.float_index), t);
+    });
+    currentMappingIndex.set(meterKey, byFloatIndex);
+  });
 
   function emptyDisableSummary(){
     return {
@@ -526,6 +676,264 @@
     resultSummary.innerHTML = html + perPlcInfo + warn + disableWarn + floatInfo + floatDistInfo + floatMeterInfo;
   }
 
+  function flattenAiPreviewRows(obj){
+    const out = [];
+    if (!obj) return out;
+    if (Array.isArray(obj.ai_rows_preview)) {
+      obj.ai_rows_preview.forEach(function(row){
+        out.push({ plc_id: obj.plc_id, row: row });
+      });
+    }
+    if (Array.isArray(obj.per_plc)) {
+      obj.per_plc.forEach(function(p){
+        if (!p || !Array.isArray(p.ai_rows_preview)) return;
+        p.ai_rows_preview.forEach(function(row){
+          out.push({ plc_id: p.plc_id, row: row });
+        });
+      });
+    }
+    return out;
+  }
+
+  function renderPostPreviewDecision(){
+    if (!postPreviewDecision) return;
+    const currentMode = '<%= h(mode) %>';
+    if (currentMode !== 'preview') {
+      postPreviewDecision.innerHTML = '';
+      return;
+    }
+    postPreviewDecision.innerHTML =
+      '<div class="decision-box">' +
+      '<b>DB 반영 여부 선택</b><br/>' +
+      '미리보기 결과를 확인한 뒤 아래에서 반영 여부를 선택하세요.' +
+      '<label class="decision-check">' +
+      '<input type="checkbox" id="applyDecisionCheck">' +
+      '현재 preview 내용을 DB에 반영합니다.' +
+      '</label>' +
+      '<div class="btn-group" style="margin-top:10px;">' +
+      '<button type="button" id="dismissPreviewBtn">반영 안 함</button>' +
+      '<button type="button" id="applyAfterPreviewBtn">DB 반영</button>' +
+      '</div>' +
+      '</div>';
+    const dismissBtn = document.getElementById('dismissPreviewBtn');
+    const applyBtn = document.getElementById('applyAfterPreviewBtn');
+    const applyDecisionCheck = document.getElementById('applyDecisionCheck');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', function(){
+        postPreviewDecision.innerHTML = '<div class="info-box">미리보기만 수행했고 DB에는 반영하지 않았습니다.</div>';
+      });
+    }
+    if (applyBtn) {
+      applyBtn.addEventListener('click', function(){
+        if (applyDecisionCheck && !applyDecisionCheck.checked) {
+          alert('DB 반영 체크박스를 선택한 뒤 진행하세요.');
+          return;
+        }
+        if (confirmDisable && currentDisableSummary) {
+          const disableTotal = Number(currentDisableSummary.ai_disabled || 0) + Number(currentDisableSummary.di_map_disabled || 0) + Number(currentDisableSummary.di_tag_disabled || 0);
+          if (disableTotal > 0 && !confirmDisable.checked) {
+            alert('삭제성 변경이 있으므로 체크박스를 선택한 뒤 DB 반영을 진행하세요.');
+            return;
+          }
+        }
+        if (overridesJson) {
+          overridesJson.value = JSON.stringify(collectOverrides());
+        }
+        modeHidden.value = 'apply';
+        const hiddenModeInput = document.createElement('input');
+        hiddenModeInput.type = 'hidden';
+        hiddenModeInput.name = 'mode';
+        hiddenModeInput.value = 'apply';
+        form.appendChild(hiddenModeInput);
+        form.submit();
+      });
+    }
+  }
+
+  function collectOverrides(){
+    const byMeter = new Map();
+    document.querySelectorAll('.addr-input').forEach(function(input){
+      const plcId = Number(input.getAttribute('data-plc'));
+      const meterId = Number(input.getAttribute('data-meter'));
+      const floatIndex = Number(input.getAttribute('data-float-index'));
+      const token = input.getAttribute('data-token');
+      const tokenCheckbox = document.querySelector('.token-apply-input[data-token="' + CSS.escape(token) + '"]');
+      const applyChecked = !tokenCheckbox || !!tokenCheckbox.checked;
+      const key = plcId + '|' + meterId;
+      if (!byMeter.has(key)) {
+        byMeter.set(key, { plc_id: plcId, meter_id: meterId, token_addresses: [] });
+      }
+      const currentByIndex = currentMappingIndex.get(key);
+      const currentTokenRow = currentByIndex ? currentByIndex.get(floatIndex) : null;
+      const finalToken = applyChecked ? token : (currentTokenRow && currentTokenRow.token ? currentTokenRow.token : token);
+      const finalAddress = applyChecked ? Number(input.value) : (currentTokenRow && currentTokenRow.reg_address != null ? Number(currentTokenRow.reg_address) : Number(input.value));
+      byMeter.get(key).token_addresses.push({
+        float_index: floatIndex,
+        token: finalToken,
+        reg_address: finalAddress
+      });
+    });
+    return Array.from(byMeter.values()).map(function(row){
+      row.token_addresses.sort(function(a, b){ return a.float_index - b.float_index; });
+      return row;
+    });
+  }
+
+  function syncTokenSelection(token, checked){
+    document.querySelectorAll('.addr-input[data-token="' + CSS.escape(token) + '"]').forEach(function(input){
+      const plcId = input.getAttribute('data-plc');
+      const meterId = input.getAttribute('data-meter');
+      const floatIndex = input.getAttribute('data-float-index');
+      const tr = input.closest('tr');
+      const currentByIndex = currentMappingIndex.get(plcId + '|' + meterId);
+      const currentTokenRow = currentByIndex ? currentByIndex.get(Number(floatIndex)) : null;
+      if (!checked && currentTokenRow && currentTokenRow.reg_address != null) {
+        input.value = currentTokenRow.reg_address;
+      }
+      input.disabled = !checked;
+      if (tr) tr.classList.toggle('apply-off', !checked);
+    });
+  }
+
+  function renderTokenSelector(rows){
+    const tokenSet = new Set();
+    rows.forEach(function(entry){
+      const tokenRows = Array.isArray(entry.row && entry.row.token_addresses) ? entry.row.token_addresses : [];
+      tokenRows.forEach(function(t){
+        if (t && t.token) tokenSet.add(String(t.token));
+      });
+    });
+    const tokens = Array.from(tokenSet).sort();
+    if (!tokens.length) return '';
+    return '<div class="token-pick-box">' +
+      tokens.map(function(token){
+        return '<label><input type="checkbox" class="token-apply-input" data-token="' + esc(token) + '" checked> <span class="mono">' + esc(token) + '</span></label>';
+      }).join('') +
+      '</div>';
+  }
+
+  function bindTokenSelector(){
+    document.querySelectorAll('.token-apply-input').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        syncTokenSelection(cb.getAttribute('data-token'), cb.checked);
+      });
+      syncTokenSelection(cb.getAttribute('data-token'), cb.checked);
+    });
+  }
+
+  function renderTableFilters(prefix){
+    return '<div class="filter-box">' +
+      '<input type="text" class="table-filter" data-target="' + prefix + '" data-key="plc" placeholder="plc_id 검색">' +
+      '<input type="text" class="table-filter" data-target="' + prefix + '" data-key="meter" placeholder="meter_id 검색">' +
+      '<input type="text" class="table-filter" data-target="' + prefix + '" data-key="item" placeholder="item_name 검색">' +
+      '<input type="text" class="table-filter" data-target="' + prefix + '" data-key="panel" placeholder="panel_name 검색">' +
+      '</div>';
+  }
+
+  function applyTableFilters(target){
+    const filters = {};
+    document.querySelectorAll('.table-filter[data-target="' + target + '"]').forEach(function(f){
+      filters[f.getAttribute('data-key')] = String(f.value || '').trim().toLowerCase();
+    });
+    document.querySelectorAll('tr[data-table="' + target + '"]').forEach(function(tr){
+      const ok =
+        (!filters.plc || String(tr.getAttribute('data-plc') || '').toLowerCase().includes(filters.plc)) &&
+        (!filters.meter || String(tr.getAttribute('data-meter') || '').toLowerCase().includes(filters.meter)) &&
+        (!filters.item || String(tr.getAttribute('data-item') || '').toLowerCase().includes(filters.item)) &&
+        (!filters.panel || String(tr.getAttribute('data-panel') || '').toLowerCase().includes(filters.panel));
+      tr.style.display = ok ? '' : 'none';
+    });
+  }
+
+  function renderTokenAddressPreview(obj){
+    if (!tokenAddressPreview) return;
+    const rows = flattenAiPreviewRows(obj);
+    if (!rows.length) {
+      tokenAddressPreview.innerHTML = '';
+      return;
+    }
+    const body = rows.map(function(entry){
+      const row = entry.row || {};
+      const tokenRows = Array.isArray(row.token_addresses) ? row.token_addresses : [];
+      return tokenRows.map(function(t){
+        return '<tr data-table="preview" data-plc="' + esc(entry.plc_id) + '" data-meter="' + esc(row.meter_id) + '" data-item="' + esc(row.item_name || '-') + '" data-panel="' + esc(row.panel_name || '-') + '">' +
+          '<td class="mono">' + esc(entry.plc_id) + '</td>' +
+          '<td class="mono">' + esc(row.meter_id) + '</td>' +
+          '<td>' + esc(row.item_name || '-') + '</td>' +
+          '<td>' + esc(row.panel_name || '-') + '</td>' +
+          '<td class="mono">' + esc(t.float_index) + '</td>' +
+          '<td class="mono">' + esc(t.token) + '</td>' +
+          '<td class="mono"><input type="number" class="addr-input mono" data-plc="' + esc(entry.plc_id) + '" data-meter="' + esc(row.meter_id) + '" data-token="' + esc(t.token) + '" data-float-index="' + esc(t.float_index) + '" value="' + esc(t.reg_address) + '"></td>' +
+          '</tr>';
+      }).join('');
+    }).join('');
+    tokenAddressPreview.innerHTML =
+      '<div class="section-title">Token / Address Preview</div>' +
+      '<div class="info-box">위 token 목록에서 선택한 항목만 import 결과 주소로 반영합니다. 선택 해제한 token은 현재 DB 값을 그대로 둡니다.</div>' +
+      renderTokenSelector(rows) +
+      renderTableFilters('preview') +
+      '<div class="table-scroll">' +
+      '<table class="preview-table">' +
+      '<thead><tr><th>plc_id</th><th>meter_id</th><th>item_name</th><th>panel_name</th><th>float_index</th><th>token</th><th>reg_address</th></tr></thead>' +
+      '<tbody>' + body + '</tbody>' +
+      '</table>' +
+      '</div>';
+    bindTokenSelector();
+    applyTableFilters('preview');
+  }
+
+  function renderCurrentMappingPreview(obj){
+    if (!currentMappingPreview) return;
+    const targetPlcIds = new Set();
+    if (obj && obj.plc_id) targetPlcIds.add(Number(obj.plc_id));
+    if (obj && Array.isArray(obj.per_plc)) {
+      obj.per_plc.forEach(function(p){
+        if (p && p.plc_id != null) targetPlcIds.add(Number(p.plc_id));
+      });
+    }
+    const rows = Array.isArray(currentMappings) ? currentMappings.filter(function(row){
+      if (!targetPlcIds.size) return true;
+      return targetPlcIds.has(Number(row.plc_id));
+    }) : [];
+    if (!rows.length) {
+      currentMappingPreview.innerHTML =
+        '<div class="section-title">현재 DB 매핑</div>' +
+        '<div class="info-box">표시할 현재 매핑이 없습니다.</div>';
+      return;
+    }
+    const body = rows.map(function(row){
+      const tokenRows = Array.isArray(row.token_addresses) ? row.token_addresses : [];
+      return tokenRows.map(function(t){
+        return '<tr data-table="current" data-plc="' + esc(row.plc_id) + '" data-meter="' + esc(row.meter_id) + '" data-item="' + esc(row.item_name || '-') + '" data-panel="' + esc(row.panel_name || '-') + '">' +
+          '<td class="mono">' + esc(row.plc_id) + '</td>' +
+          '<td class="mono">' + esc(row.meter_id) + '</td>' +
+          '<td>' + esc(row.item_name || '-') + '</td>' +
+          '<td>' + esc(row.panel_name || '-') + '</td>' +
+          '<td class="mono">' + esc(t.float_index) + '</td>' +
+          '<td class="mono">' + esc(t.token) + '</td>' +
+          '<td class="mono">' + esc(t.reg_address) + '</td>' +
+          '</tr>';
+      }).join('');
+    }).join('');
+    currentMappingPreview.innerHTML =
+      '<details class="fold-box">' +
+      '<summary>현재 DB 매핑 보기</summary>' +
+      '<div class="fold-box-body">' +
+      '<div class="info-box">현재 <span class="mono">plc_meter_map.metric_order</span> 기준 token / register address 입니다.</div>' +
+      renderTableFilters('current') +
+      '<div class="table-scroll">' +
+      '<table class="preview-table">' +
+      '<thead><tr><th>plc_id</th><th>meter_id</th><th>item_name</th><th>panel_name</th><th>float_index</th><th>token</th><th>reg_address</th></tr></thead>' +
+      '<tbody>' + body + '</tbody>' +
+      '</table>' +
+      '</div>' +
+      '</div>' +
+      '</details>';
+    applyTableFilters('current');
+  }
+
+  renderCurrentMappingPreview(null);
+
   if (resultRaw) {
     const raw = resultRaw.textContent.trim();
     const s = raw.indexOf('{');
@@ -535,9 +943,19 @@
       try {
         const obj = JSON.parse(jsonText);
         renderSummary(obj);
+        renderPostPreviewDecision();
+        renderCurrentMappingPreview(obj);
+        renderTokenAddressPreview(obj);
       } catch (ignore) {}
     }
   }
+
+  document.addEventListener('input', function(e){
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('table-filter')) {
+      applyTableFilters(t.getAttribute('data-target'));
+    }
+  });
 
   form.addEventListener('submit', function(e){
     const submitter = e.submitter;
@@ -552,6 +970,9 @@
         alert('이번 적용은 기존 활성 매핑을 비활성화합니다. preview 결과를 확인한 뒤 체크박스를 선택해야 적용할 수 있습니다.');
         return;
       }
+    }
+    if (submitter && submitter.value === 'apply' && overridesJson) {
+      overridesJson.value = JSON.stringify(collectOverrides());
     }
     const f = fileInput.files && fileInput.files[0];
     if (!f) return;

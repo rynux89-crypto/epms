@@ -11,19 +11,35 @@
 
     String baseCte =
         "WITH m AS ( " +
-        "    SELECT plc_id, meter_id, start_address " +
+        "    SELECT plc_id, meter_id, start_address, metric_order " +
         "    FROM dbo.plc_meter_map " +
         "    WHERE enabled = 1 " +
+        "      AND metric_order IS NOT NULL " +
+        "      AND LTRIM(RTRIM(metric_order)) <> '' " +
         "), t AS ( " +
-        "    SELECT token, float_index, measurement_column " +
+        "    SELECT token, measurement_column " +
         "    FROM dbo.plc_ai_measurements_match " +
         "    WHERE target_table = 'harmonic_measurements' " +
         "      AND is_supported = 1 " +
         "      AND measurement_column IS NOT NULL " +
+        "), mo AS ( " +
+        "    SELECT plc_id, meter_id, start_address, token, metric_index " +
+        "    FROM ( " +
+        "        SELECT m.plc_id, m.meter_id, m.start_address, " +
+        "               UPPER(LTRIM(RTRIM(x.n.value('.', 'varchar(100)')))) AS token, " +
+        "               ROW_NUMBER() OVER (PARTITION BY m.plc_id, m.meter_id ORDER BY (SELECT NULL)) AS metric_index " +
+        "        FROM m " +
+        "        CROSS APPLY ( " +
+        "            SELECT TRY_CAST('<r><i>' + REPLACE(REPLACE(REPLACE(ISNULL(m.metric_order,''), '&', '&amp;'), '<', '&lt;'), ',', '</i><i>') + '</i></r>' AS xml) AS metric_xml " +
+        "        ) q " +
+        "        CROSS APPLY q.metric_xml.nodes('/r/i') x(n) " +
+        "    ) z " +
+        "    WHERE LTRIM(RTRIM(ISNULL(token, ''))) <> '' " +
         "), a AS ( " +
-        "    SELECT m.plc_id, m.meter_id, t.token, t.float_index, t.measurement_column, " +
-        "           m.start_address + ((t.float_index - 1) * 2) AS reg_address " +
-        "    FROM m CROSS JOIN t " +
+        "    SELECT mo.plc_id, mo.meter_id, mo.token, mo.metric_index, t.measurement_column, " +
+        "           mo.start_address + ((mo.metric_index - 1) * 2) AS reg_address " +
+        "    FROM mo " +
+        "    JOIN t ON t.token = mo.token " +
         "), s AS ( " +
         "    SELECT a.plc_id, a.meter_id, a.measurement_column, x.value_float, x.measured_at, " +
         "           ROW_NUMBER() OVER (PARTITION BY a.plc_id, a.meter_id, a.measurement_column ORDER BY x.measured_at DESC) AS rn " +

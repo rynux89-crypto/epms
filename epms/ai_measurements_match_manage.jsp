@@ -6,10 +6,23 @@
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
 <%!
+    private static final Set<String> VALID_TARGET_TABLES = new HashSet<String>(Arrays.asList("measurements", "harmonic_measurements"));
+    private static final Set<String> EXCEL_AI_TOKENS = new LinkedHashSet<String>(Arrays.asList(
+        "V12", "V23", "V31", "VVA", "V1N", "V2N", "V3N", "VA",
+        "A1", "A2", "A3", "AN", "AA", "PF", "HZ", "KW", "KWH", "KVAR", "KVARH", "PEAK", "IR",
+        "H_VA_1", "H_VA_3", "H_VA_5", "H_VA_7", "H_VA_9", "H_VA_11",
+        "H_VB_1", "H_VB_3", "H_VB_5", "H_VB_7", "H_VB_9", "H_VB_11",
+        "H_VC_1", "H_VC_3", "H_VC_5", "H_VC_7", "H_VC_9", "H_VC_11",
+        "H_IA_1", "H_IA_3", "H_IA_5", "H_IA_7", "H_IA_9", "H_IA_11",
+        "H_IB_1", "H_IB_3", "H_IB_5", "H_IB_7", "H_IB_9", "H_IB_11",
+        "H_IC_1", "H_IC_3", "H_IC_5", "H_IC_7", "H_IC_9", "H_IC_11",
+        "PV1", "PV2", "PV3", "PI1", "PI2", "PI3"
+    ));
+
     private static class AiMeasurementMatchRequest {
         String action;
         String token;
-        String originalToken;
+        Integer originalFloatIndex;
         Integer floatIndex;
         Integer floatRegisters;
         String measurementColumn;
@@ -28,17 +41,30 @@
         return trimmed == null ? null : trimmed.toLowerCase(java.util.Locale.ROOT);
     }
 
+    private static boolean isPlcOnlyToken(String token) {
+        return "IR".equals(token);
+    }
+
+    private static String normalizeMeasurementColumn(String value) {
+        String trimmed = trimToNull(value);
+        return trimmed == null ? null : trimmed;
+    }
+
     private static AiMeasurementMatchRequest buildAiMeasurementMatchRequest(javax.servlet.http.HttpServletRequest request) {
         AiMeasurementMatchRequest req = new AiMeasurementMatchRequest();
         req.action = trimToNull(request.getParameter("action"));
         req.token = normalizeToken(request.getParameter("token"));
-        req.originalToken = normalizeToken(request.getParameter("original_token"));
+        req.originalFloatIndex = parseNullableInt(request.getParameter("original_float_index"));
         req.floatIndex = parseNullableInt(request.getParameter("float_index"));
         req.floatRegisters = parseNullableInt(request.getParameter("float_registers"));
-        req.measurementColumn = trimToNull(request.getParameter("measurement_column"));
+        req.measurementColumn = normalizeMeasurementColumn(request.getParameter("measurement_column"));
         req.targetTable = normalizeTargetTable(request.getParameter("target_table"));
         req.supported = parseBoolSafe(request.getParameter("is_supported"));
         req.note = trimToNull(request.getParameter("note"));
+        if (isPlcOnlyToken(req.token)) {
+            req.measurementColumn = null;
+            req.targetTable = null;
+        }
         return req;
     }
 
@@ -46,18 +72,42 @@
         if (req == null || req.action == null) return "요청이 올바르지 않습니다.";
         if ("add".equalsIgnoreCase(req.action) || "update".equalsIgnoreCase(req.action)) {
             if (req.token == null) return "token은 필수입니다.";
+            if (!EXCEL_AI_TOKENS.contains(req.token)) return "엑셀 기준에 없는 token입니다: " + req.token;
             if (req.floatIndex == null || req.floatRegisters == null) return "float_index, float_registers는 숫자 필수입니다.";
+            if (req.floatIndex.intValue() <= 0) return "float_index는 1 이상이어야 합니다.";
+            if (req.floatRegisters.intValue() <= 0) return "float_registers는 1 이상이어야 합니다.";
+            if (req.targetTable != null && !VALID_TARGET_TABLES.contains(req.targetTable)) return "target_table은 measurements 또는 harmonic_measurements만 허용됩니다.";
+            if (isPlcOnlyToken(req.token) && req.measurementColumn != null) return "IR은 DB 미적재 항목이므로 measurement_column을 지정할 수 없습니다.";
         }
-        if ("update".equalsIgnoreCase(req.action) && req.originalToken == null) {
-            return "수정 대상 token이 없습니다.";
+        if ("update".equalsIgnoreCase(req.action) && req.originalFloatIndex == null) {
+            return "수정 대상 float_index가 없습니다.";
         }
-        if ("delete".equalsIgnoreCase(req.action) && req.token == null) {
-            return "삭제할 token이 없습니다.";
+        if ("delete".equalsIgnoreCase(req.action) && req.originalFloatIndex == null) {
+            return "삭제할 float_index가 없습니다.";
         }
         return null;
     }
 
+    private static boolean existsFloatIndex(Connection conn, int floatIndex, Integer excludeFloatIndex) throws SQLException {
+        String sql = "SELECT COUNT(1) FROM dbo.plc_ai_measurements_match WHERE float_index = ?" +
+            (excludeFloatIndex != null ? " AND float_index <> ?" : "");
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, floatIndex);
+            if (excludeFloatIndex != null) ps.setInt(2, excludeFloatIndex.intValue());
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
+    }
+
     private static String handleAddAiMeasurementMatch(Connection conn, AiMeasurementMatchRequest req) {
+        try {
+            if (existsFloatIndex(conn, req.floatIndex.intValue(), null)) {
+                return "동일한 float_index가 이미 존재합니다: " + req.floatIndex;
+            }
+        } catch (Exception e) {
+            return e.getMessage();
+        }
         String sql =
             "INSERT INTO dbo.plc_ai_measurements_match " +
             "(token, float_index, float_registers, measurement_column, target_table, is_supported, note, updated_at) " +
@@ -81,11 +131,18 @@
     }
 
     private static String handleUpdateAiMeasurementMatch(Connection conn, AiMeasurementMatchRequest req) {
+        try {
+            if (existsFloatIndex(conn, req.floatIndex.intValue(), req.originalFloatIndex)) {
+                return "동일한 float_index가 이미 존재합니다: " + req.floatIndex;
+            }
+        } catch (Exception e) {
+            return e.getMessage();
+        }
         String sql =
             "UPDATE dbo.plc_ai_measurements_match " +
             "SET token = ?, float_index = ?, float_registers = ?, measurement_column = ?, target_table = ?, " +
             "    is_supported = ?, note = ?, updated_at = SYSDATETIME() " +
-            "WHERE token = ?";
+            "WHERE float_index = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, req.token);
             ps.setInt(2, req.floatIndex.intValue());
@@ -97,7 +154,7 @@
             ps.setBoolean(6, req.supported);
             if (req.note == null) ps.setNull(7, Types.NVARCHAR);
             else ps.setString(7, req.note);
-            ps.setString(8, req.originalToken);
+            ps.setInt(8, req.originalFloatIndex.intValue());
             int changed = ps.executeUpdate();
             return changed == 0 ? "수정 대상이 없습니다." : null;
         } catch (Exception e) {
@@ -106,9 +163,9 @@
     }
 
     private static String handleDeleteAiMeasurementMatch(Connection conn, AiMeasurementMatchRequest req) {
-        String sql = "DELETE FROM dbo.plc_ai_measurements_match WHERE token = ?";
+        String sql = "DELETE FROM dbo.plc_ai_measurements_match WHERE float_index = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, req.token);
+            ps.setInt(1, req.originalFloatIndex.intValue());
             ps.executeUpdate();
             return null;
         } catch (Exception e) {
@@ -120,7 +177,7 @@
     request.setCharacterEncoding("UTF-8");
 
     String msg = request.getParameter("msg");
-    String editTokenParam = request.getParameter("edit_token");
+    Integer editFloatIndexParam = parseNullableInt(request.getParameter("edit_float_index"));
     String err = null;
     List<Map<String, Object>> rows = new ArrayList<>();
     Map<String, Object> editRow = null;
@@ -167,7 +224,7 @@
                 r.put("note", rs.getString("note"));
                 r.put("updated_at", rs.getTimestamp("updated_at"));
                 rows.add(r);
-                if (editTokenParam != null && editTokenParam.trim().equalsIgnoreCase(String.valueOf(r.get("token")))) {
+                if (editFloatIndexParam != null && editFloatIndexParam.intValue() == ((Number)r.get("float_index")).intValue()) {
                     editRow = r;
                 }
             }
@@ -228,15 +285,16 @@
     <% if (err != null && !err.trim().isEmpty()) { %>
     <div class="err-box">오류: <%= h(err) %></div>
     <% } %>
+    <div class="ok-box">기준: 엑셀 <span class="mono">PLC_IO_Address_AI</span> token만 허용합니다. 편집/삭제 기준은 <span class="mono">float_index</span>입니다. <span class="mono">IR</span>은 PLC 전용이므로 measurement_column / target_table을 비웁니다.</div>
 
     <div class="section-title">신규 등록</div>
     <form method="post" class="toolbar">
         <input type="hidden" name="action" value="add" />
-        <input type="text" name="token" class="mid-input mono" placeholder="TOKEN (예: KW)" required />
+        <input type="text" name="token" class="mid-input mono" placeholder="TOKEN (예: KW, KWH, KVAR, KVARH, IR)" required />
         <input type="number" name="float_index" class="small-input" placeholder="index" required />
         <input type="number" name="float_registers" class="small-input" placeholder="regs" value="2" required />
         <input type="text" name="measurement_column" class="wide-input mono" placeholder="measurement_column" />
-        <input type="text" name="target_table" class="mid-input mono" placeholder="target_table" />
+        <input type="text" name="target_table" class="mid-input mono" placeholder="measurements | harmonic_measurements" />
         <label>지원 <input type="checkbox" name="is_supported" value="1" checked /></label>
         <input type="text" name="note" class="wide-input" placeholder="note" />
         <button type="submit" class="btn-mini">등록</button>
@@ -246,7 +304,7 @@
     <div class="section-title">수정</div>
     <form method="post" class="toolbar">
         <input type="hidden" name="action" value="update" />
-        <input type="hidden" name="original_token" value="<%= h(editRow.get("token")) %>" />
+        <input type="hidden" name="original_float_index" value="<%= h(editRow.get("float_index")) %>" />
         <input type="text" name="token" class="mid-input mono" value="<%= h(editRow.get("token")) %>" required />
         <input type="number" name="float_index" class="small-input" value="<%= h(editRow.get("float_index")) %>" required />
         <input type="number" name="float_registers" class="small-input" value="<%= h(editRow.get("float_registers")) %>" required />
@@ -288,10 +346,10 @@
                 <td><%= h(r.get("note")) %></td>
                 <td class="action-cell">
                     <div class="action-wrap">
-                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_match_manage.jsp?edit_token=<%= h(r.get("token")) %>'">편집</button>
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_match_manage.jsp?edit_float_index=<%= h(r.get("float_index")) %>'">편집</button>
                         <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
                             <input type="hidden" name="action" value="delete" />
-                            <input type="hidden" name="token" value="<%= h(r.get("token")) %>" />
+                            <input type="hidden" name="original_float_index" value="<%= h(r.get("float_index")) %>" />
                             <button type="submit" class="btn-mini btn-action">삭제</button>
                         </form>
                     </div>

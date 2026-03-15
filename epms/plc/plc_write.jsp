@@ -16,6 +16,8 @@ private static final ConcurrentHashMap<Integer, CacheEntry<PlcConfig>> PLC_CONFI
 private static final ConcurrentHashMap<Integer, CacheEntry<List<Map<String, Object>>>> AI_MAP_CACHE = new ConcurrentHashMap<>();
 private static final ConcurrentHashMap<Integer, CacheEntry<List<Map<String, Object>>>> DI_TAG_CACHE = new ConcurrentHashMap<>();
 private static final ConcurrentHashMap<String, TagRange> TAG_RANGE_OVERRIDES = new ConcurrentHashMap<>();
+private static final ConcurrentHashMap<String, Boolean> TAG_APPLY_OVERRIDES = new ConcurrentHashMap<>();
+private static final ConcurrentHashMap<Integer, Set<String>> AI_SELECTED_TAGS_BY_PLC = new ConcurrentHashMap<>();
 private static final Object TAG_RANGE_FILE_LOCK = new Object();
 private static final ConcurrentHashMap<String, Double> ENERGY_ACCUM_MAP = new ConcurrentHashMap<>();
 private static final ConcurrentHashMap<String, Integer> DI_LAST_VALUE_MAP = new ConcurrentHashMap<>();
@@ -60,6 +62,8 @@ private static class WriteRequestContext {
     String action;
     Integer plcId;
     boolean includeRows;
+    boolean selectedTagsSpecified;
+    Set<String> selectedTags = new LinkedHashSet<>();
 }
 private static class ModbusTcpClient implements AutoCloseable {
     private final Socket socket; private final InputStream in; private final OutputStream out; private int txId=1;
@@ -223,8 +227,17 @@ private static List<Map<String,Object>> loadAiMap(Connection conn, int plcId) th
         try (ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Map<String,Object> m = new HashMap<>();
-                m.put("meter_id", rs.getInt("meter_id")); m.put("start_address", rs.getInt("start_address")); m.put("float_count", rs.getInt("float_count")); m.put("byte_order", rs.getString("byte_order"));
-                String metricOrder = rs.getString("metric_order"); m.put("tokens", metricOrder == null ? new String[0] : metricOrder.split("\\s*,\\s*"));
+                m.put("meter_id", rs.getInt("meter_id"));
+                m.put("start_address", rs.getInt("start_address"));
+                m.put("float_count", rs.getInt("float_count"));
+                m.put("byte_order", rs.getString("byte_order"));
+                String metricOrder = rs.getString("metric_order");
+                String[] tokens = metricOrder == null ? new String[0] : metricOrder.split("\\s*,\\s*");
+                m.put("tokens", tokens);
+                // Excel import now treats metric_order as the canonical token order.
+                // Prefer token length over stale float_count when they diverge.
+                if (tokens.length > 0) m.put("effective_float_count", tokens.length);
+                else m.put("effective_float_count", rs.getInt("float_count"));
                 out.add(m);
             }
         }
@@ -281,10 +294,16 @@ private static File getTagRangeFile(){
     return new File("WEB-INF/data/plc_tag_ranges.properties");
 }
 
+private static String tagApplyKey(String token){
+    String t = token == null ? "" : token.trim().toUpperCase(Locale.ROOT);
+    return t + ".selected";
+}
+
 private static void loadTagRangesFromFile() throws Exception {
     synchronized (TAG_RANGE_FILE_LOCK) {
         File f = getTagRangeFile();
         Map<String, TagRange> loaded = new HashMap<>();
+        Map<String, Boolean> loadedApply = new HashMap<>();
         if (f.exists()) {
             Properties p = new Properties();
             FileInputStream fis = null;
@@ -296,7 +315,16 @@ private static void loadTagRangesFromFile() throws Exception {
             }
             for (String key : p.stringPropertyNames()) {
                 if (key == null) continue;
-                String token = key.trim().toUpperCase(Locale.ROOT);
+                String rawKey = key.trim();
+                if (rawKey.isEmpty()) continue;
+                if (rawKey.toLowerCase(Locale.ROOT).endsWith(".selected")) {
+                    String token = rawKey.substring(0, rawKey.length() - ".selected".length()).trim().toUpperCase(Locale.ROOT);
+                    if (token.isEmpty()) continue;
+                    String raw = p.getProperty(key, "");
+                    loadedApply.put(token, Boolean.valueOf("true".equalsIgnoreCase(raw == null ? "" : raw.trim())));
+                    continue;
+                }
+                String token = rawKey.toUpperCase(Locale.ROOT);
                 if (token.isEmpty()) continue;
                 String raw = p.getProperty(key, "");
                 String[] parts = raw.split("\\s*,\\s*");
@@ -310,6 +338,8 @@ private static void loadTagRangesFromFile() throws Exception {
         }
         TAG_RANGE_OVERRIDES.clear();
         TAG_RANGE_OVERRIDES.putAll(loaded);
+        TAG_APPLY_OVERRIDES.clear();
+        TAG_APPLY_OVERRIDES.putAll(loadedApply);
     }
 }
 
@@ -326,6 +356,13 @@ private static void flushTagRangesToFile() throws Exception {
             TagRange r = TAG_RANGE_OVERRIDES.get(k);
             if (r == null) continue;
             p.setProperty(k, String.format(Locale.US, "%.2f,%.2f", r.min, r.max));
+        }
+        List<String> applyKeys = new ArrayList<>(TAG_APPLY_OVERRIDES.keySet());
+        Collections.sort(applyKeys);
+        for (String k : applyKeys) {
+            Boolean enabled = TAG_APPLY_OVERRIDES.get(k);
+            if (enabled == null) continue;
+            p.setProperty(tagApplyKey(k), enabled.booleanValue() ? "true" : "false");
         }
         FileOutputStream fos = null;
         try {
@@ -344,15 +381,31 @@ private static void saveTagRangeToFile(String token, double min, double max) thr
 
 private static void clearTagRangesInFile() throws Exception {
     TAG_RANGE_OVERRIDES.clear();
+    TAG_APPLY_OVERRIDES.clear();
+    AI_SELECTED_TAGS_BY_PLC.clear();
+    flushTagRangesToFile();
+}
+
+private static void saveTagApplyToFile(String token, boolean selected) throws Exception {
+    String key = token == null ? "" : token.trim().toUpperCase(Locale.ROOT);
+    if (key.isEmpty()) return;
+    TAG_APPLY_OVERRIDES.put(key, Boolean.valueOf(selected));
+    AI_SELECTED_TAGS_BY_PLC.clear();
     flushTagRangesToFile();
 }
 
 private static void ensureTagRangesLoaded() {
     if (!TAG_RANGE_OVERRIDES.isEmpty()) return;
     synchronized (TAG_RANGE_OVERRIDES) {
-        if (!TAG_RANGE_OVERRIDES.isEmpty()) return;
+        if (!TAG_RANGE_OVERRIDES.isEmpty() || !TAG_APPLY_OVERRIDES.isEmpty()) return;
         try { loadTagRangesFromFile(); } catch (Exception ignore) {}
     }
+}
+private static boolean isTagApplyEnabled(String token){
+    ensureTagRangesLoaded();
+    String key = token == null ? "" : token.trim().toUpperCase(Locale.ROOT);
+    Boolean enabled = TAG_APPLY_OVERRIDES.get(key);
+    return enabled == null ? true : enabled.booleanValue();
 }
 private static boolean isCurrentLikeToken(String token){
     String t = token == null ? "" : token.toLowerCase(Locale.ROOT);
@@ -448,11 +501,17 @@ private static double nextValue(String plcKey, String token, TagRange r){
 
 private static int extractModbusExceptionCode(String msg){ return PlcWriteSupport.extractModbusExceptionCode(msg); }
 
-private static AiWriteData writeAiRandom(int plcId, PlcConfig cfg) throws Exception {
+private static AiWriteData writeAiRandom(int plcId, PlcConfig cfg, Set<String> selectedTags) throws Exception {
     long t0=System.currentTimeMillis();
     List<Map<String,Object>> mapList=getCachedAiMap(plcId), out=new ArrayList<>();
     if(mapList==null||mapList.isEmpty()) return new AiWriteData(out,0,0,System.currentTimeMillis()-t0);
-
+    Set<String> selectedUpper = new LinkedHashSet<>();
+    if (selectedTags != null) {
+        for (String t : selectedTags) {
+            if (t == null || t.trim().isEmpty()) continue;
+            selectedUpper.add(t.trim().toUpperCase(Locale.ROOT));
+        }
+    }
     Map<Integer, List<Map<String,Object>>> byMeter = new LinkedHashMap<>();
     for (Map<String,Object> m : mapList) {
         Integer meterId = (Integer)m.get("meter_id");
@@ -473,17 +532,51 @@ private static AiWriteData writeAiRandom(int plcId, PlcConfig cfg) throws Except
             if (selectedRows == null || selectedRows.isEmpty()) continue;
             boolean wroteCurrentMeter = false;
             for (Map<String,Object> m : selectedRows) {
-                int start=(Integer)m.get("start_address"), cnt=(Integer)m.get("float_count"); String bo=(String)m.get("byte_order"); if(cnt<=0) continue;
-                String[] toks=(String[])m.get("tokens"); if(toks==null) toks=new String[0]; int[] regs=new int[cnt*2];
+                int start=(Integer)m.get("start_address");
+                int cnt=(Integer)m.get("effective_float_count");
+                String bo=(String)m.get("byte_order");
+                if(cnt<=0) continue;
+                String[] toks=(String[])m.get("tokens"); if(toks==null) toks=new String[0];
+                TreeMap<Integer, Integer> regMap = new TreeMap<>();
+                int selectedFloatCount = 0;
                 for(int i=0;i<cnt;i++){
-                    String token=(i<toks.length&&toks[i]!=null&&!toks[i].trim().isEmpty())?toks[i].trim():("F"+(i+1)); TagRange tr=getRange(token); double val=nextValue(plcId+":"+meterId, token, tr); int[] pair=floatToRegs((float)val, bo);
-                    regs[i*2]=pair[0]; regs[i*2+1]=pair[1];
+                    String token=(i<toks.length&&toks[i]!=null&&!toks[i].trim().isEmpty())?toks[i].trim():("F"+(i+1));
+                    String tokenUpper = token.toUpperCase(Locale.ROOT);
+                    boolean tokenSelected = (selectedTags != null) ? selectedUpper.contains(tokenUpper) : isTagApplyEnabled(tokenUpper);
+                    if (!tokenSelected) continue;
+                    TagRange tr=getRange(token); double val=nextValue(plcId+":"+meterId, token, tr); int[] pair=floatToRegs((float)val, bo);
+                    int reg1 = start + (i*2);
+                    regMap.put(Integer.valueOf(toHoldingOffset(reg1)), Integer.valueOf(pair[0]));
+                    regMap.put(Integer.valueOf(toHoldingOffset(reg1 + 1)), Integer.valueOf(pair[1]));
                     double sentVal = (double)regsToFloat(pair[0], pair[1], bo);
-                    Map<String,Object> row=new HashMap<>(); row.put("idx",seq++); row.put("meter_id",meterId); row.put("token",token); row.put("reg1",start+(i*2)); row.put("reg2",start+(i*2)+1); row.put("value",sentVal); row.put("range_min",tr.min); row.put("range_max",tr.max); out.add(row);
+                    Map<String,Object> row=new HashMap<>(); row.put("idx",seq++); row.put("meter_id",meterId); row.put("token",token); row.put("reg1",reg1); row.put("reg2",reg1+1); row.put("value",sentVal); row.put("range_min",tr.min); row.put("range_max",tr.max); out.add(row);
+                    selectedFloatCount++;
                 }
-                int offset = toHoldingOffset(start);
+                if (regMap.isEmpty()) continue;
                 try {
-                    writeRegs(client, cfg.unitId, offset, regs);
+                    Integer batchStart = null, prevOffset = null;
+                    List<Integer> batchVals = new ArrayList<>();
+                    for (Map.Entry<Integer, Integer> e : regMap.entrySet()) {
+                        int off = e.getKey().intValue();
+                        int v = e.getValue().intValue() & 0xFFFF;
+                        boolean canAppend = (batchStart != null && prevOffset != null && off == (prevOffset.intValue() + 1) && batchVals.size() < WRITE_MAX_REGS_PER_REQ);
+                        if (!canAppend) {
+                            if (batchStart != null && !batchVals.isEmpty()) {
+                                int[] arr = new int[batchVals.size()];
+                                for (int k=0;k<batchVals.size();k++) arr[k] = batchVals.get(k).intValue() & 0xFFFF;
+                                writeRegs(client, cfg.unitId, batchStart.intValue(), arr);
+                            }
+                            batchStart = Integer.valueOf(off);
+                            batchVals.clear();
+                        }
+                        batchVals.add(Integer.valueOf(v));
+                        prevOffset = Integer.valueOf(off);
+                    }
+                    if (batchStart != null && !batchVals.isEmpty()) {
+                        int[] arr = new int[batchVals.size()];
+                        for (int k=0;k<batchVals.size();k++) arr[k] = batchVals.get(k).intValue() & 0xFFFF;
+                        writeRegs(client, cfg.unitId, batchStart.intValue(), arr);
+                    }
                 } catch (IOException e) {
                     int ex = extractModbusExceptionCode(e.getMessage());
                     String extra = (ex > 0) ? (", modbus_ex=" + ex) : "";
@@ -494,14 +587,14 @@ private static AiWriteData writeAiRandom(int plcId, PlcConfig cfg) throws Except
                         ", ip=" + cfg.ip +
                         ", port=" + cfg.port +
                         ", start_address=" + start +
-                        ", offset=" + offset +
-                        ", reg_count=" + regs.length +
+                        ", selected_tags=" + selectedFloatCount +
+                        ", reg_count=" + regMap.size() +
                         ", function=16" +
                         extra +
                         ", cause=" + e.getMessage(), e);
                 }
                 wroteCurrentMeter = true;
-                totalFloat += cnt;
+                totalFloat += selectedFloatCount;
             }
             if (wroteCurrentMeter) meterWritten++;
         }
@@ -612,7 +705,8 @@ private static WriteResult writePlcSample(int plcId){
         PlcConfig cfg = getCachedPlcConfig(plcId);
         if(!cfg.exists || cfg.ip==null){ r.error="Selected PLC config not found."; return r; }
         if(!cfg.enabled){ r.error="Selected PLC is inactive."; return r; }
-        AiWriteData ai = writeAiRandom(plcId, cfg);
+        Set<String> selectedTags = AI_SELECTED_TAGS_BY_PLC.get(plcId);
+        AiWriteData ai = writeAiRandom(plcId, cfg, selectedTags);
         DiWriteData di = new DiWriteData(new ArrayList<Map<String,Object>>(), 0, 0L);
         try {
             di = writeDi10Pct(plcId, cfg);
@@ -680,8 +774,11 @@ private static void appendDiRowsJson(StringBuilder s, List<Map<String,Object>> r
 }
 private static void appendRangesJson(StringBuilder s){
     ensureTagRangesLoaded();
-    s.append("{"); List<String> keys=new ArrayList<>(TAG_RANGE_OVERRIDES.keySet()); Collections.sort(keys); boolean first=true;
+    s.append("\"ranges\":{"); List<String> keys=new ArrayList<>(TAG_RANGE_OVERRIDES.keySet()); Collections.sort(keys); boolean first=true;
     for(String k:keys){ TagRange r=TAG_RANGE_OVERRIDES.get(k); if(r==null) continue; if(!first) s.append(","); first=false; s.append("\"").append(escJson(k)).append("\":{\"min\":").append(String.format(java.util.Locale.US,"%.2f",r.min)).append(",\"max\":").append(String.format(java.util.Locale.US,"%.2f",r.max)).append("}"); }
+    s.append("},\"selected_tags\":{");
+    List<String> selectedKeys = new ArrayList<>(TAG_APPLY_OVERRIDES.keySet()); Collections.sort(selectedKeys); first = true;
+    for(String k:selectedKeys){ Boolean enabled=TAG_APPLY_OVERRIDES.get(k); if(enabled==null) continue; if(!first) s.append(","); first=false; s.append("\"").append(escJson(k)).append("\":").append(enabled.booleanValue()?"true":"false"); }
     s.append("}");
 }
 private static void appendWriteStateJson(StringBuilder s, Integer id, WriteState st){
@@ -708,6 +805,17 @@ private static WriteRequestContext buildWriteRequestContext(javax.servlet.http.H
     } catch (Exception ignore) {
     }
     ctx.includeRows = "1".equals(req.getParameter("include_rows"));
+    String selectedTagsParam = req.getParameter("selected_tags");
+    if (selectedTagsParam != null) {
+        ctx.selectedTagsSpecified = true;
+        if (!selectedTagsParam.trim().isEmpty()) {
+            String[] parts = selectedTagsParam.split("\\s*,\\s*");
+            for (String p : parts) {
+                if (p == null || p.trim().isEmpty()) continue;
+                ctx.selectedTags.add(p.trim().toUpperCase(Locale.ROOT));
+            }
+        }
+    }
     return ctx;
 }
 
@@ -768,7 +876,7 @@ if (reqCtx.action != null && !reqCtx.action.trim().isEmpty()) {
     if ("get_tag_ranges".equalsIgnoreCase(reqCtx.action)) {
         try { loadTagRangesFromFile(); } catch (Exception ignore) {}
         StringBuilder s = new StringBuilder();
-        s.append("{\"ok\":true,\"ranges\":");
+        s.append("{\"ok\":true,");
         appendRangesJson(s);
         s.append("}");
         out.print(s.toString());
@@ -804,6 +912,23 @@ if (reqCtx.action != null && !reqCtx.action.trim().isEmpty()) {
         return;
     }
 
+    if ("set_tag_apply".equalsIgnoreCase(reqCtx.action)) {
+        String token = request.getParameter("token");
+        String selectedParam = request.getParameter("selected");
+        if (token == null || token.trim().isEmpty()) {
+            out.print("{\"ok\":false,\"error\":\"token is required\"}");
+            return;
+        }
+        boolean selected = "1".equals(selectedParam) || "true".equalsIgnoreCase(selectedParam == null ? "" : selectedParam.trim());
+        try {
+            saveTagApplyToFile(token.trim().toUpperCase(Locale.ROOT), selected);
+            out.print("{\"ok\":true,\"info\":\"tag apply saved\"}");
+        } catch (Exception e) {
+            out.print("{\"ok\":false,\"error\":\"" + escJson(e.getMessage()) + "\"}");
+        }
+        return;
+    }
+
     if ("refresh_cache".equalsIgnoreCase(reqCtx.action)) {
         String scopeParam = request.getParameter("scope");
         String scope = (scopeParam == null || scopeParam.trim().isEmpty()) ? "all" : scopeParam.trim().toLowerCase(Locale.ROOT);
@@ -821,7 +946,10 @@ if (reqCtx.action != null && !reqCtx.action.trim().isEmpty()) {
         if (doConfig) invalidateConfigCache(targetPlcId);
         if (doMap) invalidateTagMapCache(targetPlcId);
         if (doRuntime) invalidateRuntimeValueCache(targetPlcId);
-        if (doRange) TAG_RANGE_OVERRIDES.clear();
+        if (doRange) {
+            TAG_RANGE_OVERRIDES.clear();
+            TAG_APPLY_OVERRIDES.clear();
+        }
 
         String target = (targetPlcId == null) ? "all" : String.valueOf(targetPlcId);
         out.print("{\"ok\":true,\"info\":\"cache refreshed\",\"scope\":\"" + escJson(scope) + "\",\"target\":\"" + escJson(target) + "\"}");
@@ -834,6 +962,7 @@ if (reqCtx.action != null && !reqCtx.action.trim().isEmpty()) {
     }
 
     if ("write".equalsIgnoreCase(reqCtx.action)) {
+        if (reqCtx.selectedTagsSpecified) AI_SELECTED_TAGS_BY_PLC.put(reqCtx.plcId, new LinkedHashSet<String>(reqCtx.selectedTags));
         WriteState st = getWriteState(reqCtx.plcId);
         WriteResult rr = runWriteCycle(st, reqCtx.plcId);
         out.print(buildWriteResultJson(rr));
@@ -864,6 +993,7 @@ if (reqCtx.action != null && !reqCtx.action.trim().isEmpty()) {
         }
         if (writeSec <= 0) writeSec = 1;
         pollingMs = writeSec * 1000;
+        if (reqCtx.selectedTagsSpecified) AI_SELECTED_TAGS_BY_PLC.put(reqCtx.plcId, new LinkedHashSet<String>(reqCtx.selectedTags));
         startWriting(reqCtx.plcId, pollingMs);
         out.print("{\"ok\":true,\"info\":\"server write polling started (" + writeSec + "s)\"}");
         return;
@@ -884,6 +1014,7 @@ List<Map<String, Object>> plcList = new ArrayList<>();
 Map<Integer, String> meterNameMap = new HashMap<>();
 Map<Integer, String> meterPanelMap = new HashMap<>();
 Set<String> knownTags = new TreeSet<>();
+Map<String, Integer> knownTagAddressMap = new TreeMap<>();
 try (Connection conn = createConn()) {
     try (PreparedStatement ps = conn.prepareStatement("SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config ORDER BY plc_id");
          ResultSet rs = ps.executeQuery()) {
@@ -906,16 +1037,40 @@ try (Connection conn = createConn()) {
             meterPanelMap.put(meterId, rs.getString("panel_name"));
         }
     }
-    try (PreparedStatement ps = conn.prepareStatement("SELECT metric_order FROM dbo.plc_meter_map WHERE enabled = 1");
+    try (PreparedStatement ps = conn.prepareStatement("SELECT start_address, metric_order FROM dbo.plc_meter_map WHERE enabled = 1 ORDER BY plc_id, meter_id, start_address");
          ResultSet rs = ps.executeQuery()) {
         while (rs.next()) {
+            int startAddress = rs.getInt("start_address");
             String metricOrder = rs.getString("metric_order");
             if (metricOrder == null || metricOrder.trim().isEmpty()) continue;
             String[] toks = metricOrder.split("\\s*,\\s*");
-            for (String t : toks) if (t != null && !t.trim().isEmpty()) knownTags.add(t.trim());
+            for (int i = 0; i < toks.length; i++) {
+                String t = toks[i];
+                if (t == null || t.trim().isEmpty()) continue;
+                String token = t.trim();
+                knownTags.add(token);
+                String key = token.toUpperCase(Locale.ROOT);
+                if (!knownTagAddressMap.containsKey(key)) {
+                    knownTagAddressMap.put(key, Integer.valueOf(startAddress + (i * 2)));
+                }
+            }
         }
     }
 } catch (Exception ignore) {}
+List<String> knownTagsOrdered = new ArrayList<>(knownTags);
+Collections.sort(knownTagsOrdered, new Comparator<String>() {
+    @Override
+    public int compare(String a, String b) {
+        Integer aa = knownTagAddressMap.get(a == null ? "" : a.toUpperCase(Locale.ROOT));
+        Integer bb = knownTagAddressMap.get(b == null ? "" : b.toUpperCase(Locale.ROOT));
+        int av = aa == null ? Integer.MAX_VALUE : aa.intValue();
+        int bv = bb == null ? Integer.MAX_VALUE : bb.intValue();
+        if (av != bv) return Integer.compare(av, bv);
+        String as = a == null ? "" : a;
+        String bs = b == null ? "" : b;
+        return as.compareToIgnoreCase(bs);
+    }
+});
 %>
 <html>
 <head>
@@ -1001,9 +1156,9 @@ try (Connection conn = createConn()) {
     </div>
     <table>
         <thead>
-        <tr><th>tag</th><th>min</th><th>max</th><th>action</th></tr>
+        <tr><th>선택</th><th>tag</th><th>address</th><th>min</th><th>max</th><th>action</th></tr>
         </thead>
-        <tbody id="rangeRows"><tr><td colspan="4">아직 범위 데이터가 없습니다.</td></tr></tbody>
+        <tbody id="rangeRows"><tr><td colspan="6">아직 범위 데이터가 없습니다.</td></tr></tbody>
     </table>
 
     <div style="display:flex; align-items:center; gap:8px; margin:10px 0;">
@@ -1036,10 +1191,15 @@ try (Connection conn = createConn()) {
     <% } %>
   };
   const knownTags = [
-    <% boolean firstTag = true; for (String t : knownTags) { %>
+    <% boolean firstTag = true; for (String t : knownTagsOrdered) { %>
     <% if (!firstTag) { %>,<% } %>"<%= t.replace("\\", "\\\\").replace("\"", "\\\"") %>"<% firstTag = false; %>
     <% } %>
   ];
+  const knownTagAddressMap = {
+    <% boolean firstTagAddr = true; for (Map.Entry<String, Integer> e : knownTagAddressMap.entrySet()) { %>
+    <% if (!firstTagAddr) { %>,<% } %>"<%= e.getKey().replace("\\", "\\\\").replace("\"", "\\\"") %>":<%= e.getValue() %><% firstTagAddr = false; %>
+    <% } %>
+  };
 
   const okBox = document.getElementById('okBox');
   const errBox = document.getElementById('errBox');
@@ -1055,6 +1215,7 @@ try (Connection conn = createConn()) {
   const lastDiRowsByPlc = {};
   const lastWriteCountByPlc = {};
   let rangeOverrideMap = {};
+  let tagApplyMap = {};
   let snapshotLoading = false;
   let lastSnapshotRefreshAt = 0;
   let lastPollErrorAt = 0;
@@ -1199,27 +1360,65 @@ try (Connection conn = createConn()) {
     return null;
   }
   function renderRanges(selectedTag){
-    if(!knownTags.length){ rangeRows.innerHTML='<tr><td colspan="4">등록된 tag가 없습니다.</td></tr>'; return; }
+    if(!knownTags.length){ rangeRows.innerHTML='<tr><td colspan="6">등록된 tag가 없습니다.</td></tr>'; return; }
     rangeRows.innerHTML = knownTags.map(tag => {
       const key = String(tag).toUpperCase();
       const r = rangeOverrideMap[key] || inferDefaultRange(tag);
+      const checked = !Object.prototype.hasOwnProperty.call(tagApplyMap, key) || !!tagApplyMap[key];
+      const addr = Object.prototype.hasOwnProperty.call(knownTagAddressMap, key) ? knownTagAddressMap[key] : '';
       const selectedClass = (selectedTag && selectedTag.toUpperCase() === key) ? ' class="range-selected"' : '';
       const tagEncoded = encodeURIComponent(tag);
       return '<tr data-tag="' + tagEncoded + '"' + selectedClass + '>' +
+        '<td><input type="checkbox" class="range-apply"' + (checked ? ' checked' : '') + '></td>' +
         '<td class="mono">' + esc(tag) + '</td>' +
+        '<td class="mono">' + esc(addr === '' ? '-' : addr) + '</td>' +
         '<td><input class="range-edit range-min" type="number" step="0.01" value="' + esc(Number(r.min).toFixed(2)) + '"/></td>' +
         '<td><input class="range-edit range-max" type="number" step="0.01" value="' + esc(Number(r.max).toFixed(2)) + '"/></td>' +
         '<td><button type="button" class="range-save">저장</button></td>' +
       '</tr>';
     }).join('');
   }
+  function getSelectedTags(){
+    return Array.from(rangeRows.querySelectorAll('tr[data-tag]'))
+      .filter(row => {
+        const cb = row.querySelector('.range-apply');
+        return cb && cb.checked;
+      })
+      .map(row => decodeURIComponent(row.getAttribute('data-tag') || ''))
+      .filter(Boolean);
+  }
   async function loadRanges(){
     try {
       const data = await fetchJson({ action:'get_tag_ranges' });
       if(!data.ok) return;
       rangeOverrideMap = data.ranges || {};
+      tagApplyMap = data.selected_tags || {};
       renderRanges();
     } catch(e){}
+  }
+
+  async function saveApplyFromRow(row){
+    if(!row) return;
+    const tag = decodeURIComponent(row.getAttribute('data-tag') || '');
+    const cb = row.querySelector('.range-apply');
+    if(!tag || !cb){ showErr('선택 데이터가 올바르지 않습니다.'); return; }
+    cb.disabled = true;
+    try {
+      const checked = !!cb.checked;
+      const data = await fetchJson({ action:'set_tag_apply', token:tag, selected:(checked ? 1 : 0) });
+      if(!data.ok){
+        cb.checked = !checked;
+        showErr(data.error || '선택 저장 실패');
+        return;
+      }
+      tagApplyMap[String(tag).toUpperCase()] = checked;
+      showOk('write 대상 저장 완료: ' + tag);
+    } catch(e){
+      cb.checked = !cb.checked;
+      showErr('통신 오류: ' + netErrMsg(e));
+    } finally {
+      cb.disabled = false;
+    }
   }
 
   async function saveRangeFromRow(row){
@@ -1334,7 +1533,7 @@ try (Connection conn = createConn()) {
 
   async function writeOnce(plcId){
     try {
-      const data = await fetchJson({ action:'write', plc_id:plcId });
+      const data = await fetchJson({ action:'write', plc_id:plcId, selected_tags:getSelectedTags().join(',') });
       if(!data.ok){ showErr(data.error || '쓰기 실패'); await refreshStatus(); return; }
       showOk(data.info || '쓰기 성공');
       lastRowsByPlc[String(plcId)] = data.rows || [];
@@ -1346,7 +1545,7 @@ try (Connection conn = createConn()) {
   async function startPolling(plcId){
     try {
       const sec = getWriteSec(plcId);
-      const data = await fetchJson({ action:'start_polling', plc_id:plcId, write_sec:sec });
+      const data = await fetchJson({ action:'start_polling', plc_id:plcId, write_sec:sec, selected_tags:getSelectedTags().join(',') });
       if(!data.ok){ showErr(data.error || '서버 쓰기 시작 실패'); await refreshStatus(); return; }
       showOk(data.info || '서버 쓰기 시작'); setButtons(plcId, true); await writeOnce(plcId);
     } catch(e){ showErr('통신 오류: ' + netErrMsg(e)); }
@@ -1377,6 +1576,13 @@ try (Connection conn = createConn()) {
         await saveRangeFromRow(tr);
       }
     });
+    rangeRows.addEventListener('change', async function(e){
+      const cb = e.target.closest('.range-apply');
+      if(!cb) return;
+      const tr = cb.closest('tr[data-tag]');
+      if(!tr) return;
+      await saveApplyFromRow(tr);
+    });
     rangeRows.addEventListener('keydown', async function(e){
       if(e.key !== 'Enter') return;
       const input = e.target.closest('.range-edit');
@@ -1401,6 +1607,7 @@ try (Connection conn = createConn()) {
         const data = await fetchJson({ action:'clear_tag_ranges' });
         if(!data.ok){ showErr(data.error || '범위 초기화 실패'); return; }
         rangeOverrideMap = {};
+        tagApplyMap = {};
         renderRanges();
         showOk('범위 초기화 완료');
       } catch(e){

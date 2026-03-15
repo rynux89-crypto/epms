@@ -633,10 +633,8 @@
             String t2 = toks.get(i + 2).toUpperCase(Locale.ROOT);
             String t3 = toks.get(i + 3).toUpperCase(Locale.ROOT);
             String t4 = toks.get(i + 4).toUpperCase(Locale.ROOT);
-            if ("KW".equals(t0) && "KHH".equals(t1) && "VA".equals(t2) && "VAH".equals(t3) && "PEAK".equals(t4)) {
-                toks.set(i + 1, "KWH");
-                toks.set(i + 2, "KVAR");
-                toks.set(i + 3, "KVARH");
+            if ("KW".equals(t0) && "KWH".equals(t1) && "KVAR".equals(t2) && "KVARH".equals(t3) && "PEAK".equals(t4)) {
+                break;
             }
         }
         return String.join(",", toks);
@@ -882,14 +880,6 @@
 
             int meterId = ((Number)meterObj).intValue();
             String token = String.valueOf(tokenObj).trim().toUpperCase(Locale.ROOT);
-            int floatIndex = 0;
-            Object floatIndexObj = row.get("float_index");
-            if (floatIndexObj instanceof Number) {
-                floatIndex = ((Number)floatIndexObj).intValue();
-            }
-            if ("KHH".equals(token)) token = "KWH";
-            else if ("VAH".equals(token)) token = "KVARH";
-            else if ("VA".equals(token) && floatIndex >= 18) token = "KVAR";
             if ("IR".equals(token)) continue;
             Map<String, Object> mm = matchMap.get(token);
             if (mm == null) continue;

@@ -5,7 +5,8 @@ param(
     [int]$FloatCount = 62,
     [switch]$Apply,
     [switch]$AllowDisable,
-    [string]$OutputJsonPath = ''
+    [string]$OutputJsonPath = '',
+    [string]$OverrideJsonPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,6 +55,28 @@ function Get-AiFloatIndex([int]$baseAddr, [int]$addr){
     return [int]($delta / 2)
 }
 
+function Normalize-AiHeader([object]$v){
+    $s = Normalize-Str $v
+    if ($s -eq '') { return '' }
+    return (($s -replace '\s+', '')).ToUpperInvariant()
+}
+
+function Resolve-AiCanonicalToken([string]$rawToken, [string]$mainHeader, [string]$subHeader){
+    $t = Normalize-Str $rawToken
+    if ($t -eq '') { return '' }
+    $t = $t -replace '^[\\??]+', ''
+    $t = ($t -replace '\s+', '').Trim().ToUpperInvariant()
+    if ($t -eq '') { return '' }
+    if ($t -eq 'KHH') { return 'KWH' }
+    if ($t -eq 'VAH') { return 'KVARH' }
+    return $t
+}
+
+function Get-RowCellValue([System.Data.DataRow]$row, [string]$col){
+    if ($null -eq $row) { return '' }
+    return $row[$col]
+}
+
 function Build-AiMatchSyncMap([string]$metricOrder){
     $map = @{}
     $order = Normalize-Str $metricOrder
@@ -62,11 +85,9 @@ function Build-AiMatchSyncMap([string]$metricOrder){
     for ($i = 0; $i -lt $tokens.Count; $i++) {
         $token = (Normalize-Str $tokens[$i]).ToUpperInvariant()
         if ($token -eq '') { continue }
+        if ($token -eq 'IR') { continue }
         $map[$token] = $i + 1
     }
-    if ($map.ContainsKey('KHH')) { $map['KWH'] = $map['KHH'] }
-    if ($map.ContainsKey('VA')) { $map['KVAR'] = $map['VA'] }
-    if ($map.ContainsKey('VAH')) { $map['KVARH'] = $map['VAH'] }
     return $map
 }
 
@@ -231,6 +252,69 @@ function Build-AiTokenByColumn([System.Data.DataTable]$aiSheet){
     return $map
 }
 
+function Build-AiTokenByColumnV2([System.Data.DataTable]$aiSheet){
+    $map = @{}
+    if ($null -eq $aiSheet) { return $map }
+    $bestRowIndex = -1
+    $bestCnt = 0
+    $seenTokenCount = @{}
+
+    for ($ri = 0; $ri -lt $aiSheet.Rows.Count; $ri++) {
+        $row = $aiSheet.Rows[$ri]
+        $cnt = 0
+        for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
+            $col = "F$c"
+            if (-not $aiSheet.Columns.Contains($col)) { continue }
+            $raw = Normalize-Str $row[$col]
+            if ($raw -eq '') { continue }
+            if ($raw -match '^\d+(\.\d+)?$') { continue }
+            $cnt++
+        }
+        if ($cnt -gt $bestCnt) {
+            $bestCnt = $cnt
+            $bestRowIndex = $ri
+        }
+    }
+
+    if ($bestRowIndex -lt 0 -or $bestCnt -lt 1) { return $map }
+    $tokenRow = $aiSheet.Rows[$bestRowIndex]
+    $mainHeaderRow = if ($bestRowIndex -ge 3) { $aiSheet.Rows[$bestRowIndex - 3] } else { $null }
+    $subHeaderRow = if ($bestRowIndex -ge 2) { $aiSheet.Rows[$bestRowIndex - 2] } else { $null }
+
+    for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
+        $col = "F$c"
+        if (-not $aiSheet.Columns.Contains($col)) { continue }
+        $raw = Normalize-Str $tokenRow[$col]
+        if ($raw -eq '') { continue }
+        if ($raw -match '^\d+(\.\d+)?$') { continue }
+        $token = Resolve-AiCanonicalToken `
+            -rawToken $raw `
+            -mainHeader (Get-RowCellValue -row $mainHeaderRow -col $col) `
+            -subHeader (Get-RowCellValue -row $subHeaderRow -col $col)
+        if ($token -eq '') { continue }
+        if (-not $seenTokenCount.ContainsKey($token)) { $seenTokenCount[$token] = 0 }
+        $seenTokenCount[$token] = [int]$seenTokenCount[$token] + 1
+        if ($token -eq 'VA' -and [int]$seenTokenCount[$token] -ge 2) {
+            $token = 'KVAR'
+        }
+        $map[$c] = $token
+    }
+    return $map
+}
+
+function Resolve-AiMetricOrderV2([System.Data.DataTable]$aiSheet, [string]$fallback){
+    $tokenByCol = Build-AiTokenByColumnV2 -aiSheet $aiSheet
+    if ($null -eq $tokenByCol -or $tokenByCol.Count -lt 1) { return $fallback }
+    $tokens = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @($tokenByCol.Keys | Sort-Object {[int]$_})) {
+        $token = Normalize-Str $tokenByCol[$c]
+        if ($token -eq '') { continue }
+        $tokens.Add($token)
+    }
+    if ($tokens.Count -lt 1) { return $fallback }
+    return [string]::Join(',', $tokens)
+}
+
 function New-SqlConnection {
     $cn = New-Object System.Data.SqlClient.SqlConnection
     $cn.ConnectionString = 'Server=localhost,1433;Database=epms;User ID=sa;Password=1234;TrustServerCertificate=True;Encrypt=True'
@@ -258,6 +342,30 @@ function Write-JsonResult([object]$obj, [int]$depth = 8) {
     } else {
         $json
     }
+}
+
+function Load-AiOverrideMap([string]$path){
+    $map = @{}
+    $p = Normalize-Str $path
+    if ($p -eq '' -or -not (Test-Path -Path $p -PathType Leaf)) { return $map }
+    $raw = Get-Content -Path $p -Raw -Encoding UTF8
+    if ((Normalize-Str $raw) -eq '') { return $map }
+    $obj = $raw | ConvertFrom-Json
+    $items = @()
+    if ($obj -is [System.Collections.IEnumerable]) {
+        foreach ($x in $obj) { $items += $x }
+    } else {
+        $items += $obj
+    }
+    foreach ($it in $items) {
+        if ($null -eq $it) { continue }
+        $plcId = if ($it.PSObject.Properties.Name -contains 'plc_id') { [int]$it.plc_id } else { 0 }
+        $meterId = if ($it.PSObject.Properties.Name -contains 'meter_id') { [int]$it.meter_id } else { 0 }
+        if ($plcId -le 0 -or $meterId -le 0) { continue }
+        $key = "{0}|{1}" -f $plcId, $meterId
+        $map[$key] = $it
+    }
+    return $map
 }
 
 function Query-ExcelTable([string]$path, [string]$sheetName){
@@ -339,10 +447,11 @@ try {
         throw "Excel file not found: $ExcelPath"
     }
 
-    $tokenDefault = 'V12,V23,V31,VVA,V1N,V2N,V3N,VA,A1,A2,A3,AN,AA,PF,HZ,KW,KHH,VA,VAH,PEAK,IR,H_VA_1,H_VA_3,H_VA_5,H_VA_7,H_VA_9,H_VA_11,H_VB_1,H_VB_3,H_VB_5,H_VB_7,H_VB_9,H_VB_11,H_VC_1,H_VC_3,H_VC_5,H_VC_7,H_VC_9,H_VC_11,H_IA_1,H_IA_3,H_IA_5,H_IA_7,H_IA_9,H_IA_11,H_IB_1,H_IB_3,H_IB_5,H_IB_7,H_IB_9,H_IB_11,H_IC_1,H_IC_3,H_IC_5,H_IC_7,H_IC_9,H_IC_11,PV1,PV2,PV3,PI1,PI2,PI3'
+    $tokenDefault = 'V12,V23,V31,VVA,V1N,V2N,V3N,VA,A1,A2,A3,AN,AA,PF,HZ,KW,KWH,KVAR,KVARH,PEAK,IR,H_VA_1,H_VA_3,H_VA_5,H_VA_7,H_VA_9,H_VA_11,H_VB_1,H_VB_3,H_VB_5,H_VB_7,H_VB_9,H_VB_11,H_VC_1,H_VC_3,H_VC_5,H_VC_7,H_VC_9,H_VC_11,H_IA_1,H_IA_3,H_IA_5,H_IA_7,H_IA_9,H_IA_11,H_IB_1,H_IB_3,H_IB_5,H_IB_7,H_IB_9,H_IB_11,H_IC_1,H_IC_3,H_IC_5,H_IC_7,H_IC_9,H_IC_11,PV1,PV2,PV3,PI1,PI2,PI3'
 
     $aiSheet = Query-ExcelTable -path $ExcelPath -sheetName 'PLC_IO_Address_AI'
     $diSheet = Query-ExcelTable -path $ExcelPath -sheetName 'PLC_IO_Address_DI'
+    $aiOverrideMap = Load-AiOverrideMap -path $OverrideJsonPath
 
     # Auto mode: if PlcId is not provided (or <= 0), detect PLC IDs from Excel and run per-PLC import.
     if ($PlcId -le 0) {
@@ -385,6 +494,9 @@ try {
                 '-FloatCount', [string]$FloatCount,
                 '-OutputJsonPath', $jsonOutPath
             )
+            if ((Normalize-Str $OverrideJsonPath) -ne '') {
+                $args += @('-OverrideJsonPath', $OverrideJsonPath)
+            }
             if ($Apply.IsPresent) { $args += '-Apply' }
             if ($AllowDisable.IsPresent) { $args += '-AllowDisable' }
 
@@ -500,7 +612,7 @@ try {
     }
     $rMeters.Close()
 
-    $metricOrderFallback = Resolve-AiMetricOrder -aiSheet $aiSheet -fallback ''
+    $metricOrderFallback = Resolve-AiMetricOrderV2 -aiSheet $aiSheet -fallback ''
     if ((Normalize-Str $metricOrderFallback) -eq '') {
         $metricOrderFallback = $tokenDefault
         $cmdMetric = $sqlCn.CreateCommand()
@@ -512,7 +624,7 @@ try {
             $metricOrderFallback = [string]$metricVal
         }
     }
-    $tokenByCol = Build-AiTokenByColumn -aiSheet $aiSheet
+    $tokenByCol = Build-AiTokenByColumnV2 -aiSheet $aiSheet
 
     $aiRows = New-Object System.Collections.Generic.List[object]
     $aiUnmatched = New-Object System.Collections.Generic.List[string]
@@ -540,6 +652,7 @@ try {
         $maxFloatIndex = -1
         $maxPresentCol = 0
         $tokenByIndex = @{}
+        $tokenAddresses = New-Object System.Collections.Generic.List[object]
         $nonEmptyCount = 0
         for ($c = 6; $c -le $aiSheet.Columns.Count; $c++) {
             $col = "F$c"
@@ -556,6 +669,11 @@ try {
                     if ($tokenByCol.ContainsKey($c)) { $token = [string]$tokenByCol[$c] }
                     if ((Normalize-Str $token) -eq '') { $token = "F$($floatIndex + 1)" }
                     $tokenByIndex[[int]$floatIndex] = $token
+                    $tokenAddresses.Add([PSCustomObject]@{
+                        float_index = [int]($floatIndex + 1)
+                        token = [string]$token
+                        reg_address = [int]$addr
+                    })
                 }
             }
         }
@@ -575,6 +693,14 @@ try {
         $rowFloatCount = Normalize-AiFloatCount -count ([int]$rowFloatCount)
         $rowMetricOrder = [string]::Join(',', $metricTokens)
         if ((Normalize-Str $rowMetricOrder) -eq '') { $rowMetricOrder = $metricOrderFallback }
+        $previewTokenAddresses = New-Object System.Collections.Generic.List[object]
+        for ($i = 0; $i -lt $metricTokens.Count; $i++) {
+            $previewTokenAddresses.Add([PSCustomObject]@{
+                float_index = [int]($i + 1)
+                token = [string]$metricTokens[$i]
+                reg_address = [int](([int]$baseAddr + 1) + ($i * 2))
+            })
+        }
 
         $obj = [PSCustomObject]@{
             meter_id = [int]$meterId
@@ -583,6 +709,48 @@ try {
             metric_order = [string]$rowMetricOrder
             item_name = $itemName
             panel_name = $panelName
+            token_addresses = $previewTokenAddresses
+        }
+
+        $overrideKey = "{0}|{1}" -f $PlcId, ([int]$meterId)
+        if ($aiOverrideMap.ContainsKey($overrideKey)) {
+            $ov = $aiOverrideMap[$overrideKey]
+            if ($ov.PSObject.Properties.Name -contains 'token_addresses' -and $null -ne $ov.token_addresses) {
+                $overrideTokens = New-Object System.Collections.Generic.List[string]
+                $overrideStartAddress = $null
+                $expectedAddress = $null
+                foreach ($ta in @($ov.token_addresses)) {
+                    if ($null -eq $ta) { continue }
+                    $token = (Normalize-Str $ta.token).ToUpperInvariant()
+                    $regAddress = [int]$ta.reg_address
+                    if ($token -eq '') { continue }
+                    if ($null -eq $overrideStartAddress) {
+                        $overrideStartAddress = $regAddress
+                        $expectedAddress = $regAddress
+                    }
+                    if ($regAddress -ne $expectedAddress) {
+                        throw ("Override address sequence invalid for plc_id={0}, meter_id={1}. expected={2}, actual={3}" -f $PlcId, $meterId, $expectedAddress, $regAddress)
+                    }
+                    $overrideTokens.Add($token)
+                    $expectedAddress += 2
+                }
+                if ($overrideTokens.Count -gt 0 -and $null -ne $overrideStartAddress) {
+                    $obj.start_address = [int]$overrideStartAddress
+                    $obj.float_count = [int]$overrideTokens.Count
+                    $obj.metric_order = [string]::Join(',', $overrideTokens)
+                    $obj.token_addresses = @($ov.token_addresses)
+                }
+            } else {
+                if ($ov.PSObject.Properties.Name -contains 'start_address') {
+                    $obj.start_address = [int]$ov.start_address
+                }
+                if ($ov.PSObject.Properties.Name -contains 'float_count') {
+                    $obj.float_count = [int]$ov.float_count
+                }
+                if ($ov.PSObject.Properties.Name -contains 'metric_order') {
+                    $obj.metric_order = [string]$ov.metric_order
+                }
+            }
         }
         $aiRows.Add($obj)
     }
@@ -928,6 +1096,7 @@ WHEN NOT MATCHED THEN
         ai_float_distribution = $floatDist
         ai_float_meter_ids = $floatMeters
         ai_rows_sample = $aiRowsSample
+        ai_rows_preview = $aiRows
         di_map_rows = $diMapByPoint.Count
         di_tag_rows = $diTags.Count
         ai_match_sync = $aiMatchSyncPlan
