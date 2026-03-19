@@ -213,6 +213,61 @@ public final class AgentAnswerFormatter {
         return out.toString();
     }
 
+    public static String buildAlarmMeterTopDirectAnswer(String ctx) {
+        if (ctx == null || ctx.trim().isEmpty()) return "\uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.";
+        if (ctx.contains("unavailable")) return "\uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4\ub97c \ud604\uc7ac \uc870\ud68c\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
+        if (ctx.contains("no data")) return "\uc870\uac74\uc5d0 \ub9de\ub294 \uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
+
+        Matcher pm = Pattern.compile("period=([^;]+)").matcher(ctx);
+        Matcher dm = Pattern.compile("days=([0-9]+)").matcher(ctx);
+        String periodLabel = pm.find() ? trimToNull(pm.group(1)) : null;
+        String daysLabel = dm.find() ? trimToNull(dm.group(1)) : null;
+        Matcher row = Pattern.compile("\\s[0-9]+\\)([^=;]+)=([0-9]+);").matcher(ctx);
+        ArrayList<String> parts = new ArrayList<String>();
+        while (row.find()) {
+            String meter = trimToNull(row.group(1));
+            String cnt = trimToNull(row.group(2));
+            if (meter == null || cnt == null) continue;
+            parts.add(meter + " - " + cnt + "\uac74");
+        }
+        if (parts.isEmpty()) return "\uc870\uac74\uc5d0 \ub9de\ub294 \uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
+
+        StringBuilder out = new StringBuilder();
+        if (periodLabel != null && !periodLabel.isEmpty()) {
+            out.append(periodLabel).append(" \uc54c\ub78c \ubc1c\uc0dd \uac74\uc218\uac00 \ub9ce\uc740 \uacc4\uce21\uae30 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        } else if (daysLabel != null && !daysLabel.isEmpty()) {
+            out.append("\ucd5c\uadfc ").append(daysLabel).append("\uc77c \uc54c\ub78c \ubc1c\uc0dd \uac74\uc218\uac00 \ub9ce\uc740 \uacc4\uce21\uae30 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        } else {
+            out.append("\uc54c\ub78c \ubc1c\uc0dd \uac74\uc218\uac00 \ub9ce\uc740 \uacc4\uce21\uae30 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        }
+        for (int i = 0; i < parts.size(); i++) {
+            out.append(i + 1).append(". ").append(parts.get(i));
+            if (i + 1 < parts.size()) out.append("\n");
+        }
+        return out.toString();
+    }
+
+    public static String buildUsageTypeListDirectAnswer(String ctx) {
+        if (ctx == null || ctx.trim().isEmpty()) return "\uc6a9\ub3c4 \ubaa9\ub85d \ub370\uc774\ud130\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.";
+        if (ctx.contains("unavailable")) return "\uc6a9\ub3c4 \ubaa9\ub85d\uc744 \ud604\uc7ac \uc870\ud68c\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
+        if (ctx.contains("no data")) return "\ub4f1\ub85d\ub41c \uc6a9\ub3c4 \ubaa9\ub85d\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.";
+        Matcher row = Pattern.compile("\\s[0-9]+\\)([^;]+);").matcher(ctx);
+        ArrayList<String> parts = new ArrayList<String>();
+        while (row.find()) {
+            String usage = trimToNull(row.group(1));
+            if (usage == null) continue;
+            parts.add(usage);
+        }
+        if (parts.isEmpty()) return "\ub4f1\ub85d\ub41c \uc6a9\ub3c4 \ubaa9\ub85d\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.";
+        StringBuilder out = new StringBuilder();
+        out.append("\ub4f1\ub85d\ub41c \uc6a9\ub3c4 \ubaa9\ub85d\uc785\ub2c8\ub2e4.\n");
+        for (int i = 0; i < parts.size(); i++) {
+            out.append("- ").append(parts.get(i));
+            if (i + 1 < parts.size()) out.append("\n");
+        }
+        return out.toString();
+    }
+
     public static String buildBuildingPowerTopDirectAnswer(String ctx) {
         if (ctx == null || ctx.trim().isEmpty()) return "\uac74\ubb3c\ubcc4 \uc804\ub825 TOP \ub370\uc774\ud130\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.";
         if (ctx.contains("unavailable")) return "\uac74\ubb3c\ubcc4 \uc804\ub825 TOP\uc744 \ud604\uc7ac \uc870\ud68c\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
@@ -396,6 +451,39 @@ public final class AgentAnswerFormatter {
         if (samples != null && !samples.isEmpty()) {
             out.append("\n\n\uba54\ud0c0 \uc815\ubcf4:\n")
                 .append("- \ud45c\ubcf8 \uc218: ").append(samples).append("\uac74");
+        }
+        return out.toString();
+    }
+
+    public static String buildMonthlyPeakPowerDirectAnswer(String ctx) {
+        if (ctx == null || ctx.trim().isEmpty()) return "\uc6d4 \ucd5c\ub300 \ud53c\ud06c \ub370\uc774\ud130\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.";
+        if (ctx.contains("unavailable")) return "\uc6d4 \ucd5c\ub300 \ud53c\ud06c\ub97c \ud604\uc7ac \uc870\ud68c\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
+        if (ctx.contains("no data")) return "\uc694\uccad\ud55c \uc6d4 \ucd5c\ub300 \ud53c\ud06c \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
+        Matcher pm = Pattern.compile("period=([0-9]{4}-[0-9]{2})").matcher(ctx);
+        Matcher mid = Pattern.compile("meter_id=([0-9]+)").matcher(ctx);
+        Matcher mn = Pattern.compile("meter_name=([^;]+)").matcher(ctx);
+        Matcher pn = Pattern.compile("panel=([^;]+)").matcher(ctx);
+        Matcher pk = Pattern.compile("peak_kw=([0-9.\\-]+)").matcher(ctx);
+        Matcher tm = Pattern.compile("t=([^;]+)").matcher(ctx);
+        String period = pm.find() ? trimToNull(pm.group(1)) : null;
+        String meterId = mid.find() ? trimToNull(mid.group(1)) : null;
+        String meterName = mn.find() ? trimToNull(mn.group(1)) : null;
+        String panel = pn.find() ? trimToNull(pn.group(1)) : null;
+        String peakKw = pk.find() ? trimToNull(pk.group(1)) : null;
+        String measuredAt = tm.find() ? trimToNull(tm.group(1)) : null;
+        if (period == null || peakKw == null) return "\uc694\uccad\ud55c \uc6d4 \ucd5c\ub300 \ud53c\ud06c \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
+        StringBuilder out = new StringBuilder();
+        out.append(period).append(" \ucd5c\ub300 \ud53c\ud06c \uc804\ub825 \uc870\ud68c \uacb0\uacfc\uc785\ub2c8\ub2e4.\n\n");
+        out.append("\ud575\uc2ec \uac12:\n");
+        out.append("- \ucd5c\ub300 \ud53c\ud06c: ").append(peakKw).append("kW");
+        if (meterId != null && meterName != null) {
+            out.append("\n- \uacc4\uce21\uae30: ").append(meterName).append(" (").append(meterId).append(")");
+        }
+        if (panel != null && !panel.isEmpty() && !"-".equals(panel)) {
+            out.append("\n- \ud328\ub110: ").append(panel);
+        }
+        if (measuredAt != null && !measuredAt.isEmpty()) {
+            out.append("\n- \uc2dc\uac01: ").append(measuredAt);
         }
         return out.toString();
     }
@@ -700,7 +788,10 @@ public final class AgentAnswerFormatter {
         if (ctx.contains("[Energy delta]")) return buildEnergyDeltaDirectAnswer(ctx, false);
         if (ctx.contains("[Reactive energy delta]")) return buildEnergyDeltaDirectAnswer(ctx, true);
         if (ctx.contains("[Monthly power stats]")) return buildMonthlyPowerStatsDirectAnswer(ctx);
+        if (ctx.contains("[Monthly peak power]")) return buildMonthlyPeakPowerDirectAnswer(ctx);
         if (ctx.contains("[Alarm types]")) return buildAlarmTypeDirectAnswer(ctx);
+        if (ctx.contains("[Alarm meter TOP]")) return buildAlarmMeterTopDirectAnswer(ctx);
+        if (ctx.contains("[Usage type list]")) return buildUsageTypeListDirectAnswer(ctx);
         if (ctx.contains("[Voltage unbalance TOP")) return buildVoltageUnbalanceTopDirectAnswer(ctx);
         if (ctx.contains("[Harmonic exceed]")) return buildHarmonicExceedDirectAnswer(ctx);
         if (ctx.contains("[Power factor outlier]")) return buildPowerFactorOutlierDirectAnswer(ctx, -1);

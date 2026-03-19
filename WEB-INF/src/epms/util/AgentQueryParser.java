@@ -229,6 +229,38 @@ public final class AgentQueryParser {
             java.time.LocalDate monthStart = today.withDayOfMonth(1);
             return new ParsedTimeWindow(Timestamp.valueOf(monthStart.atStartOfDay()), Timestamp.valueOf(monthStart.plusMonths(1).atStartOfDay()), monthStart.toString().substring(0, 7));
         }
+        Matcher ym = Pattern.compile("([0-9]{4})\\s*\ub144\\s*([0-9]{1,2})\\s*\uc6d4").matcher(src);
+        if (ym.find()) {
+            try {
+                int yy = Integer.parseInt(ym.group(1));
+                int mm = Integer.parseInt(ym.group(2));
+                if (mm >= 1 && mm <= 12) {
+                    java.time.LocalDate monthStart = java.time.LocalDate.of(yy, mm, 1);
+                    return new ParsedTimeWindow(
+                        Timestamp.valueOf(monthStart.atStartOfDay()),
+                        Timestamp.valueOf(monthStart.plusMonths(1).atStartOfDay()),
+                        String.format(Locale.ROOT, "%04d-%02d", yy, mm)
+                    );
+                }
+            } catch (Exception ignore) {
+            }
+        }
+        Matcher monthOnly = Pattern.compile("(^|[^0-9])([0-9]{1,2})\\s*\uc6d4(?:\\s*\ub2ec)?").matcher(src);
+        if (monthOnly.find()) {
+            try {
+                int mm = Integer.parseInt(monthOnly.group(2));
+                if (mm >= 1 && mm <= 12) {
+                    int yy = today.getYear();
+                    java.time.LocalDate monthStart = java.time.LocalDate.of(yy, mm, 1);
+                    return new ParsedTimeWindow(
+                        Timestamp.valueOf(monthStart.atStartOfDay()),
+                        Timestamp.valueOf(monthStart.plusMonths(1).atStartOfDay()),
+                        String.format(Locale.ROOT, "%04d-%02d", yy, mm)
+                    );
+                }
+            } catch (Exception ignore) {
+            }
+        }
         if (src.contains("\uc62c\ud574") || src.contains("\uae08\ub144") || src.contains("this year")) {
             java.time.LocalDate yearStart = today.withDayOfYear(1);
             return new ParsedTimeWindow(Timestamp.valueOf(yearStart.atStartOfDay()), Timestamp.valueOf(yearStart.plusYears(1).atStartOfDay()), String.valueOf(today.getYear()));

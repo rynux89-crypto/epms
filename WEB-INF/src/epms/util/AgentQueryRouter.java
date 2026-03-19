@@ -49,11 +49,24 @@ public final class AgentQueryRouter {
         boolean hasNarrativeIntent =
             m.contains("\uD574\uC11D") || m.contains("\uC124\uBA85") || m.contains("\uC694\uC57D")
             || m.contains("\uBCF4\uACE0\uC11C") || m.contains("\uBD84\uC11D") || m.contains("\uD3C9\uAC00")
-            || m.contains("\uCD94\uB860") || m.contains("\uC9C4\uB2E8") || m.contains("\uBE0C\uB9AC\uD551");
+            || m.contains("\uCD94\uB860") || m.contains("\uC9C4\uB2E8") || m.contains("\uBE0C\uB9AC\uD551")
+            || m.contains("\uC54C\uB824") || m.contains("\uC548\uB0B4") || m.contains("\uCCB4\uD06C\uB9AC\uC2A4\uD2B8")
+            || m.contains("\uD56D\uBAA9") || m.contains("\uC21C\uC11C") || m.contains("\uC808\uCC28")
+            || m.contains("\uC6D0\uC778") || m.contains("\uC810\uAC80");
         boolean hasCombinedIntent =
             (m.contains("\uACC4\uCE21") || m.contains("\uC0C1\uD0DC") || m.contains("\uCE21\uC815"))
             && (m.contains("\uC54C\uB78C") || m.contains("\uACBD\uBCF4"));
-        return hasNarrativeIntent && hasCombinedIntent;
+        boolean hasQualityOpsIntent =
+            (m.contains("\uC5ED\uB960") || m.contains("powerfactor") || m.contains("pf")
+                || m.contains("\uC8FC\uD30C\uC218") || m.contains("frequency")
+                || m.contains("\uACE0\uC870\uD30C") || m.contains("harmonic")
+                || m.contains("\uBD88\uD3C9\uD615") || m.contains("unbalance"))
+            && (m.contains("\uC6B4\uC601\uC790") || m.contains("\uB2F4\uB2F9\uC790")
+                || m.contains("\uBB50\uBD80\uD130") || m.contains("\uBA3C\uC800")
+                || m.contains("\uD56D\uBAA9") || m.contains("\uC21C\uC11C")
+                || m.contains("\uC808\uCC28") || m.contains("\uC810\uAC80")
+                || m.contains("\uC6D0\uC778") || m.contains("\uB300\uC751"));
+        return (hasNarrativeIntent && hasCombinedIntent) || (hasNarrativeIntent && hasQualityOpsIntent);
     }
 
     public static boolean wantsMeterSummary(String userMessage) {
@@ -197,6 +210,23 @@ public final class AgentQueryRouter {
         return hasUsage && hasCount;
     }
 
+    public static boolean wantsUsageTypeListSummary(String userMessage) {
+        String m = normalize(userMessage);
+        boolean hasUsage = m.contains("\uC6A9\uB3C4") || m.contains("\uC0AC\uC6A9\uCC98") || m.contains("usage");
+        boolean hasList =
+            m.contains("\uB9AC\uC2A4\uD2B8") || m.contains("\uBAA9\uB85D") || m.contains("list")
+            || m.contains("\uC885\uB958") || m.contains("\uD56D\uBAA9") || m.contains("\uBCF4\uC5EC")
+            || m.contains("\uC54C\uB824");
+        boolean hasCount =
+            m.contains("\uBA87\uAC1C") || m.contains("\uBA87\uAC1C\uC57C") || m.contains("\uAC1C\uC218")
+            || m.contains("\uAC2F\uC218") || m.contains("\uC218\uB294") || m.contains("\uCD1D\uAC1C\uC218")
+            || m.contains("count");
+        boolean hasPowerIntent =
+            m.contains("\uC804\uB825") || m.contains("\uC804\uB825\uB7C9") || m.contains("\uC0AC\uC6A9\uB7C9")
+            || m.contains("power") || m.contains("kwh") || m.contains("kw");
+        return hasUsage && hasList && !hasCount && !hasPowerIntent;
+    }
+
     public static boolean wantsAlarmSeveritySummary(String userMessage) {
         String m = normalize(userMessage);
         boolean hasAlarm = m.contains("\uC54C\uB78C") || m.contains("alarm") || m.contains("\uACBD\uBCF4");
@@ -239,6 +269,20 @@ public final class AgentQueryRouter {
             || m.contains("\uBA87\uAC74") || m.contains("\uBA87\uAC1C")
             || m.contains("\uC218\uB294") || m.contains("\uC218\uC54C\uB824") || m.contains("\uC218\uB97C\uC54C\uB824") || m.contains("\uC218\uB97C\uBCF4\uC5EC");
         return hasOpen && hasAlarm && hasCount;
+    }
+
+    public static boolean wantsAlarmMeterTopN(String userMessage) {
+        String m = normalize(userMessage);
+        boolean hasAlarm = m.contains("\uC54C\uB78C") || m.contains("alarm") || m.contains("\uACBD\uBCF4");
+        boolean hasMeter = m.contains("\uACC4\uCE21\uAE30") || m.contains("\uBBF8\uD130") || m.contains("meter");
+        boolean hasRanking =
+            m.contains("top") || m.contains("\uC0C1\uC704") || m.contains("\uB9CE\uC740")
+            || m.contains("\uB9CE\uC774\uBC1C\uC0DD") || m.contains("\uC790\uC8FC")
+            || m.contains("\uBAA9\uB85D") || m.contains("\uBCF4\uC5EC") || m.contains("\uC54C\uB824");
+        boolean hasCountHint =
+            m.contains("\uAC74\uC218") || m.contains("\uAC1C\uC218") || m.contains("\uC218")
+            || m.contains("\uBC1C\uC0DD");
+        return hasAlarm && hasMeter && hasRanking && hasCountHint;
     }
 
     public static boolean wantsBuildingPowerTopN(String userMessage) {
@@ -294,7 +338,13 @@ public final class AgentQueryRouter {
         boolean hasOutlier = m.contains("\uC774\uC0C1") || m.contains("\uBE44\uC815\uC0C1") || m.contains("\uBB38\uC81C")
             || m.contains("\uB0AE") || m.contains("high") || m.contains("low");
         boolean hasMeterScope = m.contains("\uACC4\uCE21\uAE30") || m.contains("meter") || m.contains("\uBAA9\uB85D") || m.contains("\uBCF4\uC5EC");
-        return hasPf && (hasOutlier || hasMeterScope);
+        boolean hasGuidanceIntent =
+            m.contains("\uC6B4\uC601\uC790") || m.contains("\uB2F4\uB2F9\uC790")
+            || m.contains("\uC54C\uB824") || m.contains("\uC124\uBA85") || m.contains("\uD574\uC11D")
+            || m.contains("\uC6D0\uC778") || m.contains("\uC810\uAC80") || m.contains("\uC21C\uC11C")
+            || m.contains("\uC808\uCC28") || m.contains("\uD56D\uBAA9") || m.contains("\uCCB4\uD06C\uB9AC\uC2A4\uD2B8")
+            || m.contains("\uBB50\uBD80\uD130") || m.contains("\uBA3C\uC800");
+        return hasPf && (hasOutlier || hasMeterScope) && !hasGuidanceIntent;
     }
 
     public static boolean wantsVoltageAverageSummary(String userMessage) {
@@ -308,6 +358,14 @@ public final class AgentQueryRouter {
             || m.contains("\uC6D4") || m.contains("year") || m.contains("week") || m.contains("month")
             || m.matches(".*[0-9]+\uC77C.*") || hasDate;
         return hasVoltage && hasAvg && hasPeriod;
+    }
+
+    public static boolean wantsMonthlyPeakPower(String userMessage) {
+        String m = normalize(userMessage);
+        boolean hasPeak = m.contains("\uD53C\uD06C") || m.contains("peak") || m.contains("\uCD5C\uB300\uD53C\uD06C");
+        boolean hasPower = m.contains("\uC804\uB825") || m.contains("power") || m.contains("kw");
+        boolean hasPeriod = m.contains("\uC6D4") || m.contains("\uB2EC") || m.contains("month") || m.contains("\uC774\uBC88\uB2EC") || m.contains("\uAE08\uC6D4");
+        return hasPeak && (hasPower || !m.contains("\uC804\uC555")) && hasPeriod;
     }
 
     public static boolean wantsVoltagePhaseAngle(String userMessage) {

@@ -265,7 +265,7 @@
 <div class="title-bar">
     <h2>🧭 통합 전력품질 모니터링 (역률 / 주파수 / 전압 / 전류)</h2>
     <div style="display:flex; gap:8px; align-items:center;">
-        <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
+        <button class="back-btn" onclick="location.href='/pages/epms_main.jsp'">EPMS 홈</button>
     </div>
 </div>
 

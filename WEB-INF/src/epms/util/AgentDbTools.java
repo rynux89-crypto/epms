@@ -154,6 +154,35 @@ public final class AgentDbTools {
         }
     }
 
+    public static String getUsageTypeListContext(Integer topN) {
+        int n = topN != null ? topN.intValue() : 50;
+        if (n < 1) n = 50;
+        if (n > 100) n = 100;
+        String sql =
+            "SELECT TOP " + n + " LTRIM(RTRIM(ISNULL(usage_type,''))) AS usage_type " +
+            "FROM dbo.meters " +
+            "WHERE LTRIM(RTRIM(ISNULL(usage_type,''))) <> '' " +
+            "GROUP BY LTRIM(RTRIM(ISNULL(usage_type,''))) " +
+            "ORDER BY LTRIM(RTRIM(ISNULL(usage_type,''))) ASC";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                StringBuilder sb = new StringBuilder("[Usage type list];");
+                int i = 0;
+                while (rs.next()) {
+                    String usageType = clip(rs.getString("usage_type"), 40);
+                    if (usageType == null || usageType.trim().isEmpty()) continue;
+                    i++;
+                    sb.append(" ").append(i).append(")").append(usageType.trim()).append(";");
+                }
+                if (i == 0) return "[Usage type list] no data";
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            return "[Usage type list] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
     public static String getRecentMeterContext(Integer meterId, String panelTokenCsv) {
         List<String> panelTokens = splitPanelTokens(panelTokenCsv);
         String baseSelect =
@@ -796,6 +825,57 @@ public final class AgentDbTools {
         }
     }
 
+    public static String getAlarmMeterTopNContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer topN) {
+        int d = days != null ? days.intValue() : 7;
+        int n = topN != null ? topN.intValue() : 10;
+        if (n < 1) n = 10;
+        if (n > 50) n = 50;
+        boolean byRange = fromTs != null || toTs != null;
+
+        StringBuilder where = new StringBuilder("WHERE 1=1 ");
+        if (byRange) {
+            if (fromTs != null) where.append("AND triggered_at >= ? ");
+            if (toTs != null) where.append("AND triggered_at < ? ");
+        } else {
+            where.append("AND triggered_at >= DATEADD(DAY, -?, GETDATE()) ");
+        }
+
+        String sql =
+            "SELECT TOP " + n + " ISNULL(NULLIF(LTRIM(RTRIM(meter_name)), ''), '(\uBBF8\uBD84\uB958 \uACC4\uCE21\uAE30)') AS meter_name, COUNT(1) AS cnt " +
+            "FROM dbo.vw_alarm_log " + where +
+            "GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(meter_name)), ''), '(\uBBF8\uBD84\uB958 \uACC4\uCE21\uAE30)') " +
+            "ORDER BY cnt DESC, meter_name ASC";
+
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            int pi = 1;
+            if (byRange) {
+                if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+                if (toTs != null) ps.setTimestamp(pi++, toTs);
+            } else {
+                ps.setInt(pi++, d);
+            }
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                StringBuilder sb = new StringBuilder("[Alarm meter TOP] ");
+                if (byRange) sb.append("period=").append(periodLabel == null ? "-" : periodLabel).append(";");
+                else sb.append("days=").append(d).append(";");
+                int i = 0;
+                while (rs.next()) {
+                    i++;
+                    sb.append(" ").append(i).append(")")
+                        .append(clip(rs.getString("meter_name"), 80))
+                        .append("=")
+                        .append(rs.getLong("cnt"))
+                        .append(";");
+                }
+                if (i == 0) return "[Alarm meter TOP] no data";
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            return "[Alarm meter TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
     public static String getAlarmCountContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer meterId, String alarmTypeToken, String areaToken) {
         int d = days != null ? days.intValue() : 7;
         boolean byRange = (fromTs != null || toTs != null);
@@ -952,6 +1032,45 @@ public final class AgentDbTools {
             }
         } catch (Exception e) {
             return "[Building power TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    public static String getMonthlyPeakPowerContext(Integer meterId, Integer month) {
+        int mm = month != null ? month.intValue() : java.time.LocalDate.now().getMonthValue();
+        int yy = java.time.LocalDate.now().getYear();
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT TOP 1 ms.meter_id, ISNULL(NULLIF(LTRIM(RTRIM(m.name)), ''), '-') AS meter_name, ");
+        sql.append("ISNULL(NULLIF(LTRIM(RTRIM(m.panel_name)), ''), '-') AS panel_name, ");
+        sql.append("ms.measured_at, CAST(ms.active_power_total AS float) AS peak_kw ");
+        sql.append("FROM dbo.measurements ms ");
+        sql.append("LEFT JOIN dbo.meters m ON m.meter_id = ms.meter_id ");
+        sql.append("WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? ");
+        if (meterId != null) {
+            sql.append("AND ms.meter_id=? ");
+        }
+        sql.append("ORDER BY CAST(ms.active_power_total AS float) DESC, ms.measured_at ASC");
+
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            int pi = 1;
+            ps.setInt(pi++, yy);
+            ps.setInt(pi++, mm);
+            if (meterId != null) ps.setInt(pi++, meterId.intValue());
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return "[Monthly peak power] period=" + String.format(Locale.US, "%04d-%02d", yy, mm)
+                        + (meterId != null ? "; meter_id=" + meterId.intValue() : "")
+                        + "; no data";
+                }
+                return "[Monthly peak power] period=" + String.format(Locale.US, "%04d-%02d", yy, mm)
+                    + "; meter_id=" + rs.getInt("meter_id")
+                    + "; meter_name=" + clip(rs.getString("meter_name"), 60)
+                    + "; panel=" + clip(rs.getString("panel_name"), 60)
+                    + "; peak_kw=" + fmtNum(rs.getDouble("peak_kw"))
+                    + "; t=" + fmtTs(rs.getTimestamp("measured_at"));
+            }
+        } catch (Exception e) {
+            return "[Monthly peak power] unavailable: " + clip(e.getClass().getSimpleName(), 24);
         }
     }
 
@@ -1204,6 +1323,7 @@ public final class AgentDbTools {
         for (int i = 0; i < areaTokens.size(); i++) {
             sql.append("AND (UPPER(ISNULL(").append(alias).append(".meter_name,'')) LIKE ? ");
             sql.append("OR EXISTS (SELECT 1 FROM dbo.meters m WHERE m.name = ").append(alias).append(".meter_name AND UPPER(ISNULL(m.panel_name,'')) LIKE ?)) ");
+            sql.append("OR EXISTS (SELECT 1 FROM dbo.meters m WHERE m.name = ").append(alias).append(".meter_name AND UPPER(ISNULL(m.usage_type,'')) LIKE ?)) ");
         }
     }
 
@@ -1212,6 +1332,7 @@ public final class AgentDbTools {
         if (areaTokens == null || areaTokens.isEmpty()) return pi;
         for (int i = 0; i < areaTokens.size(); i++) {
             String a = "%" + areaTokens.get(i).toUpperCase(Locale.ROOT) + "%";
+            ps.setString(pi++, a);
             ps.setString(pi++, a);
             ps.setString(pi++, a);
         }

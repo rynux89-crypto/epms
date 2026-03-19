@@ -49,11 +49,7 @@
 <h1>📊 EPMS 전력 품질 관리 시스템</h1>
 
 <div class="container">
-    <div class="section">
-        <h2>🧭 통합 전력품질 모니터링</h2>
-        <p>역률, 주파수, 전압, 전류를 하나의 화면에서 동시에 분석.</p>
-        <a href="pq_overview.jsp" class="link-button right">통합 품질 모니터링</a>
-    </div>
+    
     
     <div class="section">
         <h2>🔀 불평형 분석</h2>
@@ -78,11 +74,10 @@
     </div>
 
     <div class="section">
-        <h2>🧾 계측기 등록 관리</h2>
-        <p>건물명/판넬명 검색과 계측기 등록, 수정, 삭제를 수행.</p>
-        <a href="/pages/meter_register.jsp" class="link-button right">계측기 등록 화면</a>
+        <h2>🧭 통합 전력품질 모니터링</h2>
+        <p>역률, 주파수, 전압, 전류를 하나의 화면에서 동시에 분석.</p>
+        <a href="pq_overview.jsp" class="link-button right">통합 품질 모니터링</a>
     </div>
-
     
 </div>
 
