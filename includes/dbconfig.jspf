@@ -42,4 +42,18 @@
     private static Connection openDbConnection() throws Exception {
         return resolveDataSource().getConnection();
     }
+
+    private static void closeQuietly(AutoCloseable c) {
+        if (c == null) return;
+        try {
+            c.close();
+        } catch (Exception ignore) {
+        }
+    }
+
+    private static void closeQuietlyObject(Object o) {
+        if (o instanceof AutoCloseable) {
+            closeQuietly((AutoCloseable)o);
+        }
+    }
 %>

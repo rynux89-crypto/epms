@@ -2,7 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
 <%!
@@ -174,6 +174,7 @@
     }
 %>
 <%
+    try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
     String msg = request.getParameter("msg");
@@ -231,8 +232,6 @@
         }
     } catch (Exception e) {
         err = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 %>
 <!doctype html>
@@ -363,3 +362,6 @@
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
+<%
+    } // end try-with-resources
+%>

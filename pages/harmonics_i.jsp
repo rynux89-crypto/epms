@@ -2,9 +2,10 @@
 <%@ page import="java.time.*, java.time.format.*" %>
 <%@ page import="com.fasterxml.jackson.databind.ObjectMapper" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 
 <%
+try (Connection conn = openDbConnection()) {
     // 湲곌컙 珥덇린??
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today;
@@ -38,14 +39,12 @@
     try {
         //Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
         try (Statement stmt = conn.createStatement()) {
-            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
-            while(rs.next()) buildingOptions.add(rs.getString(1).trim());
-            rs.close();
-            
-            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
-            while(rs.next()) usageOptions.add(rs.getString(1).trim());
-            rs.close();
-
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name")) {
+                while (rs.next()) buildingOptions.add(rs.getString(1).trim());
+            }
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type")) {
+                while (rs.next()) usageOptions.add(rs.getString(1).trim());
+            }
         }
         StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
         meterSql.append("AND (UPPER(name) LIKE '%VCB%' OR UPPER(name) LIKE '%ACB%') ");
@@ -99,8 +98,8 @@
 <body>
         <div class="title-bar">
             <h2>🎵 전류 고조파 분석</h2>
-            <div style="display:flex; gap:8px; align-items:center;">
-                <button class="back-btn" onclick="location.href='/pages/epms_main.jsp'" >EPMS 홈</button>
+            <div class="inline-actions">
+                <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'" >EPMS 홈</button>
                 <button class="back-btn" onclick="goToHarmonics('v')" >전압 고조파 분석</button>
             </div>
         </div>
@@ -172,7 +171,6 @@
             harmonics.add(rs.getString("harmonic_id"));
 
         }
-        conn.close();
     } catch (Exception e) { 
         if(startDate != null) out.println("DB 오류: " + e.getMessage()); 
     }
@@ -220,7 +218,7 @@ function buildHarmonicsUrl(targetPath) {
 }
 
 function goToHarmonics(mode) {
-  const targetPath = mode === 'i' ? '/pages/harmonics_i.jsp' : '/pages/harmonics_v.jsp';
+  const targetPath = mode === 'i' ? '/epms/harmonics_i.jsp' : '/epms/harmonics_v.jsp';
   window.location.href = buildHarmonicsUrl(targetPath);
 }
 
@@ -334,6 +332,9 @@ window.addEventListener('resize', () => myChart.resize());
 </script>
 
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<%
+} // end try-with-resources
+%>
 </body>
 </html>
 

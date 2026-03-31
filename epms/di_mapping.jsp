@@ -1,8 +1,9 @@
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%
+    try (Connection conn = openDbConnection()) {
     String plcParam = request.getParameter("plc_id");
     String pointParam = request.getParameter("point_id");
     String diAddressParam = request.getParameter("di_address");
@@ -94,8 +95,6 @@
         }
     } catch (Exception e) {
         error = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 %>
 <html>
@@ -278,3 +277,6 @@
 </script>
 </body>
 </html>
+<%
+    } // end try-with-resources
+%>

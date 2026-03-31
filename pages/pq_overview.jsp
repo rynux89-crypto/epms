@@ -2,7 +2,7 @@
 <%@ page import="java.time.*" %>
 <%@ page import="com.fasterxml.jackson.databind.ObjectMapper" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 
 <%!
     private static float avgFloat(List<Float> a) {
@@ -26,8 +26,13 @@
 %>
 
 <%
+    try (Connection conn = openDbConnection()) {
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today.minusDays(1);
+    String recentMinParam = request.getParameter("recent_min");
+    int recentMin = 0;
+    try { recentMin = Integer.parseInt(recentMinParam); } catch (Exception ignore) {}
+    if (!(recentMin == 1 || recentMin == 5 || recentMin == 10)) recentMin = 0;
 
     String startDate = request.getParameter("startDate");
     String startTime = request.getParameter("startTime");
@@ -52,14 +57,12 @@
 
     try {
         try (Statement stmt = conn.createStatement()) {
-            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
-            while (rs.next()) buildingOptions.add(rs.getString(1).trim());
-            rs.close();
-
-            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
-            while (rs.next()) usageOptions.add(rs.getString(1).trim());
-            rs.close();
-
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name")) {
+                while (rs.next()) buildingOptions.add(rs.getString(1).trim());
+            }
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type")) {
+                while (rs.next()) usageOptions.add(rs.getString(1).trim());
+            }
         }
         StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
         List<Object> meterParams = new ArrayList<>();
@@ -195,82 +198,72 @@
     <script src="../js/echarts.js"></script>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
-      .summary-wrap {
-        margin: 0;
-        padding: 14px;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-        border: 1px solid #dbe7f5;
-        border-radius: 14px;
-        box-shadow: 0 10px 24px rgba(16,24,40,.08);
+      .pq-overview-layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+        gap: 12px;
+        align-items: stretch;
       }
       .summary-wrap h3 {
         margin: 0 0 12px 0;
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 700;
         color: #16324f;
       }
-      .summary-meta { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 10px;
-        border-radius: 999px;
-        border: 1px solid #d4e2f3;
-        background: #eef4fb;
-        color: #24496e;
+      .summary-wrap {
+        margin: 0;
+        padding: 14px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      .summary-meta { margin-bottom:10px; }
+      .summary-wrap .badge {
         font-size: 12px;
-        font-weight: 600;
+        padding: 3px 8px;
       }
-      .summary-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
+      .summary-wrap .summary-table {
         font-size: 12px;
-        border: 1px solid #dbe4ef;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #fff;
       }
-      .summary-table th {
+      .summary-wrap .summary-table th {
         font-size: 12px;
-        font-weight: 700;
-        padding: 7px 6px;
-        background: #eef3fa;
-        color: #274567;
-        border-bottom: 1px solid #dbe4ef;
+        padding: 6px 5px;
       }
-      .summary-table td {
-        padding: 7px 6px;
-        text-align: center;
-        color: #243b53;
-        border-bottom: 1px solid #eef2f7;
+      .summary-wrap .summary-table td {
+        font-size: 12px;
+        padding: 6px 5px;
       }
-      .summary-table tbody tr:last-child td { border-bottom: 1px solid #dbe4ef; }
-
-      .content-row { display: flex; gap: 12px; align-items: stretch; }
-      .content-row .summary-wrap { flex: 0 0 430px; max-width: 430px; margin: 0; }
-      .content-row .chart-container { flex: 1 1 auto; min-width: 0; height: 700px; margin: 0; }
-      @media (max-width: 1100px) {
-        .content-row { flex-direction: column; }
-        .content-row .summary-wrap { max-width: none; }
-        .content-row .chart-container { height: 700px; }
+      .pq-overview-layout .summary-wrap { max-width:none; }
+      .pq-overview-layout .chart-container {
+        min-width: 0;
+        height: calc(100vh - 245px);
+        min-height: 520px;
+        margin: 0;
       }
       .chart-stack { display:flex; flex-direction:column; gap:12px; width:100%; height:100%; }
-      .chart-box { flex:1 1 0; min-height: 0; background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.06); padding:10px; }
+      .chart-box { flex:1 1 0; min-height: 0; background:#fff; border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow-soft); padding:10px; }
       .chart-title { margin:0 0 8px 0; font-size: 15px; }
       .chart-inner { width:100%; height: calc(100% - 26px); }
+      @media (max-width: 1100px) {
+        .pq-overview-layout {
+          grid-template-columns: 1fr;
+        }
+        .pq-overview-layout .chart-container {
+          height: 700px;
+        }
+      }
     </style>
 </head>
 <body>
 <div class="title-bar">
-    <h2>🧭 통합 전력품질 모니터링 (역률 / 주파수 / 전압 / 전류)</h2>
-    <div style="display:flex; gap:8px; align-items:center;">
-        <button class="back-btn" onclick="location.href='/pages/epms_main.jsp'">EPMS 홈</button>
+    <h2>🧭 통합 전력품질 모니터링 (주파수 / 역률 / 전압 / 전류)</h2>
+    <div class="inline-actions">
+        <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
     </div>
 </div>
 
-<form method="GET">
-    건물:
+<form method="GET" class="filter-card">
+    <label for="building">건물</label>
     <select name="building" onchange="this.form.meter.value=''; this.form.submit();">
         <option value="">전체</option>
         <% for (String opt : buildingOptions) { %>
@@ -278,7 +271,7 @@
         <% } %>
     </select>
 
-    용도:
+    <label for="usage">용도</label>
     <select name="usage" onchange="this.form.meter.value=''; this.form.submit();">
         <option value="">전체</option>
         <% for (String opt : usageOptions) { %>
@@ -286,7 +279,7 @@
         <% } %>
     </select>
 
-    Meter:
+    <label for="meter">Meter</label>
     <select name="meter">
         <option value="">전체</option>
         <% for (String[] opt : meterOptions) { %>
@@ -294,7 +287,16 @@
         <% } %>
     </select>
 
-    기간: <input type="date" name="startDate" value="<%= startDate %>">
+    <label for="recent_min">자동재조회</label>
+    <select name="recent_min" onchange="this.form.submit()">
+        <option value="" <%= recentMin == 0 ? "selected" : "" %>>사용안함</option>
+        <option value="1" <%= recentMin == 1 ? "selected" : "" %>>1분</option>
+        <option value="5" <%= recentMin == 5 ? "selected" : "" %>>5분</option>
+        <option value="10" <%= recentMin == 10 ? "selected" : "" %>>10분</option>
+    </select>
+
+    <label for="startDate">기간</label>
+    <input type="date" name="startDate" value="<%= startDate %>">
     <input type="time" name="startTime" step="1" value="<%= startTime %>"> ~
     <input type="date" name="endDate" value="<%= endDate %>">
     <input type="time" name="endTime" step="1" value="<%= endTime %>">
@@ -303,11 +305,11 @@
 </form>
 
 <% if (noData) { %>
-<div style="margin:12px 0;padding:10px 12px;border:1px solid #ffd6d6;background:#fff3f3;color:#b42318;border-radius:10px;font-weight:700;">데이터가 없습니다</div>
+<div class="msg-box">데이터가 없습니다</div>
 <% } %>
 
-<div class="content-row">
-  <div class="summary-wrap">
+<div class="split-grid one-side-one-main pq-overview-layout">
+  <div class="summary-wrap panel">
       <h3>요약</h3>
       <div class="summary-meta">
           <span class="badge">데이터 개수: <%= labels.size() %></span>
@@ -350,6 +352,7 @@
 
 <script>
 const labels = <%= jsonLabels %>;
+const autoRefreshMin = <%= recentMin %>;
 const freq = <%= jsonFreq %>;
 const vab = <%= jsonVab %>;
 const vbc = <%= jsonVbc %>;
@@ -502,14 +505,49 @@ chartCurr.setOption(optionOf('A', 'A', [
 ], null, null, true));
 
 echarts.connect([chartFreq, chartVolt, chartCurr]);
+
+function extractZoomWindow(evt) {
+  const z = (evt && evt.batch && evt.batch.length) ? evt.batch[0] : evt;
+  if (!z) return null;
+  const p = { dataZoomIndex: 0 };
+  if (z.start != null) p.start = z.start;
+  if (z.end != null) p.end = z.end;
+  if (z.startValue != null) p.startValue = z.startValue;
+  if (z.endValue != null) p.endValue = z.endValue;
+  return p;
+}
+
+chartCurr.on('dataZoom', function(evt){
+  if (window.__pqSyncingZoom) return;
+  const zoom = extractZoomWindow(evt);
+  if (!zoom) return;
+  window.__pqSyncingZoom = true;
+  try {
+    chartFreq.dispatchAction(Object.assign({ type: 'dataZoom' }, zoom));
+    chartVolt.dispatchAction(Object.assign({ type: 'dataZoom' }, zoom));
+  } finally {
+    window.__pqSyncingZoom = false;
+  }
+});
+
 window.addEventListener('resize', function(){
   chartFreq.resize();
   chartVolt.resize();
   chartCurr.resize();
 });
+
+if (autoRefreshMin > 0) {
+  setTimeout(function() {
+    const u = new URL(window.location.href);
+    u.searchParams.set('_ts', String(Date.now()));
+    window.location.replace(u.toString());
+  }, autoRefreshMin * 60 * 1000);
+}
 </script>
 
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<%
+    }
+%>
 </body>
 </html>
-

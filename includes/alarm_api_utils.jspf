@@ -1,0 +1,111 @@
+<%!
+    // ---------------------------------------------------------------------
+    // Shared parsing / formatting helpers
+    // ---------------------------------------------------------------------
+    private static String normalizeMatchText(String s) {
+        if (s == null) return "";
+        return s.toUpperCase(Locale.ROOT).replace(" ", "").replace("\n", "").replace("\r", "").trim();
+    }
+
+    private static String b64urlDecode(String s) {
+        if (s == null || s.isEmpty()) return "";
+        try {
+            int mod = s.length() % 4;
+            if (mod == 2) s = s + "==";
+            else if (mod == 3) s = s + "=";
+            else if (mod == 1) return "";
+            byte[] bytes = Base64.getUrlDecoder().decode(s);
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static String formatDecimal2(Double value) {
+        if (value == null) return "";
+        return String.format(Locale.US, "%.2f", value.doubleValue());
+    }
+
+    private static String formatDecimal2(double value) {
+        return String.format(Locale.US, "%.2f", value);
+    }
+
+    private static String normKey(String s) {
+        return s == null ? "" : s.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeTagKey(String tagName) {
+        if (tagName == null) return "";
+        String t = tagName.trim().toUpperCase(Locale.ROOT);
+        if (t.isEmpty()) return "";
+        t = t.replaceAll("[^A-Z0-9]+", "_");
+        t = t.replaceAll("_+", "_");
+        t = t.replaceAll("^_+|_+$", "");
+        if (t.length() > 64) t = t.substring(0, 64);
+        return t;
+    }
+
+    private static String compactEventToken(String normalizedTagKey, String... dropTokens) {
+        if (normalizedTagKey == null || normalizedTagKey.isEmpty()) return "";
+        Set<String> drop = new HashSet<>();
+        if (dropTokens != null) {
+            for (String d : dropTokens) {
+                if (d == null) continue;
+                String x = d.trim().toUpperCase(Locale.ROOT);
+                if (!x.isEmpty()) drop.add(x);
+            }
+        }
+        LinkedHashSet<String> uniq = new LinkedHashSet<>();
+        String[] parts = normalizedTagKey.split("_+");
+        for (String p : parts) {
+            if (p == null) continue;
+            String x = p.trim().toUpperCase(Locale.ROOT);
+            if (x.isEmpty()) continue;
+            if (drop.contains(x)) continue;
+            uniq.add(x);
+        }
+        if (uniq.isEmpty()) return "";
+        return String.join("_", uniq);
+    }
+
+    // DI request rows are pipe-separated values joined by ';'.
+    private static List<Map<String, Object>> parseRows(String raw) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (raw == null || raw.trim().isEmpty()) return out;
+        String[] rows = raw.split(";");
+        for (String line : rows) {
+            if (line == null || line.trim().isEmpty()) continue;
+            String[] p = line.split("\\|", -1);
+            if (p.length < 7) continue;
+            Map<String, Object> r = new HashMap<>();
+            r.put("point_id", parseIntSafe(p[0], 0));
+            r.put("di_address", parseIntSafe(p[1], 0));
+            r.put("bit_no", parseIntSafe(p[2], 0));
+            r.put("value", parseIntSafe(p[3], 0));
+            r.put("tag_name", b64urlDecode(p[4]));
+            r.put("item_name", b64urlDecode(p[5]));
+            r.put("panel_name", b64urlDecode(p[6]));
+            out.add(r);
+        }
+        return out;
+    }
+
+    private static List<AiRow> parseAiRows(String raw) {
+        List<AiRow> out = new ArrayList<>();
+        if (raw == null || raw.trim().isEmpty()) return out;
+        String[] rows = raw.split(";");
+        for (String line : rows) {
+            if (line == null || line.trim().isEmpty()) continue;
+            String[] p = line.split("\\|", -1);
+            if (p.length < 3) continue;
+            AiRow r = new AiRow();
+            r.meterId = parseIntSafe(p[0], 0);
+            r.token = b64urlDecode(p[1]);
+            Double v = parseDoubleSafe(p[2]);
+            if (r.meterId <= 0 || r.token == null || r.token.trim().isEmpty() || v == null) continue;
+            r.value = v.doubleValue();
+            out.add(r);
+        }
+        return out;
+    }
+%>

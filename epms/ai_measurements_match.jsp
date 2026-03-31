@@ -2,7 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ page import="java.text.DecimalFormat" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%!
     private static final DecimalFormat DF_2 = new DecimalFormat("0.00");
@@ -83,6 +83,7 @@
     }
 %>
 <%
+    try (Connection conn = openDbConnection()) {
     String plcParam = request.getParameter("plc_id");
     String meterParam = request.getParameter("meter_id");
     Integer plcId = null;
@@ -279,10 +280,7 @@
         }
     } catch (Exception e) {
         error = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
-
     String[] groupOrder = new String[]{"전압", "전류", "전력/에너지", "전압 고조파", "전류 고조파", "위상각", "기타"};
     for (String groupName : groupOrder) latestTokenGroups.put(groupName, new ArrayList<Map<String, Object>>());
     for (Map<String, Object> r : latestTokenRows) {
@@ -499,3 +497,6 @@
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
+<%
+    } // end try-with-resources
+%>

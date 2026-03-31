@@ -22,6 +22,9 @@ public final class AgentSupport {
         public String ollamaUrl;
         public String model;
         public String coderModel;
+        public String aiModel;
+        public String pqModel;
+        public String alarmModel;
         public int ollamaConnectTimeoutMs;
         public int ollamaReadTimeoutMs;
         public long schemaCacheTtlMs;
@@ -155,10 +158,28 @@ public final class AgentSupport {
             coderModel = "qwen2.5-coder:7b";
         }
 
+        String aiModel = System.getenv("OLLAMA_MODEL_AI");
+        if (aiModel == null || aiModel.isEmpty()) {
+            aiModel = model;
+        }
+
+        String pqModel = System.getenv("OLLAMA_MODEL_PQ");
+        if (pqModel == null || pqModel.isEmpty()) {
+            pqModel = model;
+        }
+
+        String alarmModel = System.getenv("OLLAMA_MODEL_ALARM");
+        if (alarmModel == null || alarmModel.isEmpty()) {
+            alarmModel = model;
+        }
+
         Properties modelConfig = loadAgentModelConfig(app);
         String configuredOllamaUrl = normalizeOllamaUrl(modelConfig.getProperty("ollama_url"));
         String configuredModel = trimToNull(modelConfig.getProperty("model"));
         String configuredCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
+        String configuredAiModel = trimToNull(modelConfig.getProperty("ai_model"));
+        String configuredPqModel = trimToNull(modelConfig.getProperty("pq_model"));
+        String configuredAlarmModel = trimToNull(modelConfig.getProperty("alarm_model"));
         if (configuredOllamaUrl != null) {
             ollamaUrl = configuredOllamaUrl;
         }
@@ -168,6 +189,15 @@ public final class AgentSupport {
         if (configuredCoderModel != null) {
             coderModel = configuredCoderModel;
         }
+        if (configuredAiModel != null) {
+            aiModel = configuredAiModel;
+        }
+        if (configuredPqModel != null) {
+            pqModel = configuredPqModel;
+        }
+        if (configuredAlarmModel != null) {
+            alarmModel = configuredAlarmModel;
+        }
 
         Integer connectSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
         Integer readSec = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_read_timeout_seconds")));
@@ -175,6 +205,9 @@ public final class AgentSupport {
         cfg.ollamaUrl = ollamaUrl;
         cfg.model = model;
         cfg.coderModel = coderModel;
+        cfg.aiModel = trimToNull(aiModel) == null ? model : aiModel;
+        cfg.pqModel = trimToNull(pqModel) == null ? model : pqModel;
+        cfg.alarmModel = trimToNull(alarmModel) == null ? model : alarmModel;
         cfg.ollamaConnectTimeoutMs = clampSeconds(connectSec, 1, 60, 5) * 1000;
         cfg.ollamaReadTimeoutMs = clampSeconds(readSec, 3, 600, 60) * 1000;
         cfg.schemaCacheTtlMs = resolveSchemaCacheTtlMs(modelConfig, defaultSchemaCacheTtlMs);

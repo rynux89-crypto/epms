@@ -12,13 +12,14 @@
 <%@ include file="../../includes/epms_parse.jspf" %>
 <%@ include file="../../includes/epms_json.jspf" %>
 <%! 
-    private static final int DI_POLLING_MS = 1000;
+    private static final int DI_POLLING_MS = 500;
     private static final String POLL_RUNTIME_ATTR = "EPMS_MODBUS_POLL_RUNTIME";
     private static final ConcurrentHashMap<Integer, CacheEntry<PlcConfig>> PLC_CONFIG_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Integer, CacheEntry<List<Map<String, Object>>>> AI_MAP_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Integer, CacheEntry<List<Map<String, Object>>>> DI_MAP_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Integer, CacheEntry<List<Map<String, Object>>>> DI_TAG_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CacheEntry<Map<String, Map<String, Object>>>> AI_MEAS_MATCH_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, CacheEntry<Map<String, DiRuleMeta>>> DI_RULE_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Integer> LAST_DI_VALUE_MAP = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 30_000L;
 
@@ -35,6 +36,14 @@
         return ce != null && (ttlMs <= 0L || (System.currentTimeMillis() - ce.loadedAtMs) < ttlMs);
     }
 
+    private static class DiRuleMeta {
+        int ruleId;
+        String ruleCode;
+        String ruleName;
+        String metricKey;
+        String messageTemplate;
+    }
+
     private static class PollState {
         final AtomicLong attemptCount = new AtomicLong(0);
         final AtomicLong successCount = new AtomicLong(0);
@@ -44,6 +53,7 @@
         final AtomicLong readDurationSumMs = new AtomicLong(0);
         final AtomicBoolean aiInProgress = new AtomicBoolean(false);
         final AtomicBoolean diInProgress = new AtomicBoolean(false);
+        final AtomicBoolean modbusIoInProgress = new AtomicBoolean(false);
         volatile long lastReadDurationMs = 0L;
         volatile long lastDiReadMs = 0L;
         volatile long lastAiReadMs = 0L;
@@ -51,10 +61,12 @@
         volatile List<Map<String, Object>> lastRows = Collections.emptyList();
         volatile List<Map<String, Object>> lastDiRows = Collections.emptyList();
         volatile boolean running = false;
+        volatile boolean autoStartAllowed = true;
         volatile int pollingMs = 1000;
         volatile String lastInfo = "";
         volatile String lastError = "";
         volatile long lastRunAt = 0L;
+        volatile long nextAiPollAt = 0L;
     }
 
     private static class PollRuntime {
@@ -251,9 +263,9 @@
     }
 
     private static int toPlcBitIndex(int configuredBitNo) {
-        // Prefer explicit 0-based configuration (0..15). Fallback to 1-based (1..16) when needed.
-        if (configuredBitNo >= 0 && configuredBitNo <= 15) return configuredBitNo;
+        // plc_di_tag_map stores bit_no as 1-based values.
         if (configuredBitNo >= 1 && configuredBitNo <= 16) return configuredBitNo - 1;
+        if (configuredBitNo >= 0 && configuredBitNo <= 15) return configuredBitNo;
         return configuredBitNo;
     }
 
@@ -286,6 +298,27 @@
         if (t.contains("TR_ALARM")) return true;
         if (t.contains("TRALARM")) return true;
         if (t.contains("TRIP")) return true;
+        return false;
+    }
+
+    private static boolean isEldAlarmBit(String tagName) {
+        if (tagName == null) return false;
+        String t = tagName.toUpperCase(Locale.ROOT).replace(" ", "").replace("\n", "").replace("\r", "");
+        return t.contains("ELD");
+    }
+
+    private static boolean isTmAlarmBit(String tagName) {
+        if (tagName == null) return false;
+        String t = tagName.toUpperCase(Locale.ROOT).replace(" ", "").replace("\n", "").replace("\r", "");
+        return t.contains("\\TM") || t.contains("_TM") || t.endsWith("TM") || t.contains("TEMP");
+    }
+
+    private static boolean isOvrAlarmBit(String tagName) {
+        if (tagName == null) return false;
+        String t = tagName.toUpperCase(Locale.ROOT).replace(" ", "").replace("\n", "").replace("\r", "");
+        if (t.contains("OCR") || t.contains("OCGR") || t.contains("51G") || t.contains("지락")) return false;
+        if (t.contains("OVR")) return true;
+        if (t.contains("\\59") || t.contains("₩59")) return true;
         return false;
     }
 
@@ -815,49 +848,226 @@
         }
     }
 
-    private static void openAlarmLogIfNeeded(Connection conn, int meterId, String alarmType, String severity, Timestamp triggeredAt, String description) throws Exception {
-        String selSql =
-            "SELECT TOP 1 alarm_id FROM dbo.alarm_log " +
-            "WHERE meter_id = ? AND alarm_type = ? AND cleared_at IS NULL " +
-            "ORDER BY alarm_id DESC";
-        try (PreparedStatement sel = conn.prepareStatement(selSql)) {
-            sel.setInt(1, meterId);
-            sel.setString(2, alarmType);
-            try (ResultSet rs = sel.executeQuery()) {
-                if (rs.next()) return;
+    private static String normKey(String s) {
+        return s == null ? "" : s.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static Map<String, Integer> loadMeterIdByExactName(Connection conn) throws Exception {
+        Map<String, Integer> out = new HashMap<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT meter_id, name FROM dbo.meters WHERE name IS NOT NULL AND LTRIM(RTRIM(name)) <> ''");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String key = normKey(rs.getString("name"));
+                if (!key.isEmpty() && !out.containsKey(key)) {
+                    out.put(key, Integer.valueOf(rs.getInt("meter_id")));
+                }
+            }
+        }
+        return out;
+    }
+
+    private static int resolveDiAlarmMeterId(Map<String, Integer> meterIdByName, int fallbackMeterId, String itemName) {
+        if (meterIdByName != null) {
+            Integer exact = meterIdByName.get(normKey(itemName));
+            if (exact != null && exact.intValue() > 0) return exact.intValue();
+        }
+        return 0;
+    }
+
+    private static String buildDiAlarmDescLike(String itemName, String panelName) {
+        String item = itemName == null ? "" : itemName.trim();
+        String panel = panelName == null ? "" : panelName.trim();
+        if (!item.isEmpty() && !panel.isEmpty()) return "%item=" + item + "%panel=" + panel + "%";
+        if (!item.isEmpty()) return "%item=" + item + "%";
+        if (!panel.isEmpty()) return "%panel=" + panel + "%";
+        return null;
+    }
+
+    private static String getDiSeverity(String tagName) {
+        String t = normKey(tagName);
+        if (t.contains("ON1") && t.contains("OFF1")) return "NORMAL";
+        if (t.contains("ON2") && t.contains("OFF2")) return "NORMAL";
+        if (isTripAlarmBit(tagName) || isOcrAlarmBit(tagName) || isOcgrAlarmBit(tagName) ||
+            isTmAlarmBit(tagName) || isOvrAlarmBit(tagName) || isEldAlarmBit(tagName)) {
+            return "ALARM";
+        }
+        return "NORMAL";
+    }
+
+    private static void ensureAlarmLogRuleColumns(Connection conn) {
+        if (conn == null) return;
+        String sql =
+            "IF COL_LENGTH('dbo.alarm_log','rule_id') IS NULL ALTER TABLE dbo.alarm_log ADD rule_id INT NULL; " +
+            "IF COL_LENGTH('dbo.alarm_log','rule_code') IS NULL ALTER TABLE dbo.alarm_log ADD rule_code VARCHAR(50) NULL; " +
+            "IF COL_LENGTH('dbo.alarm_log','metric_key') IS NULL ALTER TABLE dbo.alarm_log ADD metric_key VARCHAR(100) NULL; " +
+            "IF COL_LENGTH('dbo.alarm_log','source_token') IS NULL ALTER TABLE dbo.alarm_log ADD source_token VARCHAR(120) NULL; ";
+        try (Statement st = conn.createStatement()) {
+            st.execute(sql);
+        } catch (Exception ignore) {
+        }
+    }
+
+    private static String resolveDiRuleCode(String eventType, String tagName) {
+        String ev = normKey(eventType);
+        if (ev.startsWith("DI_TR_ALARM")) return "DI_TR_ALARM";
+        if (ev.startsWith("DI_TRIP")) return "DI_TRIP";
+        if (ev.startsWith("DI_OCR")) return "DI_OCR";
+        if (ev.startsWith("DI_OCGR")) return "DI_OCGR";
+        if (ev.startsWith("DI_ELD")) return "DI_ELD";
+        if (ev.startsWith("DI_ON_OFF")) return "DI_ON_OFF";
+        if (ev.startsWith("DI_BIT")) return "DI_BIT";
+        if (ev.startsWith("DI_TAG_TM") || isTmAlarmBit(tagName)) return "DI_TM";
+        if (ev.startsWith("DI_TAG_OVR") || isOvrAlarmBit(tagName)) return "DI_OVR";
+        if (ev.startsWith("DI_TAG")) return "DI_TAG";
+        return ev.isEmpty() ? "DI_TAG" : ev;
+    }
+
+    private static String getDiRuleName(String ruleCode) {
+        String code = normKey(ruleCode);
+        if ("DI_TRIP".equals(code)) return "트립";
+        if ("DI_TR_ALARM".equals(code)) return "TR 알람";
+        if ("DI_OCR".equals(code)) return "과전류";
+        if ("DI_OCGR".equals(code)) return "지락";
+        if ("DI_ELD".equals(code)) return "누전";
+        if ("DI_TM".equals(code)) return "온도 이상";
+        if ("DI_OVR".equals(code)) return "과전압";
+        if ("DI_ON_OFF".equals(code)) return "ON/OFF 상태";
+        if ("DI_TAG".equals(code)) return "DI 상태";
+        if ("DI_BIT".equals(code)) return "DI 비트";
+        return code;
+    }
+
+    private static Map<String, DiRuleMeta> loadCachedDiRuleMeta(Connection conn) throws Exception {
+        final String key = "GLOBAL";
+        CacheEntry<Map<String, DiRuleMeta>> ce = DI_RULE_CACHE.get(key);
+        if (isCacheValid(ce, CACHE_TTL_MS)) return ce.data;
+        synchronized (DI_RULE_CACHE) {
+            ce = DI_RULE_CACHE.get(key);
+            if (isCacheValid(ce, CACHE_TTL_MS)) return ce.data;
+
+            Map<String, DiRuleMeta> out = new HashMap<>();
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT rule_id, rule_code, rule_name, metric_key " +
+                    "       , message_template " +
+                    "FROM dbo.alarm_rule " +
+                    "WHERE target_scope = 'PLC' AND rule_code LIKE 'DI_%' AND enabled = 1");
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    DiRuleMeta m = new DiRuleMeta();
+                    m.ruleId = rs.getInt("rule_id");
+                    m.ruleCode = rs.getString("rule_code");
+                    m.ruleName = rs.getString("rule_name");
+                    m.metricKey = rs.getString("metric_key");
+                    m.messageTemplate = rs.getString("message_template");
+                    out.put(normKey(m.ruleCode), m);
+                }
+            }
+            DI_RULE_CACHE.put(key, new CacheEntry<>(out));
+            return out;
+        }
+    }
+
+    private static String renderDiDescription(DiRuleMeta ruleMeta, int plcId, int pointId, int diAddress, int bitNo,
+                                              String tagName, String itemName, String panelName, String eventType) {
+        String base = "PLC " + plcId + " DI ON: point=" + pointId +
+                      ", addr=" + diAddress + ", bit=" + bitNo +
+                      ", tag=" + tagName + ", item=" + itemName + ", panel=" + panelName;
+        if (ruleMeta == null || ruleMeta.messageTemplate == null || ruleMeta.messageTemplate.trim().isEmpty()) return base;
+        String mt = ruleMeta.messageTemplate;
+        String ruleCodeText = ruleMeta.ruleCode == null ? "" : ruleMeta.ruleCode;
+        String metricText = ruleMeta.metricKey == null ? "" : ruleMeta.metricKey;
+        String sourceText = eventType == null ? "" : eventType;
+        String tagText = tagName == null ? "" : tagName;
+        String itemText = itemName == null ? "" : itemName;
+        String panelText = panelName == null ? "" : panelName;
+        String addressText = String.valueOf(diAddress);
+        String bitText = String.valueOf(bitNo);
+        String pointText = String.valueOf(pointId);
+
+        mt = mt.replace("${rule_code}", ruleCodeText).replace("{rule_code}", ruleCodeText);
+        mt = mt.replace("${metric}", metricText).replace("{metric}", metricText);
+        mt = mt.replace("${metric_key}", metricText).replace("{metric_key}", metricText);
+        mt = mt.replace("${source}", sourceText).replace("{source}", sourceText);
+        mt = mt.replace("${source_token}", sourceText).replace("{source_token}", sourceText);
+        mt = mt.replace("${tag}", tagText).replace("{tag}", tagText);
+        mt = mt.replace("${item}", itemText).replace("{item}", itemText);
+        mt = mt.replace("${panel}", panelText).replace("{panel}", panelText);
+        mt = mt.replace("${address}", addressText).replace("{address}", addressText);
+        mt = mt.replace("${bit}", bitText).replace("{bit}", bitText);
+        mt = mt.replace("${point_id}", pointText).replace("{point_id}", pointText);
+        return mt.trim().isEmpty() ? base : mt;
+    }
+
+    private static void openAlarmLogIfNeeded(Connection conn, Integer meterId, String alarmType, String severity, Timestamp triggeredAt, String description, String itemName, String panelName, DiRuleMeta ruleMeta, String sourceToken) throws Exception {
+        if (meterId != null && meterId.intValue() > 0) {
+            String selSql =
+                "SELECT TOP 1 alarm_id FROM dbo.alarm_log " +
+                "WHERE meter_id = ? AND alarm_type = ? AND cleared_at IS NULL " +
+                "ORDER BY alarm_id DESC";
+            try (PreparedStatement sel = conn.prepareStatement(selSql)) {
+                sel.setInt(1, meterId.intValue());
+                sel.setString(2, alarmType);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (rs.next()) return;
+                }
+            }
+        } else {
+            String descLike = buildDiAlarmDescLike(itemName, panelName);
+            String selSql =
+                "SELECT TOP 1 alarm_id FROM dbo.alarm_log " +
+                "WHERE meter_id IS NULL AND alarm_type = ? AND cleared_at IS NULL " +
+                (descLike != null ? "AND description LIKE ? " : "") +
+                "ORDER BY alarm_id DESC";
+            try (PreparedStatement sel = conn.prepareStatement(selSql)) {
+                sel.setString(1, alarmType);
+                if (descLike != null) sel.setString(2, descLike);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (rs.next()) return;
+                }
             }
         }
         String insSql =
-            "INSERT INTO dbo.alarm_log (meter_id, alarm_type, severity, triggered_at, description) " +
-            "VALUES (?, ?, ?, ?, ?)";
+            "INSERT INTO dbo.alarm_log (meter_id, alarm_type, severity, triggered_at, description, rule_id, rule_code, metric_key, source_token) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ins = conn.prepareStatement(insSql)) {
-            ins.setInt(1, meterId);
+            if (meterId != null && meterId.intValue() > 0) ins.setInt(1, meterId.intValue());
+            else ins.setNull(1, Types.INTEGER);
             ins.setString(2, alarmType);
             ins.setString(3, severity);
             ins.setTimestamp(4, triggeredAt);
             ins.setString(5, description);
+            if (ruleMeta != null && ruleMeta.ruleId > 0) ins.setInt(6, ruleMeta.ruleId); else ins.setNull(6, Types.INTEGER);
+            ins.setString(7, ruleMeta == null ? null : ruleMeta.ruleCode);
+            ins.setString(8, ruleMeta == null ? null : ruleMeta.metricKey);
+            ins.setString(9, sourceToken);
             ins.executeUpdate();
         }
     }
 
-    private static void closeAlarmLogIfOpen(Connection conn, int meterId, String alarmType, Timestamp clearedAt) throws Exception {
-        String selSql =
-            "SELECT TOP 1 alarm_id FROM dbo.alarm_log " +
-            "WHERE meter_id = ? AND alarm_type = ? AND cleared_at IS NULL " +
-            "ORDER BY alarm_id DESC";
-        Long alarmId = null;
-        try (PreparedStatement sel = conn.prepareStatement(selSql)) {
-            sel.setInt(1, meterId);
-            sel.setString(2, alarmType);
-            try (ResultSet rs = sel.executeQuery()) {
-                if (rs.next()) alarmId = rs.getLong(1);
+    private static void closeAlarmLogIfOpen(Connection conn, Integer meterId, String alarmType, Timestamp clearedAt, String itemName, String panelName) throws Exception {
+        if (meterId != null && meterId.intValue() > 0) {
+            String updSql =
+                "UPDATE dbo.alarm_log SET cleared_at = ? " +
+                "WHERE meter_id = ? AND alarm_type = ? AND cleared_at IS NULL";
+            try (PreparedStatement upd = conn.prepareStatement(updSql)) {
+                upd.setTimestamp(1, clearedAt);
+                upd.setInt(2, meterId.intValue());
+                upd.setString(3, alarmType);
+                upd.executeUpdate();
             }
-        }
-        if (alarmId == null) return;
-        try (PreparedStatement upd = conn.prepareStatement("UPDATE dbo.alarm_log SET cleared_at = ? WHERE alarm_id = ?")) {
-            upd.setTimestamp(1, clearedAt);
-            upd.setLong(2, alarmId.longValue());
-            upd.executeUpdate();
+        } else {
+            String descLike = buildDiAlarmDescLike(itemName, panelName);
+            String updSql =
+                "UPDATE dbo.alarm_log SET cleared_at = ? " +
+                "WHERE meter_id IS NULL AND alarm_type = ? AND cleared_at IS NULL " +
+                (descLike != null ? "AND description LIKE ? " : "");
+            try (PreparedStatement upd = conn.prepareStatement(updSql)) {
+                upd.setTimestamp(1, clearedAt);
+                upd.setString(2, alarmType);
+                if (descLike != null) upd.setString(3, descLike);
+                upd.executeUpdate();
+            }
         }
     }
 
@@ -974,8 +1184,9 @@
              PreparedStatement selOpen = conn.prepareStatement(selOpenSql);
              PreparedStatement ins = conn.prepareStatement(insSql);
              PreparedStatement close = conn.prepareStatement(closeSql)) {
-            Map<String, Map<String, Object>> ocrGroups = new LinkedHashMap<>();
-            Map<String, Map<String, Object>> ocgrGroups = new LinkedHashMap<>();
+            ensureAlarmLogRuleColumns(conn);
+            Map<String, Integer> meterIdByName = loadMeterIdByExactName(conn);
+            Map<String, DiRuleMeta> diRuleMetaMap = loadCachedDiRuleMeta(conn);
             for (Map<String, Object> row : diRows) {
                 int pointId = ((Number)row.get("point_id")).intValue();
                 int diAddress = ((Number)row.get("di_address")).intValue();
@@ -985,83 +1196,57 @@
                 String itemName = String.valueOf(row.get("item_name") == null ? "" : row.get("item_name"));
                 String panelName = String.valueOf(row.get("panel_name") == null ? "" : row.get("panel_name"));
 
-                // OCR 관련 bit는 "개별 bit 이벤트" 대신 "OCR bit 전체 ON" 집계 이벤트로 처리
-                if (isOcrAlarmBit(tagName)) {
-                    String gk = pointId + ":" + diAddress;
-                    Map<String, Object> g = ocrGroups.get(gk);
-                    if (g == null) {
-                        g = new HashMap<>();
-                        g.put("point_id", pointId);
-                        g.put("di_address", diAddress);
-                        g.put("item_name", itemName);
-                        g.put("panel_name", panelName);
-                        g.put("tag_name", tagName);
-                        g.put("bit_count", 0);
-                        g.put("on_count", 0);
-                        g.put("bit_values", new ArrayList<String>());
-                        ocrGroups.put(gk, g);
-                    }
-                    g.put("bit_count", ((Integer)g.get("bit_count")) + 1);
-                    if (value == 1) g.put("on_count", ((Integer)g.get("on_count")) + 1);
-                    @SuppressWarnings("unchecked")
-                    List<String> bitValues = (List<String>)g.get("bit_values");
-                    bitValues.add(bitNo + ":" + value);
-                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
-                    continue;
-                }
-                if (isOcgrAlarmBit(tagName)) {
-                    String gk = pointId + ":" + diAddress;
-                    Map<String, Object> g = ocgrGroups.get(gk);
-                    if (g == null) {
-                        g = new HashMap<>();
-                        g.put("point_id", pointId);
-                        g.put("di_address", diAddress);
-                        g.put("item_name", itemName);
-                        g.put("panel_name", panelName);
-                        g.put("tag_name", tagName);
-                        g.put("bit_count", 0);
-                        g.put("on_count", 0);
-                        g.put("bit_values", new ArrayList<String>());
-                        ocgrGroups.put(gk, g);
-                    }
-                    g.put("bit_count", ((Integer)g.get("bit_count")) + 1);
-                    if (value == 1) g.put("on_count", ((Integer)g.get("on_count")) + 1);
-                    @SuppressWarnings("unchecked")
-                    List<String> bitValues = (List<String>)g.get("bit_values");
-                    bitValues.add(bitNo + ":" + value);
-                    LAST_DI_VALUE_MAP.put(plcId + ":" + pointId + ":" + diAddress + ":" + bitNo, value);
-                    continue;
-                }
-
                 int deviceId = pointId;
+                int alarmMeterId = resolveDiAlarmMeterId(meterIdByName, pointId, itemName);
+                Integer alarmMeterKey = alarmMeterId > 0 ? Integer.valueOf(alarmMeterId) : null;
                 String eventType = buildDiEventType(diAddress, bitNo, tagName);
+                String diRuleCode = resolveDiRuleCode(eventType, tagName);
+                DiRuleMeta diRuleMeta = diRuleMetaMap.get(normKey(diRuleCode));
+                boolean diRuleEnabled = (diRuleMeta != null && diRuleMeta.ruleId > 0);
                 String diKey = plcId + ":" + pointId + ":" + diAddress + ":" + bitNo;
                 Integer prev = LAST_DI_VALUE_MAP.get(diKey);
 
                 // 최초 관측에서 값이 1이면 즉시 open 이벤트를 생성한다.
                 if (prev == null) {
                     if (value == 1) {
+                        if (diRuleEnabled) {
+                            String desc = renderDiDescription(diRuleMeta, plcId, pointId, diAddress, bitNo, tagName, itemName, panelName, eventType);
+                            String sev = getDiSeverity(tagName);
+                            selOpen.setInt(1, deviceId);
+                            selOpen.setString(2, eventType);
+                            Long openEventId = null;
+                            try (ResultSet rs = selOpen.executeQuery()) {
+                                if (rs.next()) openEventId = rs.getLong(1);
+                            }
+                            if (openEventId == null) {
+                                ins.setInt(1, deviceId);
+                                ins.setString(2, eventType);
+                                ins.setTimestamp(3, measuredAt);
+                                ins.setString(4, sev);
+                                ins.setString(5, desc);
+                                opened += ins.executeUpdate();
+                            }
+                            if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
+                                openAlarmLogIfNeeded(conn, alarmMeterKey, eventType, sev, measuredAt, desc, itemName, panelName, diRuleMeta, eventType);
+                            }
+                        }
+                    } else {
+                        // 서버 재시작 등으로 이전 메모리 상태가 사라진 경우,
+                        // 현재값이 0이면 DB에 남아 있던 미해제 이벤트/알람을 정리한다.
                         selOpen.setInt(1, deviceId);
                         selOpen.setString(2, eventType);
                         Long openEventId = null;
                         try (ResultSet rs = selOpen.executeQuery()) {
                             if (rs.next()) openEventId = rs.getLong(1);
                         }
-                        if (openEventId == null) {
-                            String desc = "PLC " + plcId + " DI ON: point=" + pointId +
-                                          ", addr=" + diAddress + ", bit=" + bitNo +
-                                          ", tag=" + tagName + ", item=" + itemName + ", panel=" + panelName;
-                            String sev = isTripAlarmBit(tagName) ? "ALARM" : "WARN";
-                            ins.setInt(1, deviceId);
-                            ins.setString(2, eventType);
-                            ins.setTimestamp(3, measuredAt);
-                            ins.setString(4, sev);
-                            ins.setString(5, desc);
-                            opened += ins.executeUpdate();
-                            if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
-                                openAlarmLogIfNeeded(conn, deviceId, eventType, sev, measuredAt, desc);
-                            }
+                        if (openEventId != null) {
+                            close.setTimestamp(1, measuredAt);
+                            close.setTimestamp(2, measuredAt);
+                            close.setTimestamp(3, measuredAt);
+                            close.setLong(4, openEventId.longValue());
+                            closed += close.executeUpdate();
                         }
+                        closeAlarmLogIfOpen(conn, alarmMeterKey, eventType, measuredAt, itemName, panelName);
                     }
                     LAST_DI_VALUE_MAP.put(diKey, value);
                     continue;
@@ -1069,25 +1254,25 @@
 
                 // 0 -> 1 전이에서만 INSERT
                 if (prev.intValue() == 0 && value == 1) {
-                    selOpen.setInt(1, deviceId);
-                    selOpen.setString(2, eventType);
-                    Long openEventId = null;
-                    try (ResultSet rs = selOpen.executeQuery()) {
-                        if (rs.next()) openEventId = rs.getLong(1);
-                    }
-                    if (openEventId == null) {
-                        String desc = "PLC " + plcId + " DI ON: point=" + pointId +
-                                      ", addr=" + diAddress + ", bit=" + bitNo +
-                                      ", tag=" + tagName + ", item=" + itemName + ", panel=" + panelName;
-                        String sev = isTripAlarmBit(tagName) ? "ALARM" : "WARN";
-                        ins.setInt(1, deviceId);
-                        ins.setString(2, eventType);
-                        ins.setTimestamp(3, measuredAt);
-                        ins.setString(4, sev);
-                        ins.setString(5, desc);
-                        opened += ins.executeUpdate();
+                    if (diRuleEnabled) {
+                        String desc = renderDiDescription(diRuleMeta, plcId, pointId, diAddress, bitNo, tagName, itemName, panelName, eventType);
+                        String sev = getDiSeverity(tagName);
+                        selOpen.setInt(1, deviceId);
+                        selOpen.setString(2, eventType);
+                        Long openEventId = null;
+                        try (ResultSet rs = selOpen.executeQuery()) {
+                            if (rs.next()) openEventId = rs.getLong(1);
+                        }
+                        if (openEventId == null) {
+                            ins.setInt(1, deviceId);
+                            ins.setString(2, eventType);
+                            ins.setTimestamp(3, measuredAt);
+                            ins.setString(4, sev);
+                            ins.setString(5, desc);
+                            opened += ins.executeUpdate();
+                        }
                         if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
-                            openAlarmLogIfNeeded(conn, deviceId, eventType, sev, measuredAt, desc);
+                            openAlarmLogIfNeeded(conn, alarmMeterKey, eventType, sev, measuredAt, desc, itemName, panelName, diRuleMeta, eventType);
                         }
                     }
                 } else if (prev.intValue() == 1 && value == 0) {
@@ -1104,116 +1289,10 @@
                         close.setTimestamp(3, measuredAt);
                         close.setLong(4, openEventId.longValue());
                         closed += close.executeUpdate();
-                        closeAlarmLogIfOpen(conn, deviceId, eventType, measuredAt);
                     }
+                    closeAlarmLogIfOpen(conn, alarmMeterKey, eventType, measuredAt, itemName, panelName);
                 }
                 LAST_DI_VALUE_MAP.put(diKey, value);
-            }
-
-            // OCR 집계 이벤트: 해당 OCR bit가 모두 1이면 OPEN, 하나라도 0이면 CLOSE
-            for (Map<String, Object> g : ocrGroups.values()) {
-                int pointId = (Integer)g.get("point_id");
-                int diAddress = (Integer)g.get("di_address");
-                int bitCount = (Integer)g.get("bit_count");
-                int onCount = (Integer)g.get("on_count");
-                String itemName = String.valueOf(g.get("item_name") == null ? "" : g.get("item_name"));
-                String panelName = String.valueOf(g.get("panel_name") == null ? "" : g.get("panel_name"));
-                String tagName = String.valueOf(g.get("tag_name") == null ? "" : g.get("tag_name"));
-                @SuppressWarnings("unchecked")
-                List<String> bitValues = (List<String>)g.get("bit_values");
-
-                if (bitCount <= 0) continue;
-                boolean allOn = (onCount == bitCount);
-                int deviceId = pointId;
-                String tagKey = compactEventToken(normalizeTagKey(tagName), "DI", "OCR");
-                String eventType = tagKey.isEmpty() ? "DI_OCR_ALL" : ("DI_OCR_ALL_" + tagKey);
-
-                selOpen.setInt(1, deviceId);
-                selOpen.setString(2, eventType);
-                Long openEventId = null;
-                try (ResultSet rs = selOpen.executeQuery()) {
-                    if (rs.next()) openEventId = rs.getLong(1);
-                }
-
-                if (allOn) {
-                    if (openEventId == null) {
-                        String desc = "PLC " + plcId + " OCR ALL ON: point=" + pointId +
-                                      ", addr=" + diAddress +
-                                      ", bits=" + String.join(",", bitValues) +
-                                      ", item=" + itemName + ", panel=" + panelName;
-                        String sev = "ALARM";
-                        ins.setInt(1, deviceId);
-                        ins.setString(2, eventType);
-                        ins.setTimestamp(3, measuredAt);
-                        ins.setString(4, sev);
-                        ins.setString(5, desc);
-                        opened += ins.executeUpdate();
-                        openAlarmLogIfNeeded(conn, deviceId, eventType, sev, measuredAt, desc);
-                    }
-                } else {
-                    if (openEventId != null) {
-                        close.setTimestamp(1, measuredAt);
-                        close.setTimestamp(2, measuredAt);
-                        close.setTimestamp(3, measuredAt);
-                        close.setLong(4, openEventId.longValue());
-                        closed += close.executeUpdate();
-                        closeAlarmLogIfOpen(conn, deviceId, eventType, measuredAt);
-                    }
-                }
-            }
-
-            // OCGR 집계 이벤트: 해당 OCGR bit가 모두 1이면 OPEN, 하나라도 0이면 CLOSE
-            for (Map<String, Object> g : ocgrGroups.values()) {
-                int pointId = (Integer)g.get("point_id");
-                int diAddress = (Integer)g.get("di_address");
-                int bitCount = (Integer)g.get("bit_count");
-                int onCount = (Integer)g.get("on_count");
-                String itemName = String.valueOf(g.get("item_name") == null ? "" : g.get("item_name"));
-                String panelName = String.valueOf(g.get("panel_name") == null ? "" : g.get("panel_name"));
-                String tagName = String.valueOf(g.get("tag_name") == null ? "" : g.get("tag_name"));
-                @SuppressWarnings("unchecked")
-                List<String> bitValues = (List<String>)g.get("bit_values");
-
-                if (bitCount <= 0) continue;
-                boolean allOn = (onCount == bitCount);
-                int deviceId = pointId;
-                String tagKey = compactEventToken(normalizeTagKey(tagName), "DI", "OCGR");
-                String eventType;
-                if ("51G".equals(tagKey)) eventType = "DI_OCGR_51G";
-                else eventType = tagKey.isEmpty() ? "DI_OCGR_ALL" : ("DI_OCGR_ALL_" + tagKey);
-
-                selOpen.setInt(1, deviceId);
-                selOpen.setString(2, eventType);
-                Long openEventId = null;
-                try (ResultSet rs = selOpen.executeQuery()) {
-                    if (rs.next()) openEventId = rs.getLong(1);
-                }
-
-                if (allOn) {
-                    if (openEventId == null) {
-                        String desc = "PLC " + plcId + " OCGR ALL ON: point=" + pointId +
-                                      ", addr=" + diAddress +
-                                      ", bits=" + String.join(",", bitValues) +
-                                      ", item=" + itemName + ", panel=" + panelName;
-                        String sev = "ALARM";
-                        ins.setInt(1, deviceId);
-                        ins.setString(2, eventType);
-                        ins.setTimestamp(3, measuredAt);
-                        ins.setString(4, sev);
-                        ins.setString(5, desc);
-                        opened += ins.executeUpdate();
-                        openAlarmLogIfNeeded(conn, deviceId, eventType, sev, measuredAt, desc);
-                    }
-                } else {
-                    if (openEventId != null) {
-                        close.setTimestamp(1, measuredAt);
-                        close.setTimestamp(2, measuredAt);
-                        close.setTimestamp(3, measuredAt);
-                        close.setLong(4, openEventId.longValue());
-                        closed += close.executeUpdate();
-                        closeAlarmLogIfOpen(conn, deviceId, eventType, measuredAt);
-                    }
-                }
             }
         }
         return new int[]{opened, closed};
@@ -1400,13 +1479,7 @@
             } catch (Exception ignore) {
                 // Keep AI data persistence alive even if alarm API is temporarily unavailable.
             }
-            int[] diPersist;
-            try {
-                diPersist = persistDiRowsViaAlarmApi(plcId, diData.rows, measuredAt);
-            } catch (Exception ex) {
-                // Fallback for continuity when alarm_api is temporarily unavailable.
-                diPersist = persistDiRowsToDeviceEvents(plcId, diData.rows, measuredAt);
-            }
+            int[] diPersist = persistDiRowsToDeviceEvents(plcId, diData.rows, measuredAt);
 
             result.diRows = diData.rows;
             result.rows = aiData.rows;
@@ -1443,6 +1516,13 @@
         if (diOld != null) diOld.cancel(false);
         PollState st = getPollState(rt, plcId);
         st.running = false;
+        st.autoStartAllowed = false;
+        st.aiInProgress.set(false);
+        st.diInProgress.set(false);
+        st.modbusIoInProgress.set(false);
+        st.lastError = "";
+        st.lastInfo = "Polling stopped.";
+        st.lastRunAt = System.currentTimeMillis();
     }
 
     private static void resetPollState(PollState st, int pollingMs) {
@@ -1452,6 +1532,9 @@
         st.diReadCount.set(0L);
         st.aiReadCount.set(0L);
         st.readDurationSumMs.set(0L);
+        st.aiInProgress.set(false);
+        st.diInProgress.set(false);
+        st.modbusIoInProgress.set(false);
         st.lastReadDurationMs = 0L;
         st.lastDiReadMs = 0L;
         st.lastAiReadMs = 0L;
@@ -1459,7 +1542,9 @@
         st.lastRows = Collections.emptyList();
         st.lastDiRows = Collections.emptyList();
         st.lastRunAt = 0L;
+        st.nextAiPollAt = 0L;
         st.running = true;
+        st.autoStartAllowed = true;
         st.pollingMs = pollingMs;
         st.lastInfo = "";
         st.lastError = "";
@@ -1480,12 +1565,14 @@
     }
 
     private static void applyPollFailure(PollState st, Exception e) {
+        if (st == null || !st.autoStartAllowed || !st.running) return;
         e.printStackTrace();
         st.lastError = e.getMessage();
         st.lastRunAt = System.currentTimeMillis();
     }
 
     private static void applyDiPollSuccess(PollState st, int plcId, DiReadData diData, int[] diPersist, long usedElapsed) {
+        if (st == null || !st.autoStartAllowed || !st.running) return;
         st.successCount.incrementAndGet();
         st.readCount.incrementAndGet();
         st.diReadCount.incrementAndGet();
@@ -1501,6 +1588,7 @@
     }
 
     private static void applyAiPollSuccess(PollState st, int plcId, AiReadData aiData, int[] aiPersist, int[] aiAlarmPersist, long usedElapsed) {
+        if (st == null || !st.autoStartAllowed || !st.running) return;
         st.successCount.incrementAndGet();
         st.readCount.incrementAndGet();
         st.aiReadCount.incrementAndGet();
@@ -1540,73 +1628,118 @@
         }
     }
 
+    private static void ensurePollingStarted(PollRuntime rt, Integer plcId) {
+        try {
+            if (rt == null) return;
+            Map<Integer, PlcConfig> cfgMap = getAllPlcConfigs();
+            if (cfgMap == null || cfgMap.isEmpty()) return;
+
+            for (Map.Entry<Integer, PlcConfig> entry : cfgMap.entrySet()) {
+                Integer id = entry.getKey();
+                PlcConfig cfg = entry.getValue();
+                if (id == null || cfg == null) continue;
+                if (plcId != null && !plcId.equals(id)) continue;
+                if (!cfg.enabled || !cfg.exists || cfg.ip == null || cfg.ip.trim().isEmpty()) continue;
+
+                PollState st = getPollState(rt, id);
+                if (st != null && !st.autoStartAllowed) continue;
+                ScheduledFuture<?> diTask = rt.diTasks.get(id);
+                ScheduledFuture<?> aiTask = rt.aiTasks.get(id);
+                boolean running = st != null && st.running;
+                boolean diAlive = diTask != null && !diTask.isCancelled() && !diTask.isDone();
+                boolean aiAlive = aiTask != null && !aiTask.isCancelled() && !aiTask.isDone();
+                if (running && diAlive && aiAlive) continue;
+
+                int pollingMs = cfg.pollingMs > 0 ? cfg.pollingMs : 1000;
+                startServerPolling(rt, id.intValue(), pollingMs);
+            }
+        } catch (Exception ignore) {
+            // Auto-start is best-effort; request handling should continue even when polling bootstrap fails.
+        }
+    }
+
+    private static boolean tryAcquireModbusIo(PollState st, long waitMs) {
+        if (st == null) return false;
+        long deadline = System.currentTimeMillis() + Math.max(0L, waitMs);
+        while (true) {
+            if (st.modbusIoInProgress.compareAndSet(false, true)) return true;
+            if (System.currentTimeMillis() >= deadline) return false;
+            try {
+                Thread.sleep(25L);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
+
     private static void startServerPolling(final PollRuntime rt, final int plcId, final int pollingMs) {
         stopServerPolling(rt, plcId);
         final PollState st = getPollState(rt, plcId);
         resetPollState(st, pollingMs);
 
-        Runnable diTask = new Runnable() {
+        Runnable pollTask = new Runnable() {
             @Override
             public void run() {
-                if (!st.diInProgress.compareAndSet(false, true)) return;
+                if (!st.autoStartAllowed || !st.running) return;
+                if (!tryAcquireModbusIo(st, 50L)) return;
                 try {
-                    st.attemptCount.incrementAndGet();
-                    long t0 = System.currentTimeMillis();
-                    Timestamp measuredAt = new Timestamp(t0);
+                    long now = System.currentTimeMillis();
                     PlcConfig cfg = getCachedPlcConfig(plcId);
                     if (applyInvalidPlcState(st, cfg)) return;
+                    List<Map<String, Object>> diTagList = getCachedDiTagMap(plcId);
+                    List<Map<String, Object>> aiMapList = getCachedAiMap(plcId);
+                    try (ModbusTcpClient client = new ModbusTcpClient(cfg.ip, cfg.port)) {
+                        try {
+                            st.diInProgress.set(true);
+                            st.attemptCount.incrementAndGet();
+                            long diStart = System.currentTimeMillis();
+                            Timestamp diMeasuredAt = new Timestamp(diStart);
+                            DiReadData diData = readDiRows(client, cfg, diTagList);
+                            int[] diPersist = persistDiRowsToDeviceEvents(plcId, diData.rows, diMeasuredAt);
+                            long diElapsed = diData.durationMs > 0L ? diData.durationMs : Math.max(0L, System.currentTimeMillis() - diStart);
+                            if (!st.autoStartAllowed || !st.running) return;
+                            applyDiPollSuccess(st, plcId, diData, diPersist, diElapsed);
+                        } finally {
+                            st.diInProgress.set(false);
+                        }
 
-                    DiReadData diData = readDiData(plcId, cfg);
-                    int[] diPersist;
-                    try {
-                        diPersist = persistDiRowsViaAlarmApi(plcId, diData.rows, measuredAt);
-                    } catch (Exception ex) {
-                        diPersist = persistDiRowsToDeviceEvents(plcId, diData.rows, measuredAt);
+                        now = System.currentTimeMillis();
+                        if (st.nextAiPollAt <= now) {
+                            try {
+                                st.aiInProgress.set(true);
+                                st.attemptCount.incrementAndGet();
+                                long aiStart = System.currentTimeMillis();
+                                Timestamp aiMeasuredAt = new Timestamp(aiStart);
+                                AiReadData aiData = readAiRows(client, cfg, aiMapList);
+                                persistAiRowsToSamples(plcId, cfg, aiData.rows, aiMeasuredAt);
+                                int[] aiPersist = persistAiRowsToTargetTables(aiData.rows, aiMeasuredAt);
+                                int[] aiAlarmPersist = new int[]{0, 0};
+                                try {
+                                    aiAlarmPersist = persistAiRowsViaAlarmApi(plcId, aiData.rows, aiMeasuredAt);
+                                } catch (Exception ignore) {
+                                    // Keep AI polling flow alive even when alarm_api is temporarily unavailable.
+                                }
+                                long aiElapsed = aiData.durationMs > 0L ? aiData.durationMs : Math.max(0L, System.currentTimeMillis() - aiStart);
+                                if (!st.autoStartAllowed || !st.running) return;
+                                applyAiPollSuccess(st, plcId, aiData, aiPersist, aiAlarmPersist, aiElapsed);
+                                st.nextAiPollAt = System.currentTimeMillis() + Math.max(1000, pollingMs);
+                            } finally {
+                                st.aiInProgress.set(false);
+                            }
+                        }
                     }
-                    long usedElapsed = diData.durationMs > 0L ? diData.durationMs : Math.max(0L, System.currentTimeMillis() - t0);
-                    applyDiPollSuccess(st, plcId, diData, diPersist, usedElapsed);
                 } catch (Exception e) {
                     applyPollFailure(st, e);
                 } finally {
-                    st.diInProgress.set(false);
+                    st.modbusIoInProgress.set(false);
                 }
             }
         };
 
-        Runnable aiTask = new Runnable() {
-            @Override
-            public void run() {
-                if (!st.aiInProgress.compareAndSet(false, true)) return;
-                try {
-                    st.attemptCount.incrementAndGet();
-                    long t0 = System.currentTimeMillis();
-                    Timestamp measuredAt = new Timestamp(t0);
-                    PlcConfig cfg = getCachedPlcConfig(plcId);
-                    if (applyInvalidPlcState(st, cfg)) return;
-
-                    AiReadData aiData = readAiData(plcId, cfg);
-                    persistAiRowsToSamples(plcId, cfg, aiData.rows, measuredAt);
-                    int[] aiPersist = persistAiRowsToTargetTables(aiData.rows, measuredAt);
-                    int[] aiAlarmPersist = new int[]{0, 0};
-                    try {
-                        aiAlarmPersist = persistAiRowsViaAlarmApi(plcId, aiData.rows, measuredAt);
-                    } catch (Exception ignore) {
-                        // Keep AI polling flow alive even when alarm_api is temporarily unavailable.
-                    }
-                    long usedElapsed = aiData.durationMs > 0L ? aiData.durationMs : Math.max(0L, System.currentTimeMillis() - t0);
-                    applyAiPollSuccess(st, plcId, aiData, aiPersist, aiAlarmPersist, usedElapsed);
-                } catch (Exception e) {
-                    applyPollFailure(st, e);
-                } finally {
-                    st.aiInProgress.set(false);
-                }
-            }
-        };
-
-        ScheduledFuture<?> diFuture = rt.exec.scheduleAtFixedRate(diTask, 0, DI_POLLING_MS, TimeUnit.MILLISECONDS);
-        ScheduledFuture<?> aiFuture = rt.exec.scheduleAtFixedRate(aiTask, 0, pollingMs, TimeUnit.MILLISECONDS);
-        rt.diTasks.put(plcId, diFuture);
-        rt.aiTasks.put(plcId, aiFuture);
+        ScheduledFuture<?> pollFuture = rt.exec.scheduleAtFixedRate(pollTask, 0, DI_POLLING_MS, TimeUnit.MILLISECONDS);
+        rt.diTasks.put(plcId, pollFuture);
+        rt.aiTasks.put(plcId, pollFuture);
     }
 
     private static String toReadJson(PlcReadResult r) {

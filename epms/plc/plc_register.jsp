@@ -2,7 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
-<%@ include file="../../includes/dbconn.jsp" %>
+<%@ include file="../../includes/dbconfig.jspf" %>
 <%!
     private static boolean isValidIpv4(String ip) {
         if (ip == null) return false;
@@ -21,6 +21,7 @@
     }
 %>
 <%
+    try (Connection conn = openDbConnection()) {
     String message = request.getParameter("msg");
     String error = request.getParameter("err");
     String self = request.getRequestURI();
@@ -183,10 +184,6 @@
     } catch (Exception e) {
         error = "목록 조회 실패: " + e.getMessage();
     }
-
-    try {
-        if (conn != null && !conn.isClosed()) conn.close();
-    } catch (Exception ignore) {}
 %>
 <html>
 <head>
@@ -325,3 +322,6 @@
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
+<%
+    } // end try-with-resources
+%>

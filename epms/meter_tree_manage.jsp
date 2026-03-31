@@ -2,7 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_json.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
@@ -180,6 +180,7 @@
     }
 %>
 <%
+try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
     String msg = request.getParameter("msg");
@@ -208,8 +209,6 @@
             out.print(buildChildPanelsAjaxJson(conn, ajaxParentFilterId));
         } catch (Exception ex) {
             out.print("{\"ok\":false,\"error\":\"" + escJson(ex.getMessage()) + "\"}");
-        } finally {
-            try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
         }
         return;
     }
@@ -414,8 +413,6 @@
         }
     } catch (Exception e) {
         err = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 %>
 <!doctype html>
@@ -707,5 +704,8 @@ applyNextSortFromParent(false);
     });
 })();
 </script>
+<%
+} // end try-with-resources
+%>
 </body>
 </html>

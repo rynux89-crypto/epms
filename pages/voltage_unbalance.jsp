@@ -1,7 +1,7 @@
 ﻿<%@ page import="java.sql.*, java.util.*" %>
 <%@ page import="java.time.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 
 <%!
     private static float safeParseFloat(String s, float defVal) {
@@ -44,6 +44,7 @@
 %>
 
 <%
+    try (Connection conn = openDbConnection()) {
     // ===== 湲곕낯 ?뚮씪誘명꽣 ?명똿 (variation_ves.jsp? ?숈씪??UX) =====
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today;
@@ -65,9 +66,11 @@
     String building = request.getParameter("building");
     String usage = request.getParameter("usage");
 
-    // 寃쎄퀬??%)
-    float warn1 = safeParseFloat(request.getParameter("warn1"), 2f);
-    float warn2 = safeParseFloat(request.getParameter("warn2"), 3f);
+    // Thresholds (%)
+    // Fixed criteria
+    float warn1 = 1f;
+    float warn2 = 2f;
+    float warn3 = 3f;
 
     // ?듭뀡 紐⑸줉 (variation_ves.jsp? ?숈씪)
     List<String[]> meterOptions = new ArrayList<>();
@@ -76,13 +79,12 @@
 
     try {
         try (Statement stmt = conn.createStatement()) {
-            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
-            while (rs.next()) buildingOptions.add(rs.getString(1).trim());
-            rs.close();
-
-            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
-            while (rs.next()) usageOptions.add(rs.getString(1).trim());
-            rs.close();
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name")) {
+                while (rs.next()) buildingOptions.add(rs.getString(1).trim());
+            }
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type")) {
+                while (rs.next()) usageOptions.add(rs.getString(1).trim());
+            }
         }
 
         StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
@@ -211,6 +213,16 @@
       .ref-box { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:8px; }
       .ref-box label { display:flex; gap:6px; align-items:center; }
       .ref-box input[type="number"]{ width: 110px; }
+
+      .content-row { display: flex; gap: 12px; align-items: stretch; }
+      .content-row .summary-wrap { flex: 0 0 360px; max-width: 360px; margin: 0; }
+      .content-row .chart-container { flex: 1 1 auto; min-width: 0; height: 640px; margin: 0; }
+      .chart-stack { display:flex; flex-direction:column; gap:12px; width:100%; height:100%; }
+      .chart-box { flex:1 1 0; min-height: 0; background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.06); padding:10px; }
+      .chart-title { margin:0 0 8px 0; font-size: 15px; }
+      .chart-inner { width:100%; height: calc(100% - 26px); }
+      .top-actions { display:flex; gap:8px; align-items:center; }
+      .filter-form { display:flex; flex-direction:column; gap:10px; margin-bottom: 12px; }
       .filter-row {
         display:flex;
         align-items:center;
@@ -223,35 +235,30 @@
       .field span { white-space: nowrap; }
       .period-group { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; }
       .query-btn { min-width: 74px; }
-
-      .content-row { display: flex; gap: 12px; align-items: stretch; }
-      .content-row .summary-wrap { flex: 0 0 360px; max-width: 360px; margin: 0; }
-      .content-row .chart-container { flex: 1 1 auto; min-width: 0; height: 640px; margin: 0; }
+      .empty-box { margin:12px 0; padding:10px 12px; border:1px solid #ffd6d6; background:#fff3f3; color:#b42318; border-radius:10px; font-weight:700; }
       @media (max-width: 1100px) {
         .content-row { flex-direction: column; }
         .content-row .summary-wrap { max-width: none; }
         .content-row .chart-container { height: 640px; }
       }
-      .chart-stack { display:flex; flex-direction:column; gap:12px; width:100%; height:100%; }
-      .chart-box { flex:1 1 0; min-height: 0; background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.06); padding:10px; }
-      .chart-title { margin:0 0 8px 0; font-size: 15px; }
-      .chart-inner { width:100%; height: calc(100% - 26px); }
     </style>
 </head>
 <body>
 <div class="title-bar">
     <h2>🔀 전압 불평형 분석 (상전압 AN/BN/CN, 선간전압 AB/BC/CA)</h2>
-    <div style="display:flex; gap:8px; align-items:center;">
-        <button class="back-btn" onclick="location.href='/pages/epms_main.jsp'">EPMS 홈</button>
-        
+    <div class="top-actions">
+        <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
+        <button class="back-btn" onclick="location.href='current_unbalance.jsp' + location.search">전류 불평형</button>
     </div>
 </div>
 
-<form method="GET">
+<form method="GET" class="filter-form">
     <div class="ref-box">
         <label>Warn1(%): <input type="number" name="warn1" step="0.1" value="<%= warn1 %>"></label>
         <label>Warn2(%): <input type="number" name="warn2" step="0.1" value="<%= warn2 %>"></label>
+        <label>Warn3(%): <input type="number" name="warn3" step="0.1" value="<%= warn3 %>"></label>
     </div>
+
     <div class="filter-row">
       <label class="field">
         <span>건물</span>
@@ -262,6 +269,7 @@
             <% } %>
         </select>
       </label>
+
       <label class="field">
         <span>용도</span>
         <select name="usage" onchange="this.form.meter.value=''; this.form.submit();">
@@ -271,6 +279,7 @@
             <% } %>
         </select>
       </label>
+
       <label class="field">
         <span>Meter</span>
         <select name="meter">
@@ -280,6 +289,7 @@
             <% } %>
         </select>
       </label>
+
       <div class="field period-group">
         <span>기간</span>
         <input type="date" name="startDate" value="<%= startDate %>">
@@ -299,8 +309,9 @@
     List<Float> unbPhase = new ArrayList<>(); // ?곸쟾??遺덊룊??%)
     List<Float> unbLine = new ArrayList<>();  // ?좉컙?꾩븬 遺덊룊??%)
 
-    List<Float> warn1Line = new ArrayList<>();
-    List<Float> warn2Line = new ArrayList<>();
+    List<Float> phaseWarn2Line = new ArrayList<>();
+    List<Float> phaseWarn3Line = new ArrayList<>();
+    List<Float> lineWarn1Line = new ArrayList<>();
 
     String dbError = null;
     final float EPS = 0.000001f;
@@ -336,7 +347,7 @@
                     float vbc = rs.getFloat("voltage_bc");
                     float vca = rs.getFloat("voltage_ca");
 
-                    // 불평형율 (NEMA-style)
+                    // ?곸쟾??遺덊룊??NEMA-style)
                     float vavgP = (va + vb + vc) / 3f;
                     float phaseU = 0f;
                     if (Math.abs(vavgP) > EPS) {
@@ -362,8 +373,9 @@
     }
 
     for (int i = 0; i < labels.size(); i++) {
-        warn1Line.add(warn1);
-        warn2Line.add(warn2);
+        phaseWarn2Line.add(warn2);
+        phaseWarn3Line.add(warn3);
+        lineWarn1Line.add(warn1);
     }
 
     // ?붿빟 ?듦퀎
@@ -376,23 +388,21 @@
     float worstScore = (p95Phase >= p95Line) ? p95Phase : p95Line;
 
     // Threshold exceedance counts
-    int cntPhase1 = 0, cntPhase2 = 0, cntLine1 = 0, cntLine2 = 0;
+    int cntPhase2 = 0, cntPhase3 = 0, cntLine1 = 0;
     for (int i = 0; i < unbPhase.size(); i++) {
         float v = Math.abs(unbPhase.get(i));
-        if (v >= warn1) cntPhase1++;
         if (v >= warn2) cntPhase2++;
+        if (v >= warn3) cntPhase3++;
     }
     for (int i = 0; i < unbLine.size(); i++) {
         float v = Math.abs(unbLine.get(i));
         if (v >= warn1) cntLine1++;
-        if (v >= warn2) cntLine2++;
     }
 
     int n = Math.max(1, labels.size());
-    float phase1pct = (cntPhase1 * 100f) / n;
     float phase2pct = (cntPhase2 * 100f) / n;
+    float phase3pct = (cntPhase3 * 100f) / n;
     float line1pct = (cntLine1 * 100f) / n;
-    float line2pct = (cntLine2 * 100f) / n;
     boolean noData = labels.isEmpty();
 
     // ===== JSON 臾몄옄???앹꽦 (stream/toList 誘몄궗?? ?댁쁺 ?섍꼍 ?명솚?? =====
@@ -417,23 +427,30 @@
     }
     lineJson.append(']');
 
-    StringBuilder warn1Json = new StringBuilder("[");
-    for (int i = 0; i < warn1Line.size(); i++) {
-        if (i > 0) warn1Json.append(',');
-        warn1Json.append(String.format(java.util.Locale.US, "%.6f", warn1Line.get(i)));
+    StringBuilder phaseWarn2Json = new StringBuilder("[");
+    for (int i = 0; i < phaseWarn2Line.size(); i++) {
+        if (i > 0) phaseWarn2Json.append(',');
+        phaseWarn2Json.append(String.format(java.util.Locale.US, "%.6f", phaseWarn2Line.get(i)));
     }
-    warn1Json.append(']');
+    phaseWarn2Json.append(']');
 
-    StringBuilder warn2Json = new StringBuilder("[");
-    for (int i = 0; i < warn2Line.size(); i++) {
-        if (i > 0) warn2Json.append(',');
-        warn2Json.append(String.format(java.util.Locale.US, "%.6f", warn2Line.get(i)));
+    StringBuilder phaseWarn3Json = new StringBuilder("[");
+    for (int i = 0; i < phaseWarn3Line.size(); i++) {
+        if (i > 0) phaseWarn3Json.append(',');
+        phaseWarn3Json.append(String.format(java.util.Locale.US, "%.6f", phaseWarn3Line.get(i)));
     }
-    warn2Json.append(']');
+    phaseWarn3Json.append(']');
+
+    StringBuilder lineWarn1Json = new StringBuilder("[");
+    for (int i = 0; i < lineWarn1Line.size(); i++) {
+        if (i > 0) lineWarn1Json.append(',');
+        lineWarn1Json.append(String.format(java.util.Locale.US, "%.6f", lineWarn1Line.get(i)));
+    }
+    lineWarn1Json.append(']');
 %>
 
 <% if (noData) { %>
-<div style="margin:12px 0;padding:10px 12px;border:1px solid #ffd6d6;background:#fff3f3;color:#b42318;border-radius:10px;font-weight:700;">데이터가 없습니다</div>
+<div class="empty-box">데이터가 없습니다</div>
 <% } %>
 
 <div class="content-row">
@@ -442,6 +459,8 @@
       <div class="summary-meta">
           <span class="badge">Warn1: <%= String.format(java.util.Locale.US, "%.1f", warn1) %>%</span>
           <span class="badge">Warn2: <%= String.format(java.util.Locale.US, "%.1f", warn2) %>%</span>
+          <span class="badge">Warn3: <%= String.format(java.util.Locale.US, "%.1f", warn3) %>%</span>
+          <span class="badge">상전압 기준: Warn2/3, 선간 기준: Warn1</span>
           <span class="badge badge-worst">Worst: <%= worst %> (P95 |Unbalance| = <%= String.format(java.util.Locale.US, "%.2f", worstScore) %>%)</span>
       </div>
 
@@ -451,8 +470,8 @@
               <th><span class="th-main">구분</span><span class="th-sub">항목</span></th>
               <th><span class="th-main">Max</span><span class="th-sub">(|%|)</span></th>
               <th><span class="th-main">P95</span><span class="th-sub">|불평형|(%)</span></th>
-              <th><span class="th-main">Warn1</span><span class="th-sub">이상(%)</span></th>
-              <th><span class="th-main">Warn2</span><span class="th-sub">이상(%)</span></th>
+              <th><span class="th-main">Warn2/1</span><span class="th-sub">이상(%)</span></th>
+              <th><span class="th-main">Warn3</span><span class="th-sub">이상(%)</span></th>
           </tr>
           </thead>
           <tbody>
@@ -460,15 +479,15 @@
               <td>상전압 불평형</td>
               <td><%= String.format(java.util.Locale.US, "%.2f", maxPhase) %></td>
               <td><%= String.format(java.util.Locale.US, "%.2f", p95Phase) %></td>
-              <td><%= String.format(java.util.Locale.US, "%.1f", phase1pct) %></td>
               <td><%= String.format(java.util.Locale.US, "%.1f", phase2pct) %></td>
+              <td><%= String.format(java.util.Locale.US, "%.1f", phase3pct) %></td>
           </tr>
           <tr>
               <td>선간전압 불평형</td>
               <td><%= String.format(java.util.Locale.US, "%.2f", maxLine) %></td>
               <td><%= String.format(java.util.Locale.US, "%.2f", p95Line) %></td>
               <td><%= String.format(java.util.Locale.US, "%.1f", line1pct) %></td>
-              <td><%= String.format(java.util.Locale.US, "%.1f", line2pct) %></td>
+              <td>-</td>
           </tr>
           </tbody>
       </table>
@@ -501,8 +520,9 @@
   const labels   = <%= labelsJson.toString() %>;
   const phaseUnb = <%= phaseJson.toString() %>;
   const lineUnb  = <%= lineJson.toString() %>;
-  const warn1Arr = <%= warn1Json.toString() %>;
-  const warn2Arr = <%= warn2Json.toString() %>;
+  const phaseWarn2Arr = <%= phaseWarn2Json.toString() %>;
+  const phaseWarn3Arr = <%= phaseWarn3Json.toString() %>;
+  const lineWarn1Arr = <%= lineWarn1Json.toString() %>;
   const MAX_POINTS = 2000;
   function buildSampleIndex(length, maxPoints) {
     if (length <= maxPoints) return Array.from({ length }, (_, i) => i);
@@ -523,14 +543,30 @@
   const labelsPlot = pickByIndex(labels, sampleIdx);
   const phaseUnbPlot = pickByIndex(phaseUnb, sampleIdx);
   const lineUnbPlot = pickByIndex(lineUnb, sampleIdx);
-  const warn1Plot = pickByIndex(warn1Arr, sampleIdx);
-  const warn2Plot = pickByIndex(warn2Arr, sampleIdx);
+  const phaseWarn2Plot = pickByIndex(phaseWarn2Arr, sampleIdx);
+  const phaseWarn3Plot = pickByIndex(phaseWarn3Arr, sampleIdx);
+  const lineWarn1Plot = pickByIndex(lineWarn1Arr, sampleIdx);
   function fmt2(v) {
     const n = Number(v);
     return Number.isFinite(n) ? n.toFixed(2) : '-';
   }
 
-  function mkOption(seriesName, data, color){
+  function mkOption(seriesName, data, color, warnA, warnB, warnAName, warnBName, showSlider){
+    const series = [
+      {
+        name: seriesName,
+        type:'line',
+        data: data,
+        animation: false,
+        showSymbol: false,
+        sampling: 'lttb',
+        progressive: 2000,
+        progressiveThreshold: 5000,
+        lineStyle: { color: color, width: 2 }
+      }
+    ];
+    if (warnA) series.push({ name: warnAName || 'Warn', type:'line', data: warnA, showSymbol:false, lineStyle:{ type:'dashed', width: 1, color: '#b08900' }, tooltip:{ show:false } });
+    if (warnB) series.push({ name: warnBName || 'Warn', type:'line', data: warnB, showSymbol:false, lineStyle:{ type:'dashed', width: 1, color: '#9c1111' }, tooltip:{ show:false } });
     return {
       tooltip: {
         trigger: 'axis',
@@ -544,50 +580,57 @@
         }
       },
       legend: { top: 0 },
-      grid: { left: 50, right: 20, top: 40, bottom: 80, containLabel: true },
+      grid: { left: 50, right: 20, top: 40, bottom: showSlider ? 80 : 36, containLabel: true },
       xAxis: { type: 'category', data: labelsPlot, axisLabel: { interval: 'auto' } },
       yAxis: { type: 'value', scale: true, axisLabel: { formatter: '{value} %' } },
-      dataZoom: [
+      dataZoom: showSlider ? [
         { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
         { type: 'slider', xAxisIndex: 0, filterMode: 'none', height: 24, bottom: 16 }
+      ] : [
+        { type: 'inside', xAxisIndex: 0, filterMode: 'none' }
       ],
-      series: [
-        {
-          name: seriesName,
-          type:'line',
-          data: data,
-          animation: false,
-          showSymbol: false,
-          sampling: 'lttb',
-          progressive: 2000,
-          progressiveThreshold: 5000,
-          lineStyle: { color: color, width: 2 }
-        },
-        { name: 'Warn1', type:'line', data: warn1Plot, showSymbol:false, lineStyle:{ type:'dashed', width: 1 }, tooltip:{ show:false } },
-        { name: 'Warn2', type:'line', data: warn2Plot, showSymbol:false, lineStyle:{ type:'dashed', width: 1 }, tooltip:{ show:false } }
-      ]
+      series: series
     };
   }
 
   const chart1 = echarts.init(document.getElementById('chartPhase'));
   const chart2 = echarts.init(document.getElementById('chartLine'));
-  chart1.group = 'unbalanceSync';
-  chart2.group = 'unbalanceSync';
-  echarts.connect('unbalanceSync');
 
-  chart1.setOption(mkOption('상전압 불평형', phaseUnbPlot, '#ff6b6b'));
-  chart2.setOption(mkOption('선간전압 불평형', lineUnbPlot, '#339af0'));
+  chart1.setOption(mkOption('상전압 불평형', phaseUnbPlot, '#c92a2a', phaseWarn2Plot, phaseWarn3Plot, 'Warn2', 'Warn3', false));
+  chart2.setOption(mkOption('선간전압 불평형', lineUnbPlot, '#1864ab', lineWarn1Plot, null, 'Warn1', null, true));
+
+  function extractZoomWindow(evt) {
+    const z = (evt && evt.batch && evt.batch.length) ? evt.batch[0] : evt;
+    if (!z) return null;
+    const p = { dataZoomIndex: 0 };
+    if (z.start != null) p.start = z.start;
+    if (z.end != null) p.end = z.end;
+    if (z.startValue != null) p.startValue = z.startValue;
+    if (z.endValue != null) p.endValue = z.endValue;
+    return p;
+  }
+
+  function syncZoom(source, target, evt) {
+    if (window.__unbalanceSyncingZoom) return;
+    const zoom = extractZoomWindow(evt);
+    if (!zoom) return;
+    window.__unbalanceSyncingZoom = true;
+    try {
+      target.dispatchAction(Object.assign({ type: 'dataZoom' }, zoom));
+    } finally {
+      window.__unbalanceSyncingZoom = false;
+    }
+  }
+
+  chart1.on('dataZoom', function(evt){ syncZoom(chart1, chart2, evt); });
+  chart2.on('dataZoom', function(evt){ syncZoom(chart2, chart1, evt); });
 
   window.addEventListener('resize', () => { chart1.resize(); chart2.resize(); });
 </script>
 
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<%
+    }
+%>
 </body>
 </html>
-
-
-
-
-
-
-

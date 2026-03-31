@@ -2,31 +2,22 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
 <%!
+    private static final String DEFAULT_MESSAGE_TEMPLATE = "source=${source}, value=${value}, 기준 ${operator} ${t1}";
+    private static final String DEFAULT_BETWEEN_TEMPLATE = "source=${source}, value=${value}, 기준 ${operator} ${t1} ~ ${t2}";
+    private static final String DEFAULT_OUTSIDE_TEMPLATE = "source=${source}, value=${value}, 기준 ${t1} ~ ${t2} 범위 이탈";
+
+    private static Double roundToTwoDecimals(Double value) {
+        if (value == null) return null;
+        return Double.valueOf(Math.round(value.doubleValue() * 100.0d) / 100.0d);
+    }
+
     private static String normKey(String v) {
         if (v == null) return "";
         return v.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private static String classifyMetricKey(String key) {
-        String k = normKey(key);
-        if (k.isEmpty()) return "기타";
-
-        if (k.contains("UNBAL")) return "불평형율";
-        if (k.contains("VARIATION") || k.endsWith("_VAR") || k.startsWith("V_VAR") || k.startsWith("I_VAR")) return "변동율";
-        if (k.contains("THD") || k.startsWith("H_")) return "고조파왜형율";
-        if (k.equals("PF") || k.contains("POWER_FACTOR") || k.startsWith("PF_")) return "역률";
-        if (k.equals("HZ") || k.contains("FREQUENCY")) return "주파수";
-        if (k.contains("PEAK") || k.contains("MAX_POWER")) return "전력피크";
-        if (k.startsWith("DI_") || k.endsWith("_DI") || k.contains("TRIP") || k.contains("OCR") || k.contains("OCGR") || k.contains("OVR")) return "DI/보호";
-
-        if (k.contains("VOLT") || k.startsWith("V") || k.startsWith("PV")) return "전압값";
-        if (k.contains("CURR") || k.startsWith("A") || k.startsWith("PI")) return "전류값";
-
-        return "기타";
     }
 
     private static Map<String, List<String>> loadMeasurementColumnTokens(Connection conn) {
@@ -70,12 +61,52 @@
         return sb.toString();
     }
 
-    private static String resolveRuleInputDisplay(String metricKey, String sourceToken, String targetScope, Map<String, List<String>> columnTokens) {
+    private static Map<String, List<String>> loadMetricCatalogTagTokens(Connection conn) {
+        Map<String, List<String>> map = new HashMap<>();
+        String sql =
+            "IF OBJECT_ID('dbo.metric_catalog_tag_map','U') IS NOT NULL " +
+            "SELECT metric_key, source_token FROM dbo.metric_catalog_tag_map WHERE enabled = 1 ORDER BY metric_key, sort_no, source_token";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String metricKey = normKey(rs.getString("metric_key"));
+                String token = normKey(rs.getString("source_token"));
+                if (metricKey.isEmpty() || token.isEmpty()) continue;
+                List<String> list = map.get(metricKey);
+                if (list == null) {
+                    list = new ArrayList<>();
+                    map.put(metricKey, list);
+                }
+                if (!list.contains(token)) list.add(token);
+            }
+        } catch (Exception ignore) {
+        }
+        return map;
+    }
+
+    private static String joinMetricCatalogTokens(Map<String, List<String>> metricTagTokens, String metricKey) {
+        if (metricTagTokens == null) return "";
+        List<String> list = metricTagTokens.get(normKey(metricKey));
+        if (list == null || list.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String token : list) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(token);
+        }
+        return sb.toString();
+    }
+
+    private static String resolveRuleInputDisplay(String metricKey, String sourceToken, String targetScope,
+                                                  Map<String, List<String>> columnTokens,
+                                                  Map<String, List<String>> metricTagTokens) {
         String scope = normKey(targetScope);
         String mk = normKey(metricKey);
         String st = normKey(sourceToken);
         if (!st.isEmpty()) return st;
         if ("PLC".equals(scope)) return mk;
+
+        String configured = joinMetricCatalogTokens(metricTagTokens, mk);
+        if (!configured.isEmpty()) return configured;
 
         if ("POWER_FACTOR".equals(mk) || "PF_GROUP".equals(mk)) {
             String x = joinTokens(columnTokens, "power_factor", "power_factor_avg");
@@ -101,30 +132,18 @@
         return "";
     }
 
-    private static List<String> loadSystemMetricKeys(Connection conn) throws Exception {
+    private static List<String> loadSelectableMetricKeys(Connection conn) throws Exception {
         TreeSet<String> set = new TreeSet<>();
-        // Fixed keys used by DI/protection logic.
-        set.add("DI_TRIP");
-        set.add("DI_TR_ALARM");
-        set.add("DI_OCR_ALL_ON");
-        set.add("DI_OCGR_ALL_ON");
-        set.add("DI_OVR_ALL_ON");
-        set.add("DI_ELD_ON");
-        set.add("DI_TM_ON");
-        // Virtual grouped keys for one-rule-per-kind operation.
-        set.add("VOLTAGE");
-        set.add("CURRENT");
-        set.add("UNBALANCE");
-        set.add("VARIATION");
-        set.add("THD");
-        set.add("THD_VOLTAGE");
-        set.add("THD_CURRENT");
-        set.add("POWER_FACTOR");
-        set.add("FREQUENCY_GROUP");
-        set.add("PEAK");
-        set.add("MAX_POWER");
-
-        // Keep existing keys selectable so current rules remain editable.
+        try (PreparedStatement ps = conn.prepareStatement(
+                "IF OBJECT_ID('dbo.metric_catalog','U') IS NOT NULL " +
+                "SELECT metric_key FROM dbo.metric_catalog " +
+                "ELSE SELECT CAST(NULL AS VARCHAR(100)) WHERE 1=0");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String k = normKey(rs.getString(1));
+                if (!k.isEmpty()) set.add(k);
+            }
+        }
         try (PreparedStatement ps = conn.prepareStatement("SELECT DISTINCT metric_key FROM dbo.alarm_rule");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -164,13 +183,17 @@
         req.targetScope = request.getParameter("target_scope");
         req.metricKey = request.getParameter("metric_key");
         req.operator = request.getParameter("operator");
-        req.threshold1 = parseNullableDouble(request.getParameter("threshold1"));
-        req.threshold2 = parseNullableDouble(request.getParameter("threshold2"));
-        req.durationSec = parseNullableInt(request.getParameter("duration_sec"));
-        req.hysteresis = parseNullableDouble(request.getParameter("hysteresis"));
+        req.threshold1 = roundToTwoDecimals(parseNullableDouble(request.getParameter("threshold1")));
+        req.threshold2 = roundToTwoDecimals(parseNullableDouble(request.getParameter("threshold2")));
+        req.durationSec = Integer.valueOf(0);
+        req.hysteresis = null;
         req.severity = request.getParameter("severity");
+        if (req.severity == null || req.severity.trim().isEmpty()) req.severity = "ALARM";
         req.sourceToken = request.getParameter("source_token");
         req.messageTemplate = request.getParameter("message_template");
+        if (req.messageTemplate == null || req.messageTemplate.trim().isEmpty()) {
+            req.messageTemplate = DEFAULT_MESSAGE_TEMPLATE;
+        }
         req.description = request.getParameter("description");
         return req;
     }
@@ -178,6 +201,7 @@
     private static String validateAlarmRuleRequest(AlarmRuleRequest req, Set<String> metricKeySet) {
         if (req == null) return "요청이 올바르지 않습니다.";
         String action = req.action == null ? "" : req.action;
+        String scope = normKey(req.targetScope);
         if ("add".equals(action)) {
             if (req.ruleCode == null || req.ruleCode.trim().isEmpty() ||
                 req.ruleName == null || req.ruleName.trim().isEmpty() ||
@@ -191,7 +215,10 @@
         }
         if ("add".equals(action) || "update".equals(action)) {
             String metricKeyNorm = normKey(req.metricKey);
-            if (metricKeyNorm.isEmpty() || !metricKeySet.contains(metricKeyNorm)) {
+            if (metricKeyNorm.isEmpty()) {
+                return "허용되지 않은 지표키입니다. 목록에서 선택해 주세요.";
+            }
+            if (!"PLC".equals(scope) && !metricKeySet.contains(metricKeyNorm)) {
                 return "허용되지 않은 지표키입니다. 목록에서 선택해 주세요.";
             }
         }
@@ -214,7 +241,7 @@
             if (req.threshold2 == null) ps.setNull(8, Types.DECIMAL); else ps.setDouble(8, req.threshold2);
             ps.setInt(9, (req.durationSec == null || req.durationSec.intValue() < 0) ? 0 : req.durationSec.intValue());
             if (req.hysteresis == null) ps.setNull(10, Types.DECIMAL); else ps.setDouble(10, req.hysteresis);
-            ps.setString(11, (req.severity == null || req.severity.trim().isEmpty()) ? "WARN" : req.severity.trim().toUpperCase(Locale.ROOT));
+            ps.setString(11, req.severity == null ? "ALARM" : req.severity.trim().toUpperCase(Locale.ROOT));
             ps.setString(12, req.sourceToken);
             ps.setString(13, req.messageTemplate);
             ps.setString(14, req.description);
@@ -241,7 +268,7 @@
             if (req.threshold2 == null) ps.setNull(7, Types.DECIMAL); else ps.setDouble(7, req.threshold2);
             ps.setInt(8, (req.durationSec == null || req.durationSec.intValue() < 0) ? 0 : req.durationSec.intValue());
             if (req.hysteresis == null) ps.setNull(9, Types.DECIMAL); else ps.setDouble(9, req.hysteresis);
-            ps.setString(10, req.severity);
+            ps.setString(10, req.severity == null ? "ALARM" : req.severity.trim().toUpperCase(Locale.ROOT));
             ps.setString(11, req.sourceToken);
             ps.setString(12, req.messageTemplate);
             ps.setString(13, req.description);
@@ -275,6 +302,7 @@
     }
 %>
 <%
+    try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
     String self = request.getRequestURI();
@@ -282,7 +310,7 @@
     String error = request.getParameter("err");
     List<Map<String, Object>> rows = new ArrayList<>();
     List<String> metricKeys = new ArrayList<>();
-    LinkedHashMap<String, List<String>> groupedMetricKeys = new LinkedHashMap<>();
+    List<String> diMetricKeys = new ArrayList<>();
     Map<String, List<String>> columnTokens = new HashMap<>();
 
     try {
@@ -321,65 +349,22 @@
             st.execute(ensureColsSql);
         }
 
-        String seedIfEmptySql =
-            "IF NOT EXISTS (SELECT 1 FROM dbo.alarm_rule) " +
-            "BEGIN " +
-            "  INSERT INTO dbo.alarm_rule " +
-            "  (rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, hysteresis, severity, enabled, description) " +
-            "  VALUES " +
-            "  ('OCR', N'OCR Over Current', 'PROTECTION', 'METER', 'current_max', '>=', 100.0, NULL, 3, 5.0, 'ALARM', 1, N'Over-current exceeds threshold'), " +
-            "  ('OCGR', N'OCGR Ground Over Current', 'PROTECTION', 'METER', 'current_ground', '>=', 30.0, NULL, 2, 3.0, 'ALARM', 1, N'Ground current exceeds threshold'), " +
-            "  ('OVR_DI', N'OVR Signal', 'PROTECTION', 'PLC', 'DI_OVR_ALL_ON', '=', 1.0, NULL, 0, NULL, 'ALARM', 1, N'OVR bit group all on'), " +
-            "  ('TRIP_DI', N'TRIP Signal', 'PROTECTION', 'PLC', 'di_trip', '=', 1.0, NULL, 0, NULL, 'ALARM', 1, N'DI trip signal on'), " +
-            "  ('ELD_DI', N'ELD Leakage Signal', 'PROTECTION', 'PLC', 'DI_ELD_ON', '=', 1.0, NULL, 0, NULL, 'ALARM', 1, N'ELD leakage bit on'), " +
-            "  ('TM_DI', N'TM Temperature Signal', 'PROTECTION', 'PLC', 'DI_TM_ON', '=', 1.0, NULL, 0, NULL, 'ALARM', 1, N'Transformer temperature alarm bit on'), " +
-            "  ('PF_LOW', N'Power Factor Low', 'POWER_QUALITY', 'METER', 'pf_total', '<', 0.90, NULL, 10, 0.02, 'WARN', 1, N'Power factor below threshold'), " +
-            "  ('V_UNBAL', N'Voltage Unbalance', 'POWER_QUALITY', 'METER', 'voltage_unbalance_rate', '>=', 2.0, NULL, 10, 0.5, 'WARN', 1, N'Voltage unbalance over threshold'), " +
-            "  ('V_VAR', N'Voltage Variation', 'POWER_QUALITY', 'METER', 'voltage_variation_rate', '>=', 10.0, NULL, 10, 2.0, 'WARN', 1, N'Voltage variation over threshold'), " +
-            "  ('I_VAR', N'Current Variation', 'POWER_QUALITY', 'METER', 'current_variation_rate', '>=', 20.0, NULL, 10, 3.0, 'WARN', 1, N'Current variation over threshold'), " +
-            "  ('PEAK_HIGH', N'Peak Power High', 'POWER_QUALITY', 'METER', 'PEAK', '>=', 9000.0, NULL, 10, 100.0, 'WARN', 1, N'Peak power exceeds threshold'), " +
-            "  ('THD_V', N'Voltage THD', 'HARMONIC', 'METER', 'thd_voltage_max', '>=', 5.0, NULL, 10, 1.0, 'WARN', 1, N'Voltage THD over threshold'), " +
-            "  ('THD_I', N'Current THD', 'HARMONIC', 'METER', 'thd_current_max', '>=', 20.0, NULL, 10, 2.0, 'WARN', 1, N'Current THD over threshold'); " +
-            "END";
-        try (Statement st = conn.createStatement()) {
-            st.execute(seedIfEmptySql);
-        }
-
-        String ensureCoreSql =
-            "INSERT INTO dbo.alarm_rule " +
-            "(rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, hysteresis, severity, enabled, description, updated_at) " +
-            "SELECT v.rule_code, v.rule_name, v.category, v.target_scope, v.metric_key, v.operator, v.threshold1, v.threshold2, v.duration_sec, v.hysteresis, v.severity, 1, v.description, SYSUTCDATETIME() " +
-            "FROM (VALUES " +
-            "  ('OCR', N'OCR Over Current', 'PROTECTION', 'METER', 'current_max', '>=', CAST(100.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 3, CAST(5.0 AS DECIMAL(18,6)), 'ALARM', N'Over-current exceeds threshold'), " +
-            "  ('OCGR', N'OCGR Ground Over Current', 'PROTECTION', 'METER', 'current_ground', '>=', CAST(30.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 2, CAST(3.0 AS DECIMAL(18,6)), 'ALARM', N'Ground current exceeds threshold'), " +
-            "  ('OVR_DI', N'OVR Signal', 'PROTECTION', 'PLC', 'DI_OVR_ALL_ON', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'ALARM', N'OVR bit group all on'), " +
-            "  ('TRIP_DI', N'TRIP Signal', 'PROTECTION', 'PLC', 'DI_TRIP', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'ALARM', N'DI trip signal on'), " +
-            "  ('ELD_DI', N'ELD Leakage Signal', 'PROTECTION', 'PLC', 'DI_ELD_ON', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'ALARM', N'ELD leakage bit on'), " +
-            "  ('TM_DI', N'TM Temperature Signal', 'PROTECTION', 'PLC', 'DI_TM_ON', '=', CAST(1.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 0, CAST(NULL AS DECIMAL(18,6)), 'ALARM', N'Transformer temperature alarm bit on'), " +
-            "  ('PEAK_HIGH', N'Peak Power High', 'POWER_QUALITY', 'METER', 'PEAK', '>=', CAST(9000.0 AS DECIMAL(18,6)), CAST(NULL AS DECIMAL(18,6)), 10, CAST(100.0 AS DECIMAL(18,6)), 'WARN', N'Peak power exceeds threshold') " +
-            ") AS v(rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, hysteresis, severity, description) " +
-            "WHERE NOT EXISTS (SELECT 1 FROM dbo.alarm_rule x WHERE x.rule_code = v.rule_code)";
-        try (Statement st = conn.createStatement()) {
-            st.executeUpdate(ensureCoreSql);
-        }
-
-        metricKeys = loadSystemMetricKeys(conn);
+        metricKeys = loadSelectableMetricKeys(conn);
         Set<String> metricKeySet = new HashSet<>(metricKeys);
-        groupedMetricKeys.put("전압값", new ArrayList<String>());
-        groupedMetricKeys.put("전류값", new ArrayList<String>());
-        groupedMetricKeys.put("불평형율", new ArrayList<String>());
-        groupedMetricKeys.put("변동율", new ArrayList<String>());
-        groupedMetricKeys.put("고조파왜형율", new ArrayList<String>());
-        groupedMetricKeys.put("역률", new ArrayList<String>());
-        groupedMetricKeys.put("주파수", new ArrayList<String>());
-        groupedMetricKeys.put("전력피크", new ArrayList<String>());
-        groupedMetricKeys.put("DI/보호", new ArrayList<String>());
-        groupedMetricKeys.put("기타", new ArrayList<String>());
-        for (String mk : metricKeys) {
-            String g = classifyMetricKey(mk);
-            List<String> bucket = groupedMetricKeys.get(g);
-            if (bucket == null) bucket = groupedMetricKeys.get("기타");
-            bucket.add(mk);
+        try (PreparedStatement ps = conn.prepareStatement(
+                "IF OBJECT_ID('dbo.metric_catalog','U') IS NOT NULL " +
+                "SELECT DISTINCT metric_key FROM dbo.metric_catalog WHERE source_type = 'DI' " +
+                "UNION " +
+                "SELECT DISTINCT metric_key FROM dbo.alarm_rule WHERE target_scope = 'PLC' " +
+                "ELSE SELECT DISTINCT metric_key FROM dbo.alarm_rule WHERE target_scope = 'PLC'");
+             ResultSet rs = ps.executeQuery()) {
+            TreeSet<String> diKeySet = new TreeSet<>();
+            while (rs.next()) {
+                String mk = normKey(rs.getString(1));
+                if (!mk.isEmpty()) diKeySet.add(mk);
+            }
+            diMetricKeys = new ArrayList<>(diKeySet);
+        } catch (Exception ignore) {
         }
 
         if ("POST".equalsIgnoreCase(request.getMethod())) {
@@ -432,11 +417,14 @@
         }
 
         columnTokens = loadMeasurementColumnTokens(conn);
+        Map<String, List<String>> metricTagTokens = loadMetricCatalogTagTokens(conn);
 
         String q =
-            "SELECT rule_id, rule_code, rule_name, category, target_scope, metric_key, operator, threshold1, threshold2, duration_sec, " +
-            "       hysteresis, severity, source_token, message_template, enabled, description, updated_at " +
-            "FROM dbo.alarm_rule ORDER BY rule_id";
+            "SELECT r.rule_id, r.rule_code, r.rule_name, r.category, r.target_scope, r.metric_key, r.operator, r.threshold1, r.threshold2, r.duration_sec, " +
+            "       r.hysteresis, r.severity, r.source_token, r.message_template, r.enabled, r.description, r.updated_at, mc.display_name AS metric_display_name " +
+            "FROM dbo.alarm_rule r " +
+            "LEFT JOIN dbo.metric_catalog mc ON mc.metric_key = r.metric_key " +
+            "ORDER BY r.rule_id";
         try (PreparedStatement ps = conn.prepareStatement(q);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -447,12 +435,26 @@
                 r.put("category", rs.getString("category"));
                 r.put("target_scope", rs.getString("target_scope"));
                 r.put("metric_key", rs.getString("metric_key"));
+                String metricDisplayName = rs.getString("metric_display_name");
+                String metricKey = rs.getString("metric_key");
+                String metricDisplay = (metricDisplayName == null || metricDisplayName.trim().isEmpty())
+                    ? metricKey
+                    : (metricDisplayName.trim() + " (" + metricKey + ")");
+                r.put("metric_display", metricDisplay);
                 r.put("operator", rs.getString("operator"));
                 r.put("threshold1", rs.getObject("threshold1"));
                 r.put("threshold2", rs.getObject("threshold2"));
                 r.put("duration_sec", rs.getInt("duration_sec"));
                 r.put("hysteresis", rs.getObject("hysteresis"));
                 r.put("severity", rs.getString("severity"));
+                String dbSeverity = rs.getString("severity");
+                String opText = rs.getString("operator");
+                String opNorm = opText == null ? "" : opText.trim().toUpperCase(Locale.ROOT);
+                boolean rangeMode = "BETWEEN".equals(opNorm) || "OUTSIDE".equals(opNorm);
+                boolean hasSecondThreshold = rs.getObject("threshold2") != null;
+                r.put("severity_display", (!rangeMode && hasSecondThreshold)
+                    ? "ALARM / CRITICAL"
+                    : ((dbSeverity == null || dbSeverity.trim().isEmpty()) ? "ALARM" : dbSeverity.trim().toUpperCase(Locale.ROOT)));
                 r.put("source_token", rs.getString("source_token"));
                 r.put("message_template", rs.getString("message_template"));
                 r.put("enabled", rs.getBoolean("enabled"));
@@ -462,15 +464,14 @@
                     rs.getString("metric_key"),
                     rs.getString("source_token"),
                     rs.getString("target_scope"),
-                    columnTokens
+                    columnTokens,
+                    metricTagTokens
                 ));
                 rows.add(r);
             }
         }
     } catch (Exception e) {
         error = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 %>
 <html>
@@ -486,8 +487,22 @@
         .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
         .b-on { background: #e8f7ec; color: #1b7f3b; border: 1px solid #b9e6c6; }
         .b-off { background: #fff3e0; color: #b45309; border: 1px solid #ffd8a8; }
-        .toolbar { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 6px; align-items: end; }
+        .toolbar { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; align-items: start; }
         .toolbar .full { grid-column: 1 / -1; }
+        .field-group { display: flex; flex-direction: column; gap: 4px; }
+        .field-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #35526b;
+            line-height: 1.2;
+            padding-left: 2px;
+        }
+        .field-help {
+            font-size: 11px;
+            color: #6f8091;
+            line-height: 1.35;
+            padding-left: 2px;
+        }
         .toolbar input, .toolbar select { width: 100%; margin: 0; }
         .toolbar button { margin: 0; }
         .form-actions { display: flex; gap: 6px; }
@@ -499,7 +514,7 @@
             line-height: 1.1;
         }
         .rule-table-wrap {
-            overflow-x: auto;
+            overflow-x: hidden;
             overflow-y: visible;
             margin-top: 12px;
             border: 1px solid #d7e0ea;
@@ -513,9 +528,9 @@
         .rule-table-wrap::-webkit-scrollbar-track { background: #edf3fb; border-radius: 999px; }
         .rule-table-wrap::-webkit-scrollbar-thumb { background: #9cb7d3; border-radius: 999px; }
         .rule-table {
-            width: max-content !important;
-            min-width: 1720px;
-            table-layout: auto !important;
+            width: 100% !important;
+            min-width: 0;
+            table-layout: fixed !important;
             margin-bottom: 0;
             border: none;
             border-radius: 0;
@@ -524,8 +539,27 @@
         .rule-table td {
             font-size: 12px;
             vertical-align: middle;
-            white-space: nowrap;
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
+        .rule-table th:nth-child(1), .rule-table td:nth-child(1) { width: 3%; }
+        .rule-table th:nth-child(2), .rule-table td:nth-child(2) { width: 6%; }
+        .rule-table th:nth-child(3), .rule-table td:nth-child(3) { width: 7%; }
+        .rule-table th:nth-child(4), .rule-table td:nth-child(4) { width: 5%; }
+        .rule-table th:nth-child(5), .rule-table td:nth-child(5) { width: 5%; }
+        .rule-table th:nth-child(6), .rule-table td:nth-child(6) { width: 6%; }
+        .rule-table th:nth-child(7), .rule-table td:nth-child(7) { width: 4%; }
+        .rule-table th:nth-child(8), .rule-table td:nth-child(8) { width: 6%; }
+        .rule-table th:nth-child(9), .rule-table td:nth-child(9) { width: 6%; }
+        .rule-table th:nth-child(10), .rule-table td:nth-child(10) { width: 6%; }
+        .rule-table th:nth-child(11), .rule-table td:nth-child(11) { width: 8%; }
+        .rule-table th:nth-child(12), .rule-table td:nth-child(12) { width: 10%; }
+        .rule-table th:nth-child(13), .rule-table td:nth-child(13) { width: 10%; }
+        .rule-table th:nth-child(14), .rule-table td:nth-child(14) { width: 5%; }
+        .rule-table th:nth-child(15), .rule-table td:nth-child(15) { width: 6%; }
+        .rule-table th:nth-child(16), .rule-table td:nth-child(16) { width: 5%; }
+        .rule-table th:nth-child(17), .rule-table td:nth-child(17) { width: 7%; }
         .act-wrap {
             display: flex;
             gap: 4px;
@@ -540,12 +574,73 @@
         .rule-table tbody tr.pickable:hover { background: #f5f9ff; }
         .rule-table tbody tr.selected { background: #eaf3ff; }
         .is-disabled { opacity: 0.6; }
+        .form-card {
+            margin-top: 14px;
+            margin-bottom: 16px;
+            padding: 16px 18px 18px;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+        .form-title {
+            margin: 0 0 6px 0;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #163047;
+        }
+        .form-subtitle {
+            margin: 0 0 14px 0;
+            font-size: 12px;
+            color: #60758a;
+            line-height: 1.5;
+        }
+        .form-split {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 18px;
+            align-items: start;
+        }
+        .sub-form-card {
+            border: 1px solid #d7e3f0;
+            border-radius: 14px;
+            background: #fff;
+            padding: 14px 16px 16px;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+        }
+        .sub-form-card h3 {
+            margin: 0 0 4px 0;
+            font-size: 16px;
+            color: #163047;
+        }
+        .sub-form-card .mini-help {
+            margin: 0 0 12px 0;
+            font-size: 12px;
+            color: #60758a;
+            line-height: 1.5;
+        }
+        .scope-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 42px;
+            padding: 0 12px;
+            border: 1px solid #d7e3f0;
+            border-radius: 10px;
+            background: #f8fbff;
+            color: #163047;
+            font-weight: 700;
+        }
+        @media (max-width: 1200px) {
+            .form-split {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>🚨 알람 규칙 관리</h2>
+        <h2>🚨 알람 규칙 관리 / 등록</h2>
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/alarm_view.jsp'">알람 목록</button>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
@@ -553,7 +648,7 @@
     </div>
 
     <div class="note-box">
-        알람 규칙을 관리합니다. 표의 행을 클릭하면 상단 입력창에서 수정됩니다.<br>
+        알람 규칙을 등록하고 관리합니다. 표의 행을 클릭하면 상단 입력창에서 수정됩니다.<br>
         2단계 규칙: <b>임계값1=ALARM, 임계값2=CRITICAL</b> 기준으로 판정됩니다. 임계값2를 비우면 단일 임계 규칙입니다.
     </div>
 
@@ -564,57 +659,156 @@
     <div class="err-box"><%= h(error) %></div>
     <% } %>
 
-    <form method="POST" id="ruleForm">
-        <input type="hidden" name="action" id="actionField" value="add">
-        <input type="hidden" name="rule_id" id="ruleIdField" value="">
-        <div class="toolbar">
-            <input id="f_rule_code" name="rule_code" placeholder="규칙 코드 (예: PF_LOW)" required class="mono">
-            <input id="f_rule_name" name="rule_name" placeholder="규칙명" required>
-            <input id="f_category" name="category" placeholder="분류" value="POWER_QUALITY" required class="mono">
-            <input id="f_target_scope" name="target_scope" placeholder="적용범위" value="METER" required class="mono">
-            <select id="f_metric_key" name="metric_key" required class="mono">
-                <option value="">지표키 선택</option>
-                <% for (Map.Entry<String, List<String>> ge : groupedMetricKeys.entrySet()) { %>
-                <% if (ge.getValue() == null || ge.getValue().isEmpty()) continue; %>
-                <optgroup label="<%= h(ge.getKey()) %>">
-                <% for (String mk : ge.getValue()) { %>
-                <option value="<%= h(mk) %>"><%= h(mk) %></option>
-                <% } %>
-                </optgroup>
-                <% } %>
-            </select>
-            <select id="f_operator" name="operator" class="mono">
-                <option value=">=">&gt;=</option>
-                <option value=">">&gt;</option>
-                <option value="<">&lt;</option>
-                <option value="<=">&lt;=</option>
-                <option value="=">=</option>
-                <option value="BETWEEN">BETWEEN</option>
-            </select>
-            <select id="f_severity" name="severity" class="mono">
-                <option value="WARN">WARN</option>
-                <option value="ALARM">ALARM</option>
-                <option value="CRITICAL">CRITICAL</option>
-            </select>
-            <input id="f_threshold1" type="number" step="0.0001" name="threshold1" placeholder="임계값1 (ALARM)">
-            <input id="f_threshold2" type="number" step="0.0001" name="threshold2" placeholder="임계값2 (CRITICAL)">
-            <input id="f_duration_sec" type="number" min="0" name="duration_sec" value="0" placeholder="지속시간(초)">
-            <input id="f_hysteresis" type="number" step="0.0001" name="hysteresis" placeholder="히스테리시스">
-            <input id="f_source_token" name="source_token" placeholder="연결 토큰/태그" class="mono">
-            <input id="f_message_template" name="message_template" placeholder="메시지 템플릿">
-            <input id="f_description" name="description" placeholder="설명" class="full">
-            <div class="full form-actions">
-                <button type="submit" id="submitBtn">규칙 추가</button>
-                <button type="button" id="clearBtn">선택 해제</button>
+    <div class="form-card">
+        <div class="form-split">
+            <div class="sub-form-card">
+                <h3>AI 알람 규칙 입력폼</h3>
+                <p class="mini-help">아날로그 값 기준의 AI 규칙을 등록하거나 목록에서 선택한 AI 규칙을 수정합니다.</p>
+                <form method="POST" id="aiRuleForm">
+                    <input type="hidden" name="action" id="aiActionField" value="add">
+                    <input type="hidden" name="rule_id" id="aiRuleIdField" value="">
+                    <div class="toolbar">
+                        <div class="field-group">
+                            <label class="field-label" for="ai_rule_code">규칙 코드</label>
+                            <input id="ai_rule_code" name="rule_code" placeholder="예: PF_LOW" required class="mono">
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_rule_name">규칙명</label>
+                            <input id="ai_rule_name" name="rule_name" placeholder="규칙명" required>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_category">분류</label>
+                            <input id="ai_category" name="category" placeholder="분류" value="POWER_QUALITY" required class="mono">
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_target_scope">적용범위</label>
+                            <input id="ai_target_scope" name="target_scope" placeholder="적용범위" value="METER" required class="mono">
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_metric_key">지표키</label>
+                            <select id="ai_metric_key" name="metric_key" required class="mono">
+                                <option value="">지표키 선택</option>
+                                <% for (String mk : metricKeys) { %>
+                                <option value="<%= h(mk) %>"><%= h(mk) %></option>
+                                <% } %>
+                            </select>
+                            <div class="field-help">어떤 태그 묶음에 이 규칙을 적용할지 선택합니다.</div>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_source_token">연결 토큰/태그</label>
+                            <input id="ai_source_token" name="source_token" placeholder="비우면 지표키에 연결된 전체 태그 적용" class="mono">
+                            <div class="field-help">특정 태그만 지정할 때만 입력합니다.</div>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_operator">연산자</label>
+                            <select id="ai_operator" name="operator" class="mono">
+                                <option value="<">&lt;  미만</option>
+                                <option value="<=">&lt;= 이하</option>
+                                <option value=">">&gt;  초과</option>
+                                <option value=">=">&gt;= 이상</option>
+                                <option value="=">=  같음</option>
+                                <option value="BETWEEN">BETWEEN 범위</option>
+                                <option value="OUTSIDE">OUTSIDE 범위이탈</option>
+                            </select>
+                            <div class="field-help">보통 저하는 `미만`, 초과는 `초과/이상`, 정상 범위 밖 알람은 `OUTSIDE`를 사용합니다.</div>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_threshold1">임계값1</label>
+                            <input id="ai_threshold1" type="number" step="0.01" name="threshold1" placeholder="ALARM 기준">
+                            <div class="field-help">단일 규칙이면 이 값만 입력합니다.</div>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_threshold2">임계값2</label>
+                            <input id="ai_threshold2" type="number" step="0.01" name="threshold2" placeholder="CRITICAL 기준">
+                            <div class="field-help">더 심한 2단계 알람이 필요할 때만 입력합니다.</div>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="ai_severity">발생 단계</label>
+                            <select id="ai_severity" name="severity" class="mono">
+                                <option value="ALARM">ALARM</option>
+                                <option value="CRITICAL">CRITICAL</option>
+                            </select>
+                            <div class="field-help">단일 단계 규칙에서 ALARM 또는 CRITICAL을 선택합니다. BETWEEN/OUTSIDE도 단일 단계일 때 이 값을 사용합니다. 임계값2가 있으면 자동으로 ALARM/CRITICAL 2단계가 적용됩니다.</div>
+                        </div>
+                        <div class="field-group full">
+                            <label class="field-label" for="ai_message_template">메시지 템플릿</label>
+                            <input id="ai_message_template" name="message_template" value="source=\${source}, value=\${value}, 기준 \${operator} \${t1}" placeholder="source=\${source}, value=\${value}, 기준 \${operator} \${t1}">
+                            <div class="field-help">사용 가능 변수: \${meter_id}, \${rule_code}, \${stage}, \${metric}, \${source}, \${value}, \${operator}, \${t1}, \${t2}</div>
+                        </div>
+                        <div class="field-group full">
+                            <label class="field-label" for="ai_description">설명</label>
+                            <input id="ai_description" name="description" placeholder="설명" class="full">
+                        </div>
+                        <div class="full form-actions">
+                            <button type="submit" id="aiSubmitBtn">AI 규칙 추가</button>
+                            <button type="button" id="aiClearBtn">선택 해제</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="sub-form-card">
+                <h3>DI 알람 규칙 입력폼</h3>
+                <p class="mini-help">디지털 비트 유형 기준의 DI 규칙을 등록하거나 목록에서 선택한 DI 규칙을 수정합니다.</p>
+                <form method="POST" id="diRuleForm">
+                    <input type="hidden" name="action" id="diActionField" value="add">
+                    <input type="hidden" name="rule_id" id="diRuleIdField" value="">
+                    <input type="hidden" name="target_scope" id="di_target_scope" value="PLC">
+                    <input type="hidden" name="operator" id="di_operator" value="=">
+                    <input type="hidden" name="threshold1" id="di_threshold1" value="1">
+                    <input type="hidden" name="threshold2" id="di_threshold2" value="">
+                    <input type="hidden" name="source_token" id="di_source_token" value="">
+                    <div class="toolbar">
+                        <div class="field-group">
+                            <label class="field-label" for="di_rule_code">규칙 코드</label>
+                            <input id="di_rule_code" name="rule_code" placeholder="예: DI_TRIP" required class="mono">
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="di_rule_name">규칙명</label>
+                            <input id="di_rule_name" name="rule_name" placeholder="예: 트립" required>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="di_category">분류</label>
+                            <input id="di_category" name="category" placeholder="분류" value="DI" required class="mono">
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label">적용범위</label>
+                            <div class="scope-pill">PLC</div>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="di_metric_key">DI 유형</label>
+                            <select id="di_metric_key" name="metric_key" required class="mono">
+                                <option value="">DI 유형 선택</option>
+                                <% for (String mk : diMetricKeys) { %>
+                                <option value="<%= h(mk) %>"><%= h(mk) %></option>
+                                <% } %>
+                            </select>
+                            <div class="field-help">TRIP, OCR, OCGR 같은 DI 유형 기준으로 연결합니다.</div>
+                        </div>
+                        <div class="field-group full">
+                            <label class="field-label" for="di_message_template">메시지 템플릿</label>
+                            <input id="di_message_template" name="message_template" value="source=\${tag}, item=\${item}, panel=\${panel}, addr=\${address}, bit=\${bit}" placeholder="source=\${tag}, item=\${item}, panel=\${panel}, addr=\${address}, bit=\${bit}">
+                            <div class="field-help">사용 가능 변수: \${rule_code}, \${metric}, \${source}, \${tag}, \${item}, \${panel}, \${address}, \${bit}, \${point_id}</div>
+                        </div>
+                        <div class="field-group full">
+                            <label class="field-label" for="di_description">설명</label>
+                            <input id="di_description" name="description" placeholder="설명" class="full">
+                        </div>
+                        <div class="full form-actions">
+                            <button type="submit" id="diSubmitBtn">DI 규칙 추가</button>
+                            <button type="button" id="diClearBtn">선택 해제</button>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
-    </form>
+    </div>
 
     <div class="rule-table-wrap">
     <table class="rule-table">
         <thead>
         <tr>
-            <th>규칙 ID</th>
+            <th>No.</th>
             <th>규칙 코드</th>
             <th>규칙명</th>
             <th>분류</th>
@@ -623,9 +817,7 @@
             <th>연산자</th>
             <th>임계값1(ALARM)</th>
             <th>임계값2(CRITICAL)</th>
-            <th>지속시간(초)</th>
-            <th>히스테리시스</th>
-            <th>기본심각도(단일임계)</th>
+            <th>발생 단계</th>
             <th>연결토큰</th>
             <th>실제 판단 입력</th>
             <th>메시지템플릿</th>
@@ -637,9 +829,9 @@
         </thead>
         <tbody>
         <% if (rows.isEmpty()) { %>
-        <tr><td colspan="19">등록된 알람 규칙이 없습니다.</td></tr>
+        <tr><td colspan="17">등록된 알람 규칙이 없습니다.</td></tr>
         <% } else { %>
-        <% for (Map<String, Object> r : rows) { %>
+        <% for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) { Map<String, Object> r = rows.get(rowIdx); %>
         <tr class="pickable"
             data-rule-id="<%= h(r.get("rule_id")) %>"
             data-rule-code="<%= h(r.get("rule_code")) %>"
@@ -650,24 +842,20 @@
             data-operator="<%= h(r.get("operator")) %>"
             data-threshold1="<%= h(r.get("threshold1")) %>"
             data-threshold2="<%= h(r.get("threshold2")) %>"
-            data-duration-sec="<%= h(r.get("duration_sec")) %>"
-            data-hysteresis="<%= h(r.get("hysteresis")) %>"
             data-severity="<%= h(r.get("severity")) %>"
             data-source-token="<%= h(r.get("source_token")) %>"
             data-message-template="<%= h(r.get("message_template")) %>"
             data-description="<%= h(r.get("description")) %>">
-            <td><%= r.get("rule_id") %></td>
+            <td><%= rowIdx + 1 %></td>
             <td class="mono"><%= h(r.get("rule_code")) %></td>
             <td><%= h(r.get("rule_name")) %></td>
             <td class="mono"><%= h(r.get("category")) %></td>
             <td class="mono"><%= h(r.get("target_scope")) %></td>
-            <td class="mono"><%= h(r.get("metric_key")) %></td>
+            <td class="mono"><%= h(r.get("metric_display")) %></td>
             <td class="mono"><%= h(r.get("operator")) %></td>
             <td class="mono"><%= h(r.get("threshold1")) %></td>
             <td class="mono"><%= h(r.get("threshold2")) %></td>
-            <td class="mono"><%= h(r.get("duration_sec")) %></td>
-            <td class="mono"><%= h(r.get("hysteresis")) %></td>
-            <td class="mono"><%= h(r.get("severity")) %></td>
+            <td class="mono"><%= h(r.get("severity_display")) %></td>
             <td class="mono"><%= h(r.get("source_token")) %></td>
             <td class="mono"><%= h(r.get("resolved_input")) %></td>
             <td><%= h(r.get("message_template")) %></td>
@@ -698,71 +886,117 @@
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 <script>
 (function(){
-  const form = document.getElementById('ruleForm');
-  if (!form) return;
+  const aiForm = document.getElementById('aiRuleForm');
+  const diForm = document.getElementById('diRuleForm');
+  if (!aiForm || !diForm) return;
+  const AI_DEFAULT_TEMPLATE = 'source=\\${source}, value=\\${value}, 기준 \\${operator} \\${t1}';
+  const AI_BETWEEN_TEMPLATE = 'source=\\${source}, value=\\${value}, 기준 \\${operator} \\${t1} ~ \\${t2}';
+  const AI_OUTSIDE_TEMPLATE = 'source=\\${source}, value=\\${value}, 기준 \\${t1} ~ \\${t2} 범위 이탈';
+  const DI_DEFAULT_TEMPLATE = 'source=\\${tag}, item=\\${item}, panel=\\${panel}, addr=\\${address}, bit=\\${bit}';
 
-  const actionField = document.getElementById('actionField');
-  const ruleIdField = document.getElementById('ruleIdField');
-  const submitBtn = document.getElementById('submitBtn');
-  const clearBtn = document.getElementById('clearBtn');
-
-  const f = {
-    ruleCode: document.getElementById('f_rule_code'),
-    ruleName: document.getElementById('f_rule_name'),
-    category: document.getElementById('f_category'),
-    targetScope: document.getElementById('f_target_scope'),
-    metricKey: document.getElementById('f_metric_key'),
-    operator: document.getElementById('f_operator'),
-    severity: document.getElementById('f_severity'),
-    threshold1: document.getElementById('f_threshold1'),
-    threshold2: document.getElementById('f_threshold2'),
-    durationSec: document.getElementById('f_duration_sec'),
-    hysteresis: document.getElementById('f_hysteresis'),
-    sourceToken: document.getElementById('f_source_token'),
-    messageTemplate: document.getElementById('f_message_template'),
-    description: document.getElementById('f_description')
+  const ai = {
+    form: aiForm,
+    actionField: document.getElementById('aiActionField'),
+    ruleIdField: document.getElementById('aiRuleIdField'),
+    submitBtn: document.getElementById('aiSubmitBtn'),
+    clearBtn: document.getElementById('aiClearBtn'),
+    fields: {
+      ruleCode: document.getElementById('ai_rule_code'),
+      ruleName: document.getElementById('ai_rule_name'),
+      category: document.getElementById('ai_category'),
+      targetScope: document.getElementById('ai_target_scope'),
+      metricKey: document.getElementById('ai_metric_key'),
+      operator: document.getElementById('ai_operator'),
+      threshold1: document.getElementById('ai_threshold1'),
+      threshold2: document.getElementById('ai_threshold2'),
+      severity: document.getElementById('ai_severity'),
+      sourceToken: document.getElementById('ai_source_token'),
+      messageTemplate: document.getElementById('ai_message_template'),
+      description: document.getElementById('ai_description')
+    }
   };
 
-  function syncSeverityMode() {
-    const dual = f.threshold2.value !== '' && f.threshold2.value !== null;
-    f.severity.disabled = dual;
-    f.severity.classList.toggle('is-disabled', dual);
-    f.severity.title = dual ? '임계값2가 있으면 단계(ALARM/CRITICAL)가 임계값으로 자동 판정됩니다.' : '';
+  const di = {
+    form: diForm,
+    actionField: document.getElementById('diActionField'),
+    ruleIdField: document.getElementById('diRuleIdField'),
+    submitBtn: document.getElementById('diSubmitBtn'),
+    clearBtn: document.getElementById('diClearBtn'),
+    fields: {
+      ruleCode: document.getElementById('di_rule_code'),
+      ruleName: document.getElementById('di_rule_name'),
+      category: document.getElementById('di_category'),
+      targetScope: document.getElementById('di_target_scope'),
+      metricKey: document.getElementById('di_metric_key'),
+      operator: document.getElementById('di_operator'),
+      threshold1: document.getElementById('di_threshold1'),
+      threshold2: document.getElementById('di_threshold2'),
+      sourceToken: document.getElementById('di_source_token'),
+      messageTemplate: document.getElementById('di_message_template'),
+      description: document.getElementById('di_description')
+    }
+  };
+
+  function clearSelectedRows() {
+    document.querySelectorAll('.rule-table tbody tr.selected').forEach(tr => tr.classList.remove('selected'));
   }
 
-  function setAddMode() {
-    actionField.value = 'add';
-    ruleIdField.value = '';
-    submitBtn.textContent = '규칙 추가';
-    f.ruleCode.readOnly = false;
-    document.querySelectorAll('.rule-table tbody tr.selected').forEach(tr => tr.classList.remove('selected'));
-    syncSeverityMode();
+  function setAddMode(ctx) {
+    ctx.actionField.value = 'add';
+    ctx.ruleIdField.value = '';
+    ctx.submitBtn.textContent = (ctx === di) ? 'DI 규칙 추가' : 'AI 규칙 추가';
+    ctx.fields.ruleCode.readOnly = false;
+    if (ctx === ai && ctx.fields.messageTemplate) ctx.fields.messageTemplate.dataset.autoTemplate = '1';
+    clearSelectedRows();
+  }
+
+  function normalizeAiTemplateByOperator(force){
+    const operator = ai.fields.operator.value || '';
+    const current = (ai.fields.messageTemplate.value || '').trim();
+    const autoTemplate = ai.fields.messageTemplate.dataset.autoTemplate === '1';
+    const isDefaultLike = !current || current === AI_DEFAULT_TEMPLATE || current === AI_BETWEEN_TEMPLATE || current === AI_OUTSIDE_TEMPLATE;
+    const needsRangeUpgrade = (operator === 'BETWEEN' || operator === 'OUTSIDE') && current.indexOf('${t2}') < 0;
+    if (!force && !autoTemplate && !isDefaultLike && !needsRangeUpgrade) return;
+    if (operator === 'BETWEEN') {
+      ai.fields.messageTemplate.value = AI_BETWEEN_TEMPLATE;
+    } else if (operator === 'OUTSIDE') {
+      ai.fields.messageTemplate.value = AI_OUTSIDE_TEMPLATE;
+    } else {
+      ai.fields.messageTemplate.value = AI_DEFAULT_TEMPLATE;
+    }
+    ai.fields.messageTemplate.dataset.autoTemplate = '1';
   }
 
   function setUpdateModeFromRow(tr) {
-    actionField.value = 'update';
-    ruleIdField.value = tr.dataset.ruleId || '';
-    submitBtn.textContent = '선택 규칙 수정';
+    const scope = (tr.dataset.targetScope || '').toUpperCase();
+    const ctx = (scope === 'PLC') ? di : ai;
+    ctx.actionField.value = 'update';
+    ctx.ruleIdField.value = tr.dataset.ruleId || '';
+    ctx.submitBtn.textContent = (ctx === di) ? '선택 DI 규칙 수정' : '선택 AI 규칙 수정';
 
-    f.ruleCode.value = tr.dataset.ruleCode || '';
-    f.ruleCode.readOnly = true;
-    f.ruleName.value = tr.dataset.ruleName || '';
-    f.category.value = tr.dataset.category || '';
-    f.targetScope.value = tr.dataset.targetScope || '';
-    f.metricKey.value = tr.dataset.metricKey || '';
-    f.operator.value = tr.dataset.operator || '>=';
-    f.severity.value = tr.dataset.severity || 'WARN';
-    f.threshold1.value = tr.dataset.threshold1 || '';
-    f.threshold2.value = tr.dataset.threshold2 || '';
-    f.durationSec.value = tr.dataset.durationSec || '0';
-    f.hysteresis.value = tr.dataset.hysteresis || '';
-    f.sourceToken.value = tr.dataset.sourceToken || '';
-    f.messageTemplate.value = tr.dataset.messageTemplate || '';
-    f.description.value = tr.dataset.description || '';
+    ctx.fields.ruleCode.value = tr.dataset.ruleCode || '';
+    ctx.fields.ruleCode.readOnly = true;
+    ctx.fields.ruleName.value = tr.dataset.ruleName || '';
+    ctx.fields.category.value = tr.dataset.category || '';
+    ctx.fields.targetScope.value = tr.dataset.targetScope || ((ctx === di) ? 'PLC' : 'METER');
+    ctx.fields.metricKey.value = tr.dataset.metricKey || '';
+    if (ctx.fields.operator) ctx.fields.operator.value = tr.dataset.operator || ((ctx === di) ? '=' : '>=');
+    if (ctx.fields.threshold1) ctx.fields.threshold1.value = tr.dataset.threshold1 || ((ctx === di) ? '1' : '');
+    if (ctx.fields.threshold2) ctx.fields.threshold2.value = tr.dataset.threshold2 || '';
+    if (ctx.fields.severity) ctx.fields.severity.value = tr.dataset.severity || 'ALARM';
+    if (ctx.fields.sourceToken) ctx.fields.sourceToken.value = tr.dataset.sourceToken || '';
+    if (ctx.fields.messageTemplate) ctx.fields.messageTemplate.value = tr.dataset.messageTemplate || ((ctx === di) ? DI_DEFAULT_TEMPLATE : AI_DEFAULT_TEMPLATE);
+    ctx.fields.description.value = tr.dataset.description || '';
+    if (ctx === ai) {
+      const mt = (tr.dataset.messageTemplate || '').trim();
+      const isAutoLike = !mt || mt === AI_DEFAULT_TEMPLATE || mt === AI_BETWEEN_TEMPLATE || mt === AI_OUTSIDE_TEMPLATE || mt.indexOf('${t2}') < 0;
+      ctx.fields.messageTemplate.dataset.autoTemplate = isAutoLike ? '1' : '0';
+      normalizeAiTemplateByOperator(false);
+    }
 
-    document.querySelectorAll('.rule-table tbody tr.selected').forEach(x => x.classList.remove('selected'));
+    clearSelectedRows();
     tr.classList.add('selected');
-    syncSeverityMode();
+    syncAiSeverityUi();
   }
 
   document.querySelectorAll('.rule-table tbody tr.pickable').forEach(function(tr){
@@ -772,15 +1006,54 @@
     });
   });
 
-  f.threshold2.addEventListener('input', syncSeverityMode);
-
-  clearBtn.addEventListener('click', function(){
-    form.reset();
-    setAddMode();
+  ai.clearBtn.addEventListener('click', function(){
+    ai.form.reset();
+    ai.fields.targetScope.value = 'METER';
+    ai.fields.category.value = 'POWER_QUALITY';
+    ai.fields.messageTemplate.dataset.autoTemplate = '1';
+    normalizeAiTemplateByOperator(true);
+    syncAiSeverityUi();
+    ai.fields.severity.value = 'ALARM';
+    setAddMode(ai);
   });
 
-  setAddMode();
+  di.clearBtn.addEventListener('click', function(){
+    di.form.reset();
+    di.fields.targetScope.value = 'PLC';
+    di.fields.operator.value = '=';
+    di.fields.threshold1.value = '1';
+    di.fields.threshold2.value = '';
+    di.fields.sourceToken.value = '';
+    di.fields.messageTemplate.value = DI_DEFAULT_TEMPLATE;
+    di.fields.category.value = 'DI';
+    setAddMode(di);
+  });
+
+  ai.fields.operator.addEventListener('change', function(){
+    normalizeAiTemplateByOperator(false);
+  });
+
+  ai.fields.messageTemplate.addEventListener('input', function(){
+    ai.fields.messageTemplate.dataset.autoTemplate = '0';
+  });
+
+  function syncAiSeverityUi(){
+    const hasThreshold2 = !!((ai.fields.threshold2.value || '').trim());
+    ai.fields.severity.disabled = hasThreshold2;
+  }
+
+  ai.fields.threshold2.addEventListener('input', syncAiSeverityUi);
+  ai.fields.threshold2.addEventListener('change', syncAiSeverityUi);
+
+  setAddMode(ai);
+  setAddMode(di);
+  ai.fields.messageTemplate.dataset.autoTemplate = '1';
+  normalizeAiTemplateByOperator(false);
+  syncAiSeverityUi();
 })();
 </script>
+<%
+    }
+%>
 </body>
 </html>

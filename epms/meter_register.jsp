@@ -2,7 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ page import="java.net.URLEncoder" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
 <%!
@@ -116,6 +116,7 @@
     }
 %>
 <%
+try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
     String message = request.getParameter("msg");
@@ -246,8 +247,6 @@
         }
     } catch (Exception e) {
         error = "조회 실패: " + e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 %>
 <html>
@@ -468,5 +467,8 @@
     }
 })();
 </script>
+<%
+} // end try-with-resources
+%>
 </body>
 </html>

@@ -1,7 +1,7 @@
 ﻿<%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
 <%@ include file="../includes/epms_json.jspf" %>
@@ -14,6 +14,7 @@
 
 %>
 <%
+  try (Connection conn = openDbConnection()) {
   String meterParam = request.getParameter("meter");
   String ajax = request.getParameter("ajax");
   boolean isAjax = "1".equals(ajax);
@@ -99,10 +100,7 @@
     responseOk = false;
     responseError = e.getMessage();
     e.printStackTrace();
-  } finally {
-    try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
   }
-
   StringBuilder phasorJson = new StringBuilder("{");
   phasorJson.append("\"ok\":").append(responseOk ? "true" : "false").append(",");
   if (!responseOk) {
@@ -1060,4 +1058,7 @@
 </script>
 </body>
 </html>
+<%
+  } // end try-with-resources
+%>
 

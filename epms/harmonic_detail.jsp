@@ -1,9 +1,10 @@
 ﻿<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.Locale" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 
 <%
+    try (Connection conn = openDbConnection()) {
     String harmonicId = request.getParameter("harmonic_id");
     String mode = request.getParameter("mode");
     if (mode == null || mode.trim().isEmpty()) mode = "current";
@@ -305,5 +306,8 @@
     chartInstances.forEach(c => c.resize());
   });
 </script>
+<%
+    }
+%>
 </body>
 </html>

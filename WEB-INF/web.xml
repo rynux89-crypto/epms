@@ -27,4 +27,14 @@
      Welcome to Tomcat
   </description>
 
+  <servlet>
+    <servlet-name>AlarmApiServlet</servlet-name>
+    <servlet-class>epms.alarm.AlarmApiServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AlarmApiServlet</servlet-name>
+    <url-pattern>/api/alarm</url-pattern>
+  </servlet-mapping>
+
 </web-app>

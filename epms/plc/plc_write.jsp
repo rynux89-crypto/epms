@@ -652,7 +652,8 @@ private static DiWriteData writeDi10Pct(int plcId, PlcConfig cfg) throws Excepti
             for (Map<String,Object> s : pts) {
                 int pointId=((Number)s.get("point_id")).intValue(), bitNo=((Number)s.get("bit_no")).intValue();
                 String tagName=String.valueOf(s.get("tag_name")==null?"":s.get("tag_name")), itemName=String.valueOf(s.get("item_name")==null?"":s.get("item_name")), panelName=String.valueOf(s.get("panel_name")==null?"":s.get("panel_name"));
-                int bitVal = (bitNo >= 0 && bitNo <= 15) ? (((word >> bitNo) & 0x1) == 1 ? 1 : 0) : 0;
+                int plcBitNo = (bitNo >= 1 && bitNo <= 16) ? (bitNo - 1) : bitNo;
+                int bitVal = (plcBitNo >= 0 && plcBitNo <= 15) ? (((word >> plcBitNo) & 0x1) == 1 ? 1 : 0) : 0;
                 Map<String,Object> row=new HashMap<>(); row.put("idx",seq++); row.put("point_id",pointId); row.put("di_address",addr); row.put("bit_no",bitNo); row.put("tag_name",tagName); row.put("item_name",itemName); row.put("panel_name",panelName); row.put("value",bitVal); row.put("changed",changed?1:0); out.add(row);
             }
         }

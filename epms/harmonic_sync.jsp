@@ -1,8 +1,9 @@
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%
+    try (Connection conn = openDbConnection()) {
     String message = null;
     String error = null;
     int pendingCount = 0;
@@ -158,8 +159,6 @@
         }
     } catch (Exception e) {
         error = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 %>
 <html>
@@ -241,3 +240,6 @@
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
+<%
+    } // end try-with-resources
+%>

@@ -1,7 +1,8 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
 <%@ page import="java.sql.*, java.util.*" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%
+try (Connection conn = openDbConnection()) {
     //request.setCharacterEncoding("UTF-8");
 
     // meter_id는 문자열
@@ -9,8 +10,6 @@
     boolean hasMeterId = (meterId != null && !meterId.trim().isEmpty());
     boolean hasData    = false;   // 실제 측정 데이터 존재 여부
     
-    ResultSet rsMeter = null;
-    ResultSet rsMeasurements = null;
     int selectedIndex = -1;
 
     if (meterId != null && !meterId.isEmpty()) {
@@ -31,11 +30,11 @@
             "   OR UPPER(COALESCE(panel_name, '')) LIKE '%VCB%' " +
             "   OR UPPER(COALESCE(panel_name, '')) LIKE '%ACB%' " +
             "ORDER BY meter_id")) {
-        ResultSet rsOpt = psOpt.executeQuery();
-        while(rsOpt.next()) {
-            meterOptions.add(new String[]{ rsOpt.getString("meter_id"), rsOpt.getString("name") });
+        try (ResultSet rsOpt = psOpt.executeQuery()) {
+            while(rsOpt.next()) {
+                meterOptions.add(new String[]{ rsOpt.getString("meter_id"), rsOpt.getString("name") });
+            }
         }
-        rsOpt.close();
     } catch(Exception e) { out.println("옵션 조회 오류: " + e.getMessage()); }
 
     // 선택된 인덱스로 meter_id, meter_name 결정
@@ -128,55 +127,54 @@
                 "WHERE meter_id = ? " +
                 "ORDER BY measured_at DESC";
 
-            PreparedStatement ps = conn.prepareStatement(sqlMeas);
-            ps.setString(1, meterId);
-            ResultSet rs = ps.executeQuery();
+            try (PreparedStatement ps = conn.prepareStatement(sqlMeas)) {
+                ps.setString(1, meterId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        hasData = true;
 
-            if (rs.next()) {
-                hasData = true;
+                        meterName    = rs.getString("meter_name");
+                        panelName    = rs.getString("panel_name");
+                        buildingName = rs.getString("building_name");
+                        usageType    = rs.getString("usage_type");
 
-                meterName    = rs.getString("meter_name");
-                panelName    = rs.getString("panel_name");
-                buildingName = rs.getString("building_name");
-                usageType    = rs.getString("usage_type");
+                        measuredAt   = rs.getTimestamp("measured_at");
 
-                measuredAt   = rs.getTimestamp("measured_at");
+                        voltage_ab   = rs.getDouble("voltage_ab");
+                        voltage_bc   = rs.getDouble("voltage_bc");
+                        voltage_ca   = rs.getDouble("voltage_ca");
+                        voltage_an   = rs.getDouble("voltage_an");
+                        voltage_bn   = rs.getDouble("voltage_bn");
+                        voltage_cn   = rs.getDouble("voltage_cn");
 
-                voltage_ab   = rs.getDouble("voltage_ab");
-                voltage_bc   = rs.getDouble("voltage_bc");
-                voltage_ca   = rs.getDouble("voltage_ca");
-                voltage_an   = rs.getDouble("voltage_an");
-                voltage_bn   = rs.getDouble("voltage_bn");
-                voltage_cn   = rs.getDouble("voltage_cn");
+                        current_a    = rs.getDouble("current_a");
+                        current_b    = rs.getDouble("current_b");
+                        current_c    = rs.getDouble("current_c");
+                        current_n    = rs.getDouble("current_n");
 
-                current_a    = rs.getDouble("current_a");
-                current_b    = rs.getDouble("current_b");
-                current_c    = rs.getDouble("current_c");
-                current_n    = rs.getDouble("current_n");
+                        average_voltage = rs.getDouble("average_voltage");
+                        average_current = rs.getDouble("average_current");
+                        phase_voltage_avg = (voltage_an + voltage_bn + voltage_cn) / 3.0;
+                        line_voltage_avg  = (voltage_ab + voltage_bc + voltage_ca) / 3.0;
 
-                average_voltage = rs.getDouble("average_voltage");
-                average_current = rs.getDouble("average_current");
-                phase_voltage_avg = (voltage_an + voltage_bn + voltage_cn) / 3.0;
-                line_voltage_avg  = (voltage_ab + voltage_bc + voltage_ca) / 3.0;
+                        frequency    = rs.getDouble("frequency");
+                        power_factor_a = rs.getDouble("power_factor_a");
+                        power_factor_b = rs.getDouble("power_factor_b");
+                        power_factor_c = rs.getDouble("power_factor_c");
 
-                frequency    = rs.getDouble("frequency");
-                power_factor_a = rs.getDouble("power_factor_a");
-                power_factor_b = rs.getDouble("power_factor_b");
-                power_factor_c = rs.getDouble("power_factor_c");
+                        active_power_total   = rs.getDouble("active_power_total");
+                        reactive_power_total = rs.getDouble("reactive_power_total");
+                        apparent_power_total = rs.getDouble("apparent_power_total");
 
-                active_power_total   = rs.getDouble("active_power_total");
-                reactive_power_total = rs.getDouble("reactive_power_total");
-                apparent_power_total = rs.getDouble("apparent_power_total");
+                        energy_consumed_total = rs.getDouble("energy_consumed_total");
+                        energy_generated_total = rs.getDouble("energy_generated_total");
 
-                energy_consumed_total = rs.getDouble("energy_consumed_total");
-                energy_generated_total = rs.getDouble("energy_generated_total");
-
-                voltage_unbalance_rate   = rs.getDouble("voltage_unbalance_rate");
-                harmonic_distortion_rate = rs.getDouble("harmonic_distortion_rate");
-                quality_status           = rs.getString("quality_status");
+                        voltage_unbalance_rate   = rs.getDouble("voltage_unbalance_rate");
+                        harmonic_distortion_rate = rs.getDouble("harmonic_distortion_rate");
+                        quality_status           = rs.getString("quality_status");
+                    }
+                }
             }
-            rs.close();
-            ps.close();
 
             // 데이터가 하나도 없으면 나머지 쿼리는 굳이 안 해도 되지만
             // 그래도 meter_id 기준으로 고조파/플리커/이벤트는 있을 수 있으니 계속 진행
@@ -193,34 +191,34 @@
                 "WHERE meter_id = ? " +
                 "ORDER BY measured_at DESC";
 
-            ps = conn.prepareStatement(sqlHarm);
-            ps.setString(1, meterId);
-            rs = ps.executeQuery();
-            if (rs.next()) {
-                thd_voltage_a = rs.getDouble("thd_voltage_a");
-                thd_voltage_b = rs.getDouble("thd_voltage_b");
-                thd_voltage_c = rs.getDouble("thd_voltage_c");
+            try (PreparedStatement ps = conn.prepareStatement(sqlHarm)) {
+                ps.setString(1, meterId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        thd_voltage_a = rs.getDouble("thd_voltage_a");
+                        thd_voltage_b = rs.getDouble("thd_voltage_b");
+                        thd_voltage_c = rs.getDouble("thd_voltage_c");
 
-                voltage_h3_a = rs.getDouble("voltage_h3_a");
-                voltage_h5_a = rs.getDouble("voltage_h5_a");
-                voltage_h7_a = rs.getDouble("voltage_h7_a");
-                voltage_h9_a = rs.getDouble("voltage_h9_a");
-                voltage_h11_a = rs.getDouble("voltage_h11_a");
+                        voltage_h3_a = rs.getDouble("voltage_h3_a");
+                        voltage_h5_a = rs.getDouble("voltage_h5_a");
+                        voltage_h7_a = rs.getDouble("voltage_h7_a");
+                        voltage_h9_a = rs.getDouble("voltage_h9_a");
+                        voltage_h11_a = rs.getDouble("voltage_h11_a");
 
-                voltage_h3_b = rs.getDouble("voltage_h3_b");
-                voltage_h5_b = rs.getDouble("voltage_h5_b");
-                voltage_h7_b = rs.getDouble("voltage_h7_b");
-                voltage_h9_b = rs.getDouble("voltage_h9_b");
-                voltage_h11_b = rs.getDouble("voltage_h11_b");
+                        voltage_h3_b = rs.getDouble("voltage_h3_b");
+                        voltage_h5_b = rs.getDouble("voltage_h5_b");
+                        voltage_h7_b = rs.getDouble("voltage_h7_b");
+                        voltage_h9_b = rs.getDouble("voltage_h9_b");
+                        voltage_h11_b = rs.getDouble("voltage_h11_b");
 
-                voltage_h3_c = rs.getDouble("voltage_h3_c");
-                voltage_h5_c = rs.getDouble("voltage_h5_c");
-                voltage_h7_c = rs.getDouble("voltage_h7_c");
-                voltage_h9_c = rs.getDouble("voltage_h9_c");
-                voltage_h11_c = rs.getDouble("voltage_h11_c");
+                        voltage_h3_c = rs.getDouble("voltage_h3_c");
+                        voltage_h5_c = rs.getDouble("voltage_h5_c");
+                        voltage_h7_c = rs.getDouble("voltage_h7_c");
+                        voltage_h9_c = rs.getDouble("voltage_h9_c");
+                        voltage_h11_c = rs.getDouble("voltage_h11_c");
+                    }
+                }
             }
-            rs.close();
-            ps.close();
 
             // 3) 최신 플리커: vw_flicker_with_meter
             String sqlFlicker =
@@ -229,15 +227,15 @@
                 "WHERE meter_id = ? " +
                 "ORDER BY measured_at DESC";
 
-            ps = conn.prepareStatement(sqlFlicker);
-            ps.setString(1, meterId);
-            rs = ps.executeQuery();
-            if (rs.next()) {
-                flicker_pst = rs.getDouble("flicker_pst");
-                flicker_plt = rs.getDouble("flicker_plt");
+            try (PreparedStatement ps = conn.prepareStatement(sqlFlicker)) {
+                ps.setString(1, meterId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        flicker_pst = rs.getDouble("flicker_pst");
+                        flicker_plt = rs.getDouble("flicker_plt");
+                    }
+                }
             }
-            rs.close();
-            ps.close();
 
             // 4) 최근 7일 전압 이벤트 집계: vw_voltage_event_log
             String sqlVoltEvent =
@@ -247,22 +245,22 @@
                 "  AND triggered_at >= DATEADD(DAY, -7, GETDATE()) " +
                 "GROUP BY event_type";
 
-            ps = conn.prepareStatement(sqlVoltEvent);
-            ps.setString(1, meterId);
-            rs = ps.executeQuery();
-            while (rs.next()) {
-                String etype = rs.getString("event_type");
-                int cnt = rs.getInt("cnt");
-                if ("sag".equalsIgnoreCase(etype)) {
-                    sagCount += cnt;
-                } else if ("swell".equalsIgnoreCase(etype)) {
-                    swellCount += cnt;
-                } else {
-                    otherVoltageEvents += cnt;
+            try (PreparedStatement ps = conn.prepareStatement(sqlVoltEvent)) {
+                ps.setString(1, meterId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String etype = rs.getString("event_type");
+                        int cnt = rs.getInt("cnt");
+                        if ("sag".equalsIgnoreCase(etype)) {
+                            sagCount += cnt;
+                        } else if ("swell".equalsIgnoreCase(etype)) {
+                            swellCount += cnt;
+                        } else {
+                            otherVoltageEvents += cnt;
+                        }
+                    }
                 }
             }
-            rs.close();
-            ps.close();
 
             // 5) 최근 7일 알람 건수: vw_alarm_log
             String sqlAlarm =
@@ -271,19 +269,17 @@
                 "WHERE meter_id = ? " +
                 "  AND triggered_at >= DATEADD(DAY, -7, GETDATE())";
 
-            ps = conn.prepareStatement(sqlAlarm);
-            ps.setString(1, meterId);
-            rs = ps.executeQuery();
-            if (rs.next()) {
-                totalAlarms = rs.getInt("cnt");
+            try (PreparedStatement ps = conn.prepareStatement(sqlAlarm)) {
+                ps.setString(1, meterId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        totalAlarms = rs.getInt("cnt");
+                    }
+                }
             }
-            rs.close();
-            ps.close();
         }
     } catch (Exception e) {
         e.printStackTrace();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ex) {}
     }
 
     String measuredAtStr = (measuredAt != null ? measuredAt.toString() : "-");
@@ -707,6 +703,7 @@
   </script>
   <%
       } // end if (hasMeterId && hasData)
+  } // end try-with-resources
   %>
   </div>
 </body>

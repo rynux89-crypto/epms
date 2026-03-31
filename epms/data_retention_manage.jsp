@@ -2,7 +2,7 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.time.*" %>
 <%@ page import="java.util.*" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%!
     private static class DataRetentionRequest {
@@ -167,6 +167,7 @@
     }
 %>
 <%
+    try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
     DataRetentionRequest req = buildDataRetentionRequest(request);
@@ -221,8 +222,6 @@
         } else {
             result.errorMsg = e.getMessage();
         }
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 %>
 <!doctype html>
@@ -362,3 +361,6 @@
 </script>
 </body>
 </html>
+<%
+    } // end try-with-resources
+%>

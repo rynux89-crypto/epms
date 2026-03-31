@@ -153,8 +153,69 @@ private epms.util.AgentSupport.RuntimeConfig loadAgentRuntimeConfig(javax.servle
     return epms.util.AgentSupport.loadAgentRuntimeConfig(app, DEFAULT_SCHEMA_CACHE_TTL_MS);
 }
 
+private String resolveSpecializedModel(javax.servlet.ServletContext app, String propertyName, String envName, String fallbackModel) {
+    Properties modelConfig = loadAgentModelConfig(app);
+    String configured = trimToNull(modelConfig.getProperty(propertyName));
+    if (configured != null) return configured;
+    String envValue = trimToNull(System.getenv(envName));
+    if (envValue != null) return envValue;
+    return fallbackModel;
+}
+
 private epms.util.AgentSupport.HttpResponse callOllamaEndpoint(String url, String method, String payload, int connectTimeoutMs, int readTimeoutMs) throws Exception {
     return epms.util.AgentSupport.callOllamaEndpoint(url, method, payload, connectTimeoutMs, readTimeoutMs);
+}
+
+private String routeFinalModel(String userMessage, String defaultModel, String aiModel, String pqModel, String alarmModel) {
+    return epms.util.AgentModelRouter.routeModel(userMessage, defaultModel, aiModel, pqModel, alarmModel);
+}
+
+private boolean isAiDesignIntent(String userMessage) {
+    if (userMessage == null) return false;
+    String normalized = userMessage.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
+    boolean hasAiRoute = epms.util.AgentModelRouter.detectRoute(userMessage) == epms.util.AgentModelRouter.Route.AI;
+    boolean hasDesignIntent =
+        normalized.contains("모델설계") ||
+        normalized.contains("설계하려고") ||
+        normalized.contains("설계하고") ||
+        normalized.contains("추천모델") ||
+        normalized.contains("평가지표") ||
+        normalized.contains("학습방법") ||
+        normalized.contains("이상탐지") ||
+        normalized.contains("예지보전") ||
+        normalized.contains("고장예측") ||
+        normalized.contains("loadforecasting") ||
+        normalized.contains("anomalydetection") ||
+        normalized.contains("predictivemaintenance");
+    return hasAiRoute && hasDesignIntent;
+}
+
+private boolean isBareEnergyValueQuestion(String userMessage) {
+    if (userMessage == null) return false;
+    String normalized = userMessage.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
+    boolean asksEnergy =
+        normalized.contains("전력량") || normalized.contains("사용량") || normalized.contains("energy") || normalized.contains("kwh");
+    boolean asksCurrent =
+        normalized.contains("현재") || normalized.contains("지금") || normalized.contains("latest") || normalized.contains("now");
+    boolean hasTarget =
+        extractMeterId(userMessage) != null
+        || trimToNull(extractMeterNameToken(userMessage)) != null
+        || (extractPanelTokens(userMessage) != null && !extractPanelTokens(userMessage).isEmpty())
+        || normalized.contains("계측기")
+        || normalized.contains("미터")
+        || normalized.contains("meter")
+        || normalized.contains("패널")
+        || normalized.contains("panel")
+        || normalized.contains("구역")
+        || normalized.contains("동")
+        || normalized.contains("라인")
+        || normalized.contains("vcb")
+        || normalized.contains("acb")
+        || normalized.contains("mdb");
+    boolean hasPeriod =
+        extractTimeWindow(userMessage) != null
+        || extractMonth(userMessage) != null;
+    return asksEnergy && asksCurrent && !hasTarget && !hasPeriod;
 }
 
 private String fetchOllamaTagList(String ollamaUrl, int connectTimeoutMs, int readTimeoutMs) throws Exception {
@@ -264,6 +325,9 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
     if (directPfStandard) {
         result.dbContext = "[PF standard] IEEE";
         result.answer = buildPowerFactorStandardDirectAnswer(userMessage);
+    } else if (isBareEnergyValueQuestion(userMessage)) {
+        result.dbContext = "[Energy value] target required";
+        result.answer = "전력량을 조회할 대상이 필요합니다. 예: 1번 계측기의 현재 전력량은?, EAST_VCB_MAIN의 현재 전력량은?";
     } else if (directScopedMonthlyEnergyIntent) {
         result.dbContext = getScopedMonthlyEnergyContext(directMeterScopeToken, directMonth);
         result.answer = buildScopedMonthlyEnergyDirectAnswer(result.dbContext);
@@ -1640,6 +1704,13 @@ private boolean routedWantsHarmonicSummary(String userMessage) {
 }
 
 private boolean routedWantsMeterListSummary(String userMessage) {
+    if (userMessage != null) {
+        String normalized = userMessage.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
+        if (normalized.contains("고조파") || normalized.contains("harmonic") || normalized.contains("thd")
+            || normalized.contains("왜형률") || normalized.contains("허형율")) {
+            return false;
+        }
+    }
     Boolean delegated = invokeAgentQueryRouterBoolean("wantsMeterListSummary", userMessage);
     return delegated != null ? delegated.booleanValue() : false;
 }
@@ -2034,8 +2105,7 @@ private boolean localWantsScopedMonthlyEnergySummary(String userMessage) {
         m.contains("전력사용량") || m.contains("사용전력") || m.contains("전력량") || m.contains("사용량")
         || m.contains("kwh") || m.contains("energy");
     boolean hasTotal =
-        m.contains("전체") || m.contains("총") || m.contains("합계") || m.contains("누적")
-        || m.endsWith("은?") || m.endsWith("는?") || m.endsWith("?");
+        m.contains("전체") || m.contains("총") || m.contains("합계") || m.contains("누적");
     boolean hasMeterHint =
         extractMeterId(userMessage) != null
         || trimToNull(extractMeterNameToken(userMessage)) != null;
@@ -7126,8 +7196,13 @@ userMessage = parsedQuery.userMessage;
 boolean forceLlmOnly = parsedQuery.mode == epms.util.AgentQueryRouter.Mode.LLM_ONLY;
 boolean forceRuleOnly = parsedQuery.mode == epms.util.AgentQueryRouter.Mode.RULE_ONLY;
 boolean preferNarrativeLlm = (parsedQuery.prefersNarrativeLlm || localPrefersNarrativeLlm(userMessage)) && !forceLlmOnly && !forceRuleOnly;
+boolean forceAiNarrative = isAiDesignIntent(userMessage) && !forceLlmOnly && !forceRuleOnly;
 boolean bypassDirect = shouldBypassDirect(forceLlmOnly, preferNarrativeLlm);
 boolean bypassSpecialized = shouldBypassSpecialized(forceLlmOnly, preferNarrativeLlm);
+if (forceAiNarrative) {
+    bypassDirect = true;
+    bypassSpecialized = true;
+}
 
 boolean isAdmin = isAdminRequest(request, application);
 
@@ -7162,6 +7237,9 @@ epms.util.AgentSupport.RuntimeConfig runtimeConfig = loadAgentRuntimeConfig(appl
 String ollamaUrl = runtimeConfig.ollamaUrl;
 String model = runtimeConfig.model;
 String coderModel = runtimeConfig.coderModel;
+String aiModel = resolveSpecializedModel(application, "ai_model", "OLLAMA_MODEL_AI", model);
+String pqModel = resolveSpecializedModel(application, "pq_model", "OLLAMA_MODEL_PQ", model);
+String alarmModel = resolveSpecializedModel(application, "alarm_model", "OLLAMA_MODEL_ALARM", model);
 int ollamaConnectTimeoutMs = runtimeConfig.ollamaConnectTimeoutMs;
 int ollamaReadTimeoutMs = runtimeConfig.ollamaReadTimeoutMs;
 applySchemaCacheTtl(runtimeConfig.schemaCacheTtlMs);
@@ -7179,6 +7257,18 @@ try {
             writeErrorJson(out, response, 400, "Model not found: " + coderModel);
             return;
         }
+        if (aiModel != null && !aiModel.isEmpty() && !modelExistsInTagList(listStr, aiModel)) {
+            writeErrorJson(out, response, 400, "Model not found: " + aiModel);
+            return;
+        }
+        if (pqModel != null && !pqModel.isEmpty() && !modelExistsInTagList(listStr, pqModel)) {
+            writeErrorJson(out, response, 400, "Model not found: " + pqModel);
+            return;
+        }
+        if (alarmModel != null && !alarmModel.isEmpty() && !modelExistsInTagList(listStr, alarmModel)) {
+            writeErrorJson(out, response, 400, "Model not found: " + alarmModel);
+            return;
+        }
     } catch (Exception e) {
         writeErrorJson(out, response, 502, "Cannot reach Ollama");
         return;
@@ -7186,27 +7276,43 @@ try {
 
     AgentRequestContext reqCtx = buildAgentRequestContext(userMessage);
     AgentExecutionContext execCtx = buildExecutionContext(userMessage, reqCtx, model, coderModel);
+    if (forceAiNarrative) {
+        execCtx.needsMeter = false;
+        execCtx.needsAlarm = false;
+        execCtx.needsFrequency = false;
+        execCtx.needsPerMeterPower = false;
+        execCtx.needsMeterList = false;
+        execCtx.needsPhaseCurrent = false;
+        execCtx.needsPhaseVoltage = false;
+        execCtx.needsLineVoltage = false;
+        execCtx.needsHarmonic = false;
+        execCtx.needsDb = false;
+    }
     String schemaContext = getSchemaContextCached();
 
     // Stage 1: qwen2.5:14b classifies whether DB lookup is required.
-    String classifierPrompt =
-        "Classify if EPMS DB lookup is needed. " +
-        "Return only one JSON object with keys: needs_db(boolean), needs_meter(boolean), needs_alarm(boolean), needs_frequency(boolean), needs_power_by_meter(boolean), needs_meter_list(boolean), needs_phase_current(boolean), needs_phase_voltage(boolean), needs_line_voltage(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null), meter_scope(string|null), phase(string|null), line_pair(string|null). " +
-        "No markdown. No explanation.\n\nUser: " + userMessage;
-    String classifierRaw = callOllamaOnce(ollamaUrl, model, classifierPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
+    String classifierRaw = "{}";
+    if (!forceAiNarrative) {
+        String classifierPrompt =
+            "Classify if EPMS DB lookup is needed. " +
+            "Return only one JSON object with keys: needs_db(boolean), needs_meter(boolean), needs_alarm(boolean), needs_frequency(boolean), needs_power_by_meter(boolean), needs_meter_list(boolean), needs_phase_current(boolean), needs_phase_voltage(boolean), needs_line_voltage(boolean), needs_harmonic(boolean), meter_id(number|null), month(number|null), panel(string|null), meter_scope(string|null), phase(string|null), line_pair(string|null). " +
+            "No markdown. No explanation.\n\nUser: " + userMessage;
+        classifierRaw = callOllamaOnce(ollamaUrl, model, classifierPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.1d);
+        applyClassifierHints(execCtx, userMessage, classifierRaw);
+    }
 
-    applyClassifierHints(execCtx, userMessage, classifierRaw);
-
-    PlannerExecutionResult plannerResult = executePlannerAndLoadContexts(
-        execCtx,
-        userMessage,
-        classifierRaw,
-        schemaContext,
-        ollamaUrl,
-        coderModel,
-        ollamaConnectTimeoutMs,
-        ollamaReadTimeoutMs
-    );
+    PlannerExecutionResult plannerResult = forceAiNarrative
+        ? new PlannerExecutionResult()
+        : executePlannerAndLoadContexts(
+            execCtx,
+            userMessage,
+            classifierRaw,
+            schemaContext,
+            ollamaUrl,
+            coderModel,
+            ollamaConnectTimeoutMs,
+            ollamaReadTimeoutMs
+        );
     String dbContext = buildDbContext(execCtx, plannerResult, userMessage);
 
     SpecializedAnswerResult specializedAnswer = bypassSpecialized ? null : tryBuildSpecializedAnswer(execCtx, plannerResult);
@@ -7217,7 +7323,8 @@ try {
 
     // Stage 3: qwen2.5:14b creates final user-facing answer.
     String finalPrompt = buildFinalPrompt(execCtx.needsDb, userMessage, dbContext);
-    String finalAnswer = callOllamaOnce(ollamaUrl, model, finalPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.4d);
+    String finalModel = routeFinalModel(userMessage, model, aiModel, pqModel, alarmModel);
+    String finalAnswer = callOllamaOnce(ollamaUrl, finalModel, finalPrompt, ollamaConnectTimeoutMs, ollamaReadTimeoutMs, 0.4d);
     finalAnswer = sanitizeUngroundedJudgement(finalAnswer, dbContext);
     writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
 

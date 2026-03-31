@@ -155,11 +155,14 @@ public final class AgentQueryRouter {
             || m.contains("\uC5ED\uB960") || m.contains("\uC804\uB825") || m.contains("\uC8FC\uD30C\uC218")
             || m.contains("\uAC12") || m.contains("status") || m.contains("current")
             || m.contains("latest") || m.contains("measurement");
+        boolean hasHarmonicIntent =
+            m.contains("\uACE0\uC870\uD30C") || m.contains("harmonic") || m.contains("thd")
+            || m.contains("\uC65C\uD615\uB960") || m.contains("\uD5C8\uD615\uC728");
         boolean askMeter =
             (hasMeter && (m.endsWith("\uB294?") || m.endsWith("\uC740?") || m.endsWith("?")))
             || m.contains("\uACC4\uCE21\uAE30\uB294") || m.contains("\uACC4\uCE21\uAE30?")
             || m.contains("\uBBF8\uD130\uB294") || m.contains("meter?");
-        if (hasStatusIntent) return false;
+        if (hasStatusIntent || hasHarmonicIntent) return false;
         return (hasList && (hasMeter || hasScoped)) || (hasMeter && hasScoped && askMeter);
     }
 

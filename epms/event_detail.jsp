@@ -1,10 +1,20 @@
 ﻿<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.sql.*, java.util.*, java.net.URLEncoder, java.text.SimpleDateFormat" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%!
+    private static String normalizeSeverity(Object v) {
+        String s = v == null ? "" : String.valueOf(v).trim().toUpperCase(java.util.Locale.ROOT);
+        if ("CRITICAL".equals(s) || "HIGH".equals(s)) return "CRITICAL";
+        if ("ALARM".equals(s) || "MEDIUM".equals(s)) return "ALARM";
+        return "NORMAL";
+    }
+%>
 <%
+try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
+    String eventId = request.getParameter("event_id");
     String meterId = request.getParameter("meter_id");
     String eventTimeParam = request.getParameter("event_time");
     String buildingName = request.getParameter("building_name");
@@ -27,6 +37,11 @@
     if (startTime == null || startTime.trim().isEmpty()) startTime = "00:00:00";
     if (endTime == null || endTime.trim().isEmpty()) endTime = "23:59:59";
 
+    Integer eventIdInt = null;
+    try {
+        if (eventId != null && !eventId.trim().isEmpty()) eventIdInt = Integer.parseInt(eventId.trim());
+    } catch (Exception ignore) {}
+
     Integer meterIdInt = null;
     try {
         if (!meterId.trim().isEmpty()) meterIdInt = Integer.parseInt(meterId.trim());
@@ -38,32 +53,61 @@
     String queryError = null;
 
     try {
-        if (meterIdInt != null && !eventTimeParam.trim().isEmpty()) {
-            String eventSql =
-                "SELECT TOP 1 de.event_id, de.device_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
-                "de.event_type, de.severity, de.event_time, de.restored_time, de.description " +
-                "FROM dbo.device_events de " +
-                "LEFT JOIN dbo.meters m ON m.meter_id = de.device_id " +
-                "WHERE de.device_id = ? " +
-                "ORDER BY ABS(DATEDIFF(SECOND, de.event_time, CAST(? AS DATETIME2))) ASC, de.event_id DESC";
+        if (eventIdInt != null || (meterIdInt != null && !eventTimeParam.trim().isEmpty())) {
+            if (eventIdInt != null) {
+                String eventSql =
+                    "SELECT TOP 1 de.event_id, de.device_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
+                    "de.event_type, de.severity, de.event_time, de.restored_time, de.description " +
+                    "FROM dbo.device_events de " +
+                    "LEFT JOIN dbo.meters m ON m.meter_id = de.device_id " +
+                    "WHERE de.event_id = ? ";
 
-            try (PreparedStatement ps = conn.prepareStatement(eventSql)) {
-                ps.setInt(1, meterIdInt.intValue());
-                ps.setString(2, eventTimeParam.trim());
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        foundEvent = true;
-                        event.put("event_id", rs.getLong("event_id"));
-                        event.put("device_id", rs.getInt("device_id"));
-                        event.put("meter_name", rs.getString("meter_name"));
-                        event.put("panel_name", rs.getString("panel_name"));
-                        event.put("building_name", rs.getString("building_name"));
-                        event.put("usage_type", rs.getString("usage_type"));
-                        event.put("event_type", rs.getString("event_type"));
-                        event.put("severity", rs.getString("severity"));
-                        event.put("event_time", rs.getTimestamp("event_time"));
-                        event.put("restored_time", rs.getTimestamp("restored_time"));
-                        event.put("description", rs.getString("description"));
+                try (PreparedStatement ps = conn.prepareStatement(eventSql)) {
+                    ps.setInt(1, eventIdInt.intValue());
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            foundEvent = true;
+                            event.put("event_id", rs.getLong("event_id"));
+                            event.put("device_id", rs.getInt("device_id"));
+                            event.put("meter_name", rs.getString("meter_name"));
+                            event.put("panel_name", rs.getString("panel_name"));
+                            event.put("building_name", rs.getString("building_name"));
+                            event.put("usage_type", rs.getString("usage_type"));
+                            event.put("event_type", rs.getString("event_type"));
+                            event.put("severity", rs.getString("severity"));
+                            event.put("event_time", rs.getTimestamp("event_time"));
+                            event.put("restored_time", rs.getTimestamp("restored_time"));
+                            event.put("description", rs.getString("description"));
+                        }
+                    }
+                }
+            } else {
+                String eventSql =
+                    "SELECT TOP 1 de.event_id, de.device_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
+                    "de.event_type, de.severity, de.event_time, de.restored_time, de.description " +
+                    "FROM dbo.device_events de " +
+                    "LEFT JOIN dbo.meters m ON m.meter_id = de.device_id " +
+                    "WHERE de.device_id = ? " +
+                    "ORDER BY ABS(DATEDIFF(SECOND, de.event_time, CAST(? AS DATETIME2))) ASC, de.event_id DESC";
+
+                try (PreparedStatement ps = conn.prepareStatement(eventSql)) {
+                    ps.setInt(1, meterIdInt.intValue());
+                    ps.setString(2, eventTimeParam.trim());
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            foundEvent = true;
+                            event.put("event_id", rs.getLong("event_id"));
+                            event.put("device_id", rs.getInt("device_id"));
+                            event.put("meter_name", rs.getString("meter_name"));
+                            event.put("panel_name", rs.getString("panel_name"));
+                            event.put("building_name", rs.getString("building_name"));
+                            event.put("usage_type", rs.getString("usage_type"));
+                            event.put("event_type", rs.getString("event_type"));
+                            event.put("severity", rs.getString("severity"));
+                            event.put("event_time", rs.getTimestamp("event_time"));
+                            event.put("restored_time", rs.getTimestamp("restored_time"));
+                            event.put("description", rs.getString("description"));
+                        }
                     }
                 }
             }
@@ -158,8 +202,6 @@
         }
     } catch (Exception e) {
         queryError = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 
     String backQuery =
@@ -192,7 +234,7 @@
         .data-table th, .data-table td { white-space: nowrap; text-align: center; }
         .sev-CRITICAL, .sev-High { color: #b42318; font-weight: 700; }
         .sev-ALARM, .sev-Medium { color: #b54708; font-weight: 700; }
-        .sev-WARN, .sev-Low { color: #027a48; font-weight: 700; }
+        .sev-WARN, .sev-Low, .sev-NORMAL { color: #027a48; font-weight: 700; }
         .msg-box { color: #b42318; font-weight: 700; margin-bottom: 8px; }
         @media (max-width: 960px) { .panel_s[style*="height: 360px;"] { height: 300px !important; } }
         @media (max-width: 1600px) { .kv-grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
@@ -226,7 +268,8 @@
                     <div class="kv"><div class="k">건물/용도</div><div class="v"><%= h(event.get("building_name")) %> / <%= h(event.get("usage_type")) %></div></div>
                     <div class="kv"><div class="k">패널</div><div class="v"><%= h(event.get("panel_name")) %></div></div>
                     <div class="kv"><div class="k">이벤트 유형</div><div class="v"><%= h(event.get("event_type")) %></div></div>
-                    <div class="kv"><div class="k">심각도</div><div class="v sev-<%= h(event.get("severity")) %>"><%= h(event.get("severity")) %></div></div>
+                    <% String normalizedSeverity = normalizeSeverity(event.get("severity")); %>
+                    <div class="kv"><div class="k">심각도</div><div class="v sev-<%= h(normalizedSeverity) %>"><%= h(normalizedSeverity) %></div></div>
                     <div class="kv"><div class="k">발생 시각</div><div class="v"><%= event.get("event_time") %></div></div>
                     <%
                         Object restoredObj = event.get("restored_time");
@@ -403,6 +446,9 @@
     window.addEventListener('resize', function(){ chart.resize(); });
 })();
 </script>
+<%
+} // end try-with-resources
+%>
 </body>
 </html>
 

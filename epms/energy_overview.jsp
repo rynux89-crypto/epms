@@ -1,7 +1,7 @@
 ﻿<%@ page import="java.sql.*, java.util.*" %>
 <%@ page import="java.time.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_json.jspf" %>
 <%!
@@ -9,6 +9,7 @@
   private static final int QUERY_TIMEOUT_SEC = 15;
 %>
 <%
+try (Connection conn = openDbConnection()) {
   LocalDate today=LocalDate.now();
   LocalDate dailyStart=today.minusDays(29);
   YearMonth nowYm=YearMonth.from(today);
@@ -160,14 +161,24 @@
       }
     }
 
-    try(PreparedStatement ps=conn.prepareStatement("SELECT CASE WHEN UPPER(ISNULL(alarm_type,'')) LIKE '%ELD%' THEN 'ELD' ELSE ISNULL(alarm_type,N'(미지정)') END AS alarm_type_grp, COUNT(1) AS cnt FROM dbo.vw_alarm_log WHERE triggered_at >= DATEADD(DAY,-30,SYSDATETIME()) GROUP BY CASE WHEN UPPER(ISNULL(alarm_type,'')) LIKE '%ELD%' THEN 'ELD' ELSE ISNULL(alarm_type,N'(미지정)') END ORDER BY cnt DESC, alarm_type_grp")){
+    try(PreparedStatement ps=conn.prepareStatement(
+      "SELECT " +
+      "  r.rule_code AS alarm_type_grp, " +
+      "  COUNT(1) AS cnt " +
+      "FROM dbo.alarm_log a " +
+      "INNER JOIN dbo.alarm_rule r " +
+      "  ON r.rule_id = a.rule_id " +
+      "  OR (NULLIF(LTRIM(RTRIM(a.rule_code)), '') IS NOT NULL AND r.rule_code = a.rule_code) " +
+      "WHERE a.triggered_at >= DATEADD(DAY,-30,SYSDATETIME()) " +
+      "  AND r.enabled = 1 " +
+      "GROUP BY r.rule_code " +
+      "ORDER BY cnt DESC, alarm_type_grp")){
       ps.setQueryTimeout(QUERY_TIMEOUT_SEC);
       try(ResultSet rs=ps.executeQuery()){
       while(rs.next()) alarmTypeRatio.put(rs.getString("alarm_type_grp"), Integer.valueOf(rs.getInt("cnt")));
       }
     }
   } catch(Exception e){ queryError=e.getMessage(); }
-  finally { try{ if(conn!=null && !conn.isClosed()) conn.close(); }catch(Exception ignore){} }
 
   todayKwh=dailyTotals.getOrDefault(today,0.0);
   for(Double v: monthlyTotals.values()) monthKwh += nz(v);
@@ -215,8 +226,7 @@
 
 <div class="grid-2"><div class="panel"><h3>건물별 사용량 (당월 누적)</h3><div id="buildingChart" class="chart-container short"></div></div><div class="panel"><h3>용도별 사용량 (당월 누적)</h3><div id="usageChart" class="chart-container short"></div></div></div>
 <div class="grid-3"><div class="panel"><h3>일별 사용량 (최근 30일)</h3><div id="dailyChart" class="chart-container"></div></div><div class="panel"><h3>월별 사용량 (최근 12개월)</h3><div id="monthlyChart" class="chart-container"></div></div><div class="panel"><h3>년도별 사용량 (최근 5개년)</h3><div id="yearlyChart" class="chart-container"></div></div></div>
-<div class="grid-3">
-  <div class="panel"><h3>현재 알람 상태 요약</h3><div class="meta-line">오픈 알람 지속시간 평균 <strong><%= String.format(java.util.Locale.US,"%,.1f",openAvgHours) %>h</strong> / 최대 <strong><%= String.format(java.util.Locale.US,"%,.1f",openMaxHours) %>h</strong></div><div id="alarmChart" class="chart-container short"></div></div>
+<div class="grid-2">
   <div class="panel"><h3>미복구 Top 7 (지속시간)</h3><ul class="alarm-list"><% if(unresolvedTopRows.isEmpty()){ %><li>현재 오픈 알람이 없습니다.</li><% } else { for(Map<String,Object> r: unresolvedTopRows){ %><li><strong><%= h(String.valueOf(r.get("severity"))) %></strong> | <%= h(String.valueOf(r.get("meter_name"))) %> | <%= h(String.valueOf(r.get("alarm_type"))) %> | <%= String.format(java.util.Locale.US,"%,.1f",((Integer)r.get("open_min")).doubleValue()/60.0) %>h</li><% }} %></ul></div>
   <div class="panel"><h3>최근 오픈 알람</h3><ul class="alarm-list"><% if(openAlarmRows.isEmpty()){ %><li>현재 오픈 알람이 없습니다.</li><% } else { for(Map<String,Object> r: openAlarmRows){ %><li><strong><%= h(String.valueOf(r.get("severity"))) %></strong> | <%= h(String.valueOf(r.get("meter_name"))) %> | <%= h(String.valueOf(r.get("alarm_type"))) %> | <%= h(String.valueOf(r.get("triggered_at"))) %></li><% }} %></ul></div>
 </div>
@@ -259,9 +269,6 @@ first=true; for(Double v: buildingTotals.values()){ if(!first) out.print(','); o
 const usagePie=[<%
 first=true; for(Map.Entry<String,Double> e: usageTotals.entrySet()){ if(!first) out.print(','); out.print("{name:\""+jsq(e.getKey())+"\",value:"+String.format(java.util.Locale.US,"%.6f",nz(e.getValue()))+"}"); first=false; }
 %>];
-const alarmPie=[<%
-first=true; for(Map.Entry<String,Integer> e: openSeverity.entrySet()){ if(!first) out.print(','); out.print("{name:\""+jsq(e.getKey())+"\",value:"+e.getValue().intValue()+"}"); first=false; }
-%>];
 const heatDays=['월','화','수','목','금','토','일'];
 const heatHours=Array.from({length:24},(_,i)=>String(i));
 const heatData=[<%
@@ -288,8 +295,6 @@ const monthlyChart=echarts.init(document.getElementById('monthlyChart'));
 monthlyChart.setOption({color:[chartPalette.orange],tooltip:{trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1),backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(monthlyLabels),yAxis:makeValueAxis(0),series:[{name:'월사용량',type:'bar',barMaxWidth:28,data:monthlyValues,showBackground:true,backgroundStyle:{color:'#f3f4f6',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.orange,borderRadius:[8,8,0,0]}}]});
 const yearlyChart=echarts.init(document.getElementById('yearlyChart'));
 yearlyChart.setOption({color:[chartPalette.violet],tooltip:{trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1),backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(yearlyLabels),yAxis:makeValueAxis(0),series:[{name:'년사용량',type:'bar',barMaxWidth:34,data:yearlyValues,showBackground:true,backgroundStyle:{color:'#f3f4f6',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.violet,borderRadius:[8,8,0,0]}}]});
-const alarmChart=echarts.init(document.getElementById('alarmChart'));
-alarmChart.setOption({color:[chartPalette.red,chartPalette.orange,chartPalette.gold,chartPalette.slate],tooltip:{trigger:'item',formatter:p=>p.name+'<br/>'+fmtNum(p.value,0)+' 건',backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},graphic:alarmPie.length?undefined:makeEmptyGraphic('오픈 알람 없음'),series:[{name:'오픈 알람',type:'pie',radius:['42%','70%'],center:['50%','46%'],startAngle:90,itemStyle:{borderColor:'#fff',borderWidth:2},label:{show:false},labelLine:{show:false},data:alarmPie}]});
 const heatMax=heatData.reduce((mx,r)=>Math.max(mx,r[2]||0),0);
 const alarmHeatChart=echarts.init(document.getElementById('alarmHeatChart'));
 alarmHeatChart.setOption({tooltip:{position:'top',formatter:p=>heatDays[p.data[1]]+' '+p.data[0]+'시<br/>알람 '+fmtNum(p.data[2],0)+'건',backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:34,right:14,top:10,bottom:28,containLabel:true},xAxis:{type:'category',data:heatHours,splitArea:{show:true,areaStyle:{color:['#f8fafc','#f8fafc']}},axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:10,color:'#6b7a90'}},yAxis:{type:'category',data:heatDays,splitArea:{show:true,areaStyle:{color:['#f8fafc','#f8fafc']}},axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:11,color:'#6b7a90'}},visualMap:{min:0,max:Math.max(1,heatMax),orient:'horizontal',left:'center',bottom:0,calculable:false,text:['많음','적음'],textStyle:{color:'#6b7a90',fontSize:10},inRange:{color:['#edf6ff','#b9d9ff','#6aa9ff','#2f6fed']}},series:[{type:'heatmap',data:heatData,label:{show:false},emphasis:{itemStyle:{shadowBlur:10,shadowColor:'rgba(47,111,237,.35)'}}}]});
@@ -298,13 +303,16 @@ alarmTopMeterChart.setOption({color:[chartPalette.red],tooltip:{trigger:'axis',a
 const alarmTypeChart=echarts.init(document.getElementById('alarmTypeChart'));
 alarmTypeChart.setOption({color:piePalette,tooltip:{trigger:'item',formatter:p=>p.name+'<br/>'+fmtNum(p.value,0)+' 건',backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},legend:{type:'scroll',bottom:0,textStyle:{fontSize:10,color:'#6b7a90'}},graphic:alarmTypePie.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'알람유형',type:'pie',radius:['38%','64%'],center:['50%','44%'],minAngle:6,itemStyle:{borderColor:'#fff',borderWidth:2},data:alarmTypePie,label:{color:'#516072',fontSize:10,formatter:'{d}%'}}]});
 
-window.addEventListener('resize',function(){buildingChart.resize();usageChart.resize();dailyChart.resize();monthlyChart.resize();yearlyChart.resize();alarmChart.resize();alarmHeatChart.resize();alarmTopMeterChart.resize();alarmTypeChart.resize();});
+window.addEventListener('resize',function(){buildingChart.resize();usageChart.resize();dailyChart.resize();monthlyChart.resize();yearlyChart.resize();alarmHeatChart.resize();alarmTopMeterChart.resize();alarmTypeChart.resize();});
 const REFRESH_KEY_ON='energyOverviewAutoRefreshOn', REFRESH_KEY_SEC='energyOverviewAutoRefreshSec';
 const autoRefreshOn=document.getElementById('autoRefreshOn'), autoRefreshSec=document.getElementById('autoRefreshSec');
 let refreshTimer=null; function clearRefreshTimer(){ if(refreshTimer){ clearInterval(refreshTimer); refreshTimer=null; }}
 function applyAutoRefresh(){ clearRefreshTimer(); if(!autoRefreshOn||!autoRefreshSec||!autoRefreshOn.checked) return; const sec=Number(autoRefreshSec.value||60); if(!Number.isFinite(sec)||sec<5) return; refreshTimer=setInterval(()=>window.location.reload(),sec*1000); }
 if(autoRefreshOn&&autoRefreshSec){ const savedOn=localStorage.getItem(REFRESH_KEY_ON), savedSec=localStorage.getItem(REFRESH_KEY_SEC); autoRefreshOn.checked=(savedOn==='1'); if(savedSec==='30'||savedSec==='60') autoRefreshSec.value=savedSec; autoRefreshOn.addEventListener('change',()=>{localStorage.setItem(REFRESH_KEY_ON,autoRefreshOn.checked?'1':'0');applyAutoRefresh();}); autoRefreshSec.addEventListener('change',()=>{localStorage.setItem(REFRESH_KEY_SEC,autoRefreshSec.value);applyAutoRefresh();}); applyAutoRefresh(); }
 </script>
+<%
+} // end try-with-resources
+%>
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>

@@ -5,7 +5,7 @@
 <%@ page import="java.nio.charset.StandardCharsets" %>
 <%@ page import="java.nio.file.*" %>
 <%@ page import="java.util.Base64" %>
-<%@ include file="../../includes/dbconn.jsp" %>
+<%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_html.jspf" %>
 <%!
     private static void appendImportHistory(Path logPath, String line) {
@@ -93,6 +93,7 @@
     }
 %>
 <%
+    try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
     final String SESSION_UPLOAD_B64 = "plcExcelImport.uploadB64";
@@ -346,8 +347,6 @@
         }
     } catch (Exception e) {
         error = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 
     if (importLogPath != null) {
@@ -1143,4 +1142,7 @@ initializeScript();
 </script>
 </body>
 </html>
+<%
+    } // end try-with-resources
+%>
 

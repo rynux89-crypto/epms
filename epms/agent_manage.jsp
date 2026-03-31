@@ -13,6 +13,9 @@ private static class AgentManageState {
     String ollamaUrl;
     String selectedModel;
     String selectedCoderModel;
+    String selectedAiModel;
+    String selectedPqModel;
+    String selectedAlarmModel;
     Integer selectedSchemaCacheTtlMinutes;
     Integer selectedConnectTimeoutSeconds;
     Integer selectedReadTimeoutSeconds;
@@ -29,6 +32,9 @@ private static class AgentManageRequest {
     String ollamaUrl;
     String model;
     String coderModel;
+    String aiModel;
+    String pqModel;
+    String alarmModel;
     Integer schemaCacheTtlMinutes;
     Integer connectTimeoutSeconds;
     Integer readTimeoutSeconds;
@@ -63,13 +69,16 @@ private Properties loadModelConfig(javax.servlet.ServletContext app) {
     return p;
 }
 
-private void saveModelConfig(javax.servlet.ServletContext app, String ollamaUrl, String model, String coderModel, int schemaCacheTtlMinutes, int ollamaConnectTimeoutSeconds, int ollamaReadTimeoutSeconds, int chatWidthPx, int chatMaxHeightVh, int chatFontSizePx) throws Exception {
+private void saveModelConfig(javax.servlet.ServletContext app, String ollamaUrl, String model, String coderModel, String aiModel, String pqModel, String alarmModel, int schemaCacheTtlMinutes, int ollamaConnectTimeoutSeconds, int ollamaReadTimeoutSeconds, int chatWidthPx, int chatMaxHeightVh, int chatFontSizePx) throws Exception {
     File file = getModelConfigFile(app);
     if (file == null) throw new IOException("Config path unavailable");
     Properties p = new Properties();
     p.setProperty("ollama_url", ollamaUrl);
     p.setProperty("model", model);
     p.setProperty("coder_model", coderModel);
+    p.setProperty("ai_model", aiModel);
+    p.setProperty("pq_model", pqModel);
+    p.setProperty("alarm_model", alarmModel);
     p.setProperty("schema_cache_ttl_minutes", String.valueOf(schemaCacheTtlMinutes));
     p.setProperty("ollama_connect_timeout_seconds", String.valueOf(ollamaConnectTimeoutSeconds));
     p.setProperty("ollama_read_timeout_seconds", String.valueOf(ollamaReadTimeoutSeconds));
@@ -128,6 +137,9 @@ private AgentManageState buildAgentManageState(javax.servlet.ServletContext appl
     if (configuredOllamaUrl != null) state.ollamaUrl = configuredOllamaUrl;
     state.selectedModel = trimToNull(modelConfig.getProperty("model"));
     state.selectedCoderModel = trimToNull(modelConfig.getProperty("coder_model"));
+    state.selectedAiModel = trimToNull(modelConfig.getProperty("ai_model"));
+    state.selectedPqModel = trimToNull(modelConfig.getProperty("pq_model"));
+    state.selectedAlarmModel = trimToNull(modelConfig.getProperty("alarm_model"));
     state.selectedSchemaCacheTtlMinutes = parsePositiveInt(trimToNull(modelConfig.getProperty("schema_cache_ttl_minutes")));
     if (state.selectedSchemaCacheTtlMinutes == null) state.selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
     state.selectedConnectTimeoutSeconds = parsePositiveInt(trimToNull(modelConfig.getProperty("ollama_connect_timeout_seconds")));
@@ -142,6 +154,12 @@ private AgentManageState buildAgentManageState(javax.servlet.ServletContext appl
     if (state.selectedChatFontSizePx == null) state.selectedChatFontSizePx = Integer.valueOf(13);
     if (state.selectedModel == null) state.selectedModel = envModel;
     if (state.selectedCoderModel == null) state.selectedCoderModel = envCoderModel;
+    if (state.selectedAiModel == null) state.selectedAiModel = trimToNull(System.getenv("OLLAMA_MODEL_AI"));
+    if (state.selectedPqModel == null) state.selectedPqModel = trimToNull(System.getenv("OLLAMA_MODEL_PQ"));
+    if (state.selectedAlarmModel == null) state.selectedAlarmModel = trimToNull(System.getenv("OLLAMA_MODEL_ALARM"));
+    if (state.selectedAiModel == null) state.selectedAiModel = state.selectedModel;
+    if (state.selectedPqModel == null) state.selectedPqModel = state.selectedModel;
+    if (state.selectedAlarmModel == null) state.selectedAlarmModel = state.selectedModel;
     return state;
 }
 
@@ -151,6 +169,9 @@ private AgentManageRequest buildAgentManageRequest(javax.servlet.http.HttpServle
     req.ollamaUrl = normalizeOllamaUrl(request.getParameter("ollama_url"));
     req.model = trimToNull(request.getParameter("model"));
     req.coderModel = trimToNull(request.getParameter("coder_model"));
+    req.aiModel = trimToNull(request.getParameter("ai_model"));
+    req.pqModel = trimToNull(request.getParameter("pq_model"));
+    req.alarmModel = trimToNull(request.getParameter("alarm_model"));
     req.schemaCacheTtlMinutes = parsePositiveInt(trimToNull(request.getParameter("schema_cache_ttl_minutes")));
     req.connectTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_connect_timeout_seconds")));
     req.readTimeoutSeconds = parsePositiveInt(trimToNull(request.getParameter("ollama_read_timeout_seconds")));
@@ -172,6 +193,12 @@ private void applyDefaultAgentManageState(AgentManageState state) {
 
     state.selectedModel = envModel;
     state.selectedCoderModel = envCoderModel;
+    state.selectedAiModel = trimToNull(System.getenv("OLLAMA_MODEL_AI"));
+    state.selectedPqModel = trimToNull(System.getenv("OLLAMA_MODEL_PQ"));
+    state.selectedAlarmModel = trimToNull(System.getenv("OLLAMA_MODEL_ALARM"));
+    if (state.selectedAiModel == null) state.selectedAiModel = envModel;
+    if (state.selectedPqModel == null) state.selectedPqModel = envModel;
+    if (state.selectedAlarmModel == null) state.selectedAlarmModel = envModel;
     state.selectedSchemaCacheTtlMinutes = Integer.valueOf(5);
     state.selectedConnectTimeoutSeconds = Integer.valueOf(5);
     state.selectedReadTimeoutSeconds = Integer.valueOf(60);
@@ -182,6 +209,7 @@ private void applyDefaultAgentManageState(AgentManageState state) {
 
 private String validateAgentManageRequest(AgentManageRequest req, List<String> models) {
     if (req.ollamaUrl == null || req.model == null || req.coderModel == null ||
+        req.aiModel == null || req.pqModel == null || req.alarmModel == null ||
         req.schemaCacheTtlMinutes == null || req.connectTimeoutSeconds == null ||
         req.readTimeoutSeconds == null || req.chatWidthPx == null ||
         req.chatMaxHeightVh == null || req.chatFontSizePx == null) {
@@ -208,7 +236,9 @@ private String validateAgentManageRequest(AgentManageRequest req, List<String> m
     if (req.chatFontSizePx.intValue() < 12 || req.chatFontSizePx.intValue() > 20) {
         return "챗 글자 크기는 12~20px 범위로 입력해 주세요.";
     }
-    if (!models.isEmpty() && (!models.contains(req.model) || !models.contains(req.coderModel))) {
+    if (!models.isEmpty() &&
+        (!models.contains(req.model) || !models.contains(req.coderModel)
+            || !models.contains(req.aiModel) || !models.contains(req.pqModel) || !models.contains(req.alarmModel))) {
         return "선택한 모델이 현재 Ollama 목록에 없습니다.";
     }
     return null;
@@ -256,6 +286,9 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                     formReq.ollamaUrl,
                     formReq.model,
                     formReq.coderModel,
+                    formReq.aiModel,
+                    formReq.pqModel,
+                    formReq.alarmModel,
                     formReq.schemaCacheTtlMinutes.intValue(),
                     formReq.connectTimeoutSeconds.intValue(),
                     formReq.readTimeoutSeconds.intValue(),
@@ -265,6 +298,9 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                 );
                 state.selectedModel = formReq.model;
                 state.selectedCoderModel = formReq.coderModel;
+                state.selectedAiModel = formReq.aiModel;
+                state.selectedPqModel = formReq.pqModel;
+                state.selectedAlarmModel = formReq.alarmModel;
                 state.selectedSchemaCacheTtlMinutes = formReq.schemaCacheTtlMinutes;
                 state.selectedConnectTimeoutSeconds = formReq.connectTimeoutSeconds;
                 state.selectedReadTimeoutSeconds = formReq.readTimeoutSeconds;
@@ -437,6 +473,12 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                         <div><code><%= h(state.selectedModel) %></code></div>
                         <div class="label">코더 모델</div>
                         <div><code><%= h(state.selectedCoderModel) %></code></div>
+                        <div class="label">AI 전용 모델</div>
+                        <div><code><%= h(state.selectedAiModel) %></code></div>
+                        <div class="label">PQ 전용 모델</div>
+                        <div><code><%= h(state.selectedPqModel) %></code></div>
+                        <div class="label">ALARM 전용 모델</div>
+                        <div><code><%= h(state.selectedAlarmModel) %></code></div>
                         <div class="label">스키마 캐시(분)</div>
                         <div><code><%= state.selectedSchemaCacheTtlMinutes %></code></div>
                         <div class="label">연결 타임아웃(초)</div>
@@ -464,6 +506,27 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                         <select id="coder_model" name="coder_model" required>
                             <% for (String m : state.models) { %>
                             <option value="<%= h(m) %>" <%= m.equals(state.selectedCoderModel) ? "selected" : "" %>><%= h(m) %></option>
+                            <% } %>
+                        </select>
+
+                        <label class="label" for="ai_model">AI 전용 모델</label>
+                        <select id="ai_model" name="ai_model" required>
+                            <% for (String m : state.models) { %>
+                            <option value="<%= h(m) %>" <%= m.equals(state.selectedAiModel) ? "selected" : "" %>><%= h(m) %></option>
+                            <% } %>
+                        </select>
+
+                        <label class="label" for="pq_model">PQ 전용 모델</label>
+                        <select id="pq_model" name="pq_model" required>
+                            <% for (String m : state.models) { %>
+                            <option value="<%= h(m) %>" <%= m.equals(state.selectedPqModel) ? "selected" : "" %>><%= h(m) %></option>
+                            <% } %>
+                        </select>
+
+                        <label class="label" for="alarm_model">ALARM 전용 모델</label>
+                        <select id="alarm_model" name="alarm_model" required>
+                            <% for (String m : state.models) { %>
+                            <option value="<%= h(m) %>" <%= m.equals(state.selectedAlarmModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
                         </select>
 

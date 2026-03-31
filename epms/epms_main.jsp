@@ -119,8 +119,15 @@
         <div class="section-links">
             <div class="app-card">
                 <a href="voltage_unbalance.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M6 9h12"/><path d="M7 9l-3 5h6l-3-5z"/><path d="M17 9l-3 5h6l-3-5z"/></svg></span><h3>불평형 분석</h3></div>
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M6 9h12"/><path d="M7 9l-3 5h6l-3-5z"/><path d="M17 9l-3 5h6l-3-5z"/></svg></span><h3>전압 불평형 분석</h3></div>
                     <p>전압 불평형을 상시 계측값 기준으로 분석합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="current_unbalance.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M7 6v8"/><path d="M12 6v12"/><path d="M17 6v10"/><path d="M5 18h14"/></svg></span><h3>전류 불평형 분석</h3></div>
+                    <p>전류 불평형을 상시 계측값 기준으로 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
@@ -202,15 +209,15 @@
         <div class="section-links">
             <div class="app-card">
                 <a href="alarm_rule_manage.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/></svg></span><h3>알람 규칙 관리</h3></div>
-                    <p>알람 규칙을 조회하고 수정합니다.</p>
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/></svg></span><h3>알람 규칙 관리 / 등록</h3></div>
+                    <p>알람 규칙을 등록하고 조회, 수정, 활성화 관리까지 한 화면에서 처리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="alarm_rule.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span><h3>알람 규칙 등록</h3></div>
-                    <p>새로운 규칙을 등록합니다.</p>
+                <a href="alarm_diag.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15l3-3 3 2 4-5 2 2"/></svg></span><h3>알람 런타임 진단</h3></div>
+                    <p>알람 큐 압력, 캐시 상태, write-op 누적 현황을 실시간으로 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
@@ -218,13 +225,6 @@
                 <a href="metric_catalog_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16v10H4z"/><path d="M9 7V5h6v2"/></svg></span><h3>지표키 카탈로그</h3></div>
                     <p>알람 및 품질 지표 키를 관리합니다.</p>
-                    <span class="sub-card-meta">바로가기</span>
-                </a>
-            </div>
-            <div class="app-card">
-                <a href="di_group_manage.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M5 7h6v4H5z"/><path d="M13 7h6v4h-6z"/><path d="M9 13h6v4H9z"/><path d="M11 9h2v4"/></svg></span><h3>DI 그룹 관리</h3></div>
-                    <p>DI bit를 기반으로 그룹 후보를 추론하고 규칙용 그룹을 등록합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>

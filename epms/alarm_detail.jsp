@@ -1,12 +1,56 @@
 ﻿<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.sql.*, java.util.*, java.net.URLEncoder, java.text.SimpleDateFormat" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%!
+    private static String extractDescField(Object descObj, String key) {
+        if (descObj == null || key == null || key.trim().isEmpty()) return "";
+        String desc = String.valueOf(descObj);
+        String target = key.trim().toLowerCase(Locale.ROOT) + "=";
+        String lower = desc.toLowerCase(Locale.ROOT);
+        int idx = lower.indexOf(target);
+        if (idx < 0) return "";
+        int start = idx + target.length();
+        int end = desc.indexOf(',', start);
+        if (end < 0) end = desc.indexOf('|', start);
+        if (end < 0) end = desc.length();
+        return desc.substring(start, end).trim();
+    }
+
+    private static String buildAlarmDisplayName(Map<String, Object> alarm) {
+        String meterName = String.valueOf(alarm.get("meter_name") == null ? "" : alarm.get("meter_name")).trim();
+        String desc = String.valueOf(alarm.get("description") == null ? "" : alarm.get("description"));
+        String item = extractDescField(desc, "item");
+        if (meterName.isEmpty()) {
+            return item.isEmpty() ? "-" : item;
+        }
+        return meterName;
+    }
+
+    private static String buildAlarmPanelName(Map<String, Object> alarm) {
+        String panelName = String.valueOf(alarm.get("panel_name") == null ? "" : alarm.get("panel_name")).trim();
+        if (!panelName.isEmpty()) return panelName;
+        String desc = String.valueOf(alarm.get("description") == null ? "" : alarm.get("description"));
+        String panel = extractDescField(desc, "panel");
+        return panel.isEmpty() ? "-" : panel;
+    }
+
+    private static String buildAlarmTypeDisplay(Map<String, Object> alarm) {
+        String ruleName = String.valueOf(alarm.get("rule_name") == null ? "" : alarm.get("rule_name")).trim();
+        if (!ruleName.isEmpty()) return ruleName;
+        String ruleCode = String.valueOf(alarm.get("rule_code") == null ? "" : alarm.get("rule_code")).trim();
+        if (!ruleCode.isEmpty()) return ruleCode;
+        String alarmType = String.valueOf(alarm.get("alarm_type") == null ? "" : alarm.get("alarm_type")).trim();
+        return alarmType.isEmpty() ? "-" : alarmType;
+    }
+%>
 <%
+try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
 
     String alarmIdParam = request.getParameter("alarm_id");
     String meterId = request.getParameter("meter_id");
+    String panelName = request.getParameter("panel_name");
     String eventTimeParam = request.getParameter("event_time");
     String buildingName = request.getParameter("building_name");
     String usageType = request.getParameter("usage_type");
@@ -19,6 +63,7 @@
     String toDate = request.getParameter("to_date");
 
     if (meterId == null) meterId = "";
+    if (panelName == null) panelName = "";
     if (buildingName == null) buildingName = "";
     if (usageType == null) usageType = "";
     if (fromDate == null) fromDate = "";
@@ -52,16 +97,16 @@
             boolean byAlarmId = (alarmId != null);
             if (byAlarmId) {
                 alarmSql =
-                "SELECT TOP 1 meter_id, meter_name, panel_name, building_name, usage_type, " +
-                "alarm_id, alarm_type, severity, triggered_at, cleared_at, description " +
-                "FROM vw_alarm_log WHERE alarm_id = ?";
+                "SELECT TOP 1 a.meter_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
+                "a.alarm_id, a.alarm_type, a.rule_code, r.rule_name, a.severity, a.triggered_at, a.cleared_at, a.description " +
+                "FROM dbo.alarm_log a LEFT JOIN dbo.meters m ON m.meter_id = a.meter_id LEFT JOIN dbo.alarm_rule r ON r.rule_id = a.rule_id WHERE a.alarm_id = ?";
             } else {
                 alarmSql =
-                "SELECT TOP 1 meter_id, meter_name, panel_name, building_name, usage_type, " +
-                "alarm_id, alarm_type, severity, triggered_at, cleared_at, description " +
-                "FROM vw_alarm_log " +
-                "WHERE meter_id = ? " +
-                "ORDER BY ABS(DATEDIFF(SECOND, triggered_at, CAST(? AS DATETIME2))) ASC, alarm_id DESC";
+                "SELECT TOP 1 a.meter_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
+                "a.alarm_id, a.alarm_type, a.rule_code, r.rule_name, a.severity, a.triggered_at, a.cleared_at, a.description " +
+                "FROM dbo.alarm_log a LEFT JOIN dbo.meters m ON m.meter_id = a.meter_id LEFT JOIN dbo.alarm_rule r ON r.rule_id = a.rule_id " +
+                "WHERE a.meter_id = ? " +
+                "ORDER BY ABS(DATEDIFF(SECOND, a.triggered_at, CAST(? AS DATETIME2))) ASC, a.alarm_id DESC";
             }
 
             try (PreparedStatement ps = conn.prepareStatement(alarmSql)) {
@@ -81,6 +126,8 @@
                         alarm.put("usage_type", rs.getString("usage_type"));
                         alarm.put("alarm_id", rs.getLong("alarm_id"));
                         alarm.put("alarm_type", rs.getString("alarm_type"));
+                        alarm.put("rule_code", rs.getString("rule_code"));
+                        alarm.put("rule_name", rs.getString("rule_name"));
                         alarm.put("severity", rs.getString("severity"));
                         alarm.put("triggered_at", rs.getTimestamp("triggered_at"));
                         alarm.put("cleared_at", rs.getTimestamp("cleared_at"));
@@ -93,56 +140,58 @@
                 Integer selectedMeterId = (Integer) alarm.get("meter_id");
                 Timestamp triggeredAt = (Timestamp) alarm.get("triggered_at");
 
-                String dataSql =
-                    "SELECT measured_at, voltage_ab, voltage_bc, voltage_ca, voltage_an, voltage_bn, voltage_cn, current_a, current_b, current_c, frequency, " +
-                    "power_factor, power_factor_a, power_factor_b, power_factor_c, " +
-                    "active_power_total, reactive_power_total, apparent_power_total, quality_status " +
-                    "FROM vw_meter_measurements " +
-                    "WHERE meter_id = ? " +
-                    "  AND measured_at BETWEEN DATEADD(HOUR, -1, ?) AND DATEADD(HOUR, 1, ?) " +
-                    "ORDER BY measured_at";
+                if (selectedMeterId != null && selectedMeterId.intValue() > 0) {
+                    String dataSql =
+                        "SELECT measured_at, voltage_ab, voltage_bc, voltage_ca, voltage_an, voltage_bn, voltage_cn, current_a, current_b, current_c, frequency, " +
+                        "power_factor, power_factor_a, power_factor_b, power_factor_c, " +
+                        "active_power_total, reactive_power_total, apparent_power_total, quality_status " +
+                        "FROM vw_meter_measurements " +
+                        "WHERE meter_id = ? " +
+                        "  AND measured_at BETWEEN DATEADD(HOUR, -1, ?) AND DATEADD(HOUR, 1, ?) " +
+                        "ORDER BY measured_at";
 
-                try (PreparedStatement ps = conn.prepareStatement(dataSql)) {
-                    ps.setInt(1, selectedMeterId);
-                    ps.setTimestamp(2, triggeredAt);
-                    ps.setTimestamp(3, triggeredAt);
+                    try (PreparedStatement ps = conn.prepareStatement(dataSql)) {
+                        ps.setInt(1, selectedMeterId.intValue());
+                        ps.setTimestamp(2, triggeredAt);
+                        ps.setTimestamp(3, triggeredAt);
 
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) {
-                            Map<String, Object> p = new HashMap<>();
-                            double vab = rs.getDouble("voltage_ab");
-                            double vbc = rs.getDouble("voltage_bc");
-                            double vca = rs.getDouble("voltage_ca");
-                            double van = rs.getDouble("voltage_an");
-                            double vbn = rs.getDouble("voltage_bn");
-                            double vcn = rs.getDouble("voltage_cn");
-                            double ia = rs.getDouble("current_a");
-                            double ib = rs.getDouble("current_b");
-                            double ic = rs.getDouble("current_c");
-                            double lineAvg = (vab + vbc + vca) / 3.0;
-                            double phaseAvg = (van + vbn + vcn) / 3.0;
-                            p.put("measured_at", rs.getTimestamp("measured_at"));
-                            p.put("average_voltage", lineAvg); // chart/backward compatibility
-                            p.put("phase_voltage_avg", phaseAvg);
-                            p.put("line_voltage_avg", lineAvg);
-                            p.put("average_current", (ia + ib + ic) / 3.0);
-                            p.put("frequency", rs.getDouble("frequency"));
-                            Double pfA = (Double) rs.getObject("power_factor_a");
-                            Double pfB = (Double) rs.getObject("power_factor_b");
-                            Double pfC = (Double) rs.getObject("power_factor_c");
-                            Double pfSingle = (Double) rs.getObject("power_factor");
-                            Double pfAvg = null;
-                            if (pfA != null && pfB != null && pfC != null) {
-                                pfAvg = Double.valueOf((pfA.doubleValue() + pfB.doubleValue() + pfC.doubleValue()) / 3.0);
-                            } else if (pfSingle != null) {
-                                pfAvg = pfSingle;
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                Map<String, Object> p = new HashMap<>();
+                                double vab = rs.getDouble("voltage_ab");
+                                double vbc = rs.getDouble("voltage_bc");
+                                double vca = rs.getDouble("voltage_ca");
+                                double van = rs.getDouble("voltage_an");
+                                double vbn = rs.getDouble("voltage_bn");
+                                double vcn = rs.getDouble("voltage_cn");
+                                double ia = rs.getDouble("current_a");
+                                double ib = rs.getDouble("current_b");
+                                double ic = rs.getDouble("current_c");
+                                double lineAvg = (vab + vbc + vca) / 3.0;
+                                double phaseAvg = (van + vbn + vcn) / 3.0;
+                                p.put("measured_at", rs.getTimestamp("measured_at"));
+                                p.put("average_voltage", lineAvg);
+                                p.put("phase_voltage_avg", phaseAvg);
+                                p.put("line_voltage_avg", lineAvg);
+                                p.put("average_current", (ia + ib + ic) / 3.0);
+                                p.put("frequency", rs.getDouble("frequency"));
+                                Double pfA = (Double) rs.getObject("power_factor_a");
+                                Double pfB = (Double) rs.getObject("power_factor_b");
+                                Double pfC = (Double) rs.getObject("power_factor_c");
+                                Double pfSingle = (Double) rs.getObject("power_factor");
+                                Double pfAvg = null;
+                                if (pfA != null && pfB != null && pfC != null) {
+                                    pfAvg = Double.valueOf((pfA.doubleValue() + pfB.doubleValue() + pfC.doubleValue()) / 3.0);
+                                } else if (pfSingle != null) {
+                                    pfAvg = pfSingle;
+                                }
+                                p.put("power_factor_avg", pfAvg);
+                                p.put("active_power_total", (Double) rs.getObject("active_power_total"));
+                                p.put("reactive_power_total", (Double) rs.getObject("reactive_power_total"));
+                                p.put("apparent_power_total", (Double) rs.getObject("apparent_power_total"));
+                                p.put("quality_status", rs.getString("quality_status"));
+                                points.add(p);
                             }
-                            p.put("power_factor_avg", pfAvg);
-                            p.put("active_power_total", (Double) rs.getObject("active_power_total"));
-                            p.put("reactive_power_total", (Double) rs.getObject("reactive_power_total"));
-                            p.put("apparent_power_total", (Double) rs.getObject("apparent_power_total"));
-                            p.put("quality_status", rs.getString("quality_status"));
-                            points.add(p);
                         }
                     }
                 }
@@ -150,12 +199,10 @@
         }
     } catch (Exception e) {
         queryError = e.getMessage();
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
     }
 
     String backQuery =
-        "meter_id=" + URLEncoder.encode(meterId, "UTF-8") +
+        "panel_name=" + URLEncoder.encode(panelName, "UTF-8") +
         "&building_name=" + URLEncoder.encode(buildingName, "UTF-8") +
         "&usage_type=" + URLEncoder.encode(usageType, "UTF-8") +
         "&startDate=" + URLEncoder.encode(startDate, "UTF-8") +
@@ -215,10 +262,10 @@
             <section class="panel_s">
                 <div class="kv-grid">
                     <div class="kv"><div class="k">Alarm ID</div><div class="v"><%= alarm.get("alarm_id") %></div></div>
-                    <div class="kv"><div class="k">Meter</div><div class="v"><%= h(alarm.get("meter_name")) %> (#<%= alarm.get("meter_id") %>)</div></div>
+                    <div class="kv"><div class="k">Meter/Item</div><div class="v"><%= h(buildAlarmDisplayName(alarm)) %></div></div>
                     <div class="kv"><div class="k">건물/용도</div><div class="v"><%= h(alarm.get("building_name")) %> / <%= h(alarm.get("usage_type")) %></div></div>
-                    <div class="kv"><div class="k">패널</div><div class="v"><%= h(alarm.get("panel_name")) %></div></div>
-                    <div class="kv"><div class="k">알람유형</div><div class="v"><%= h(alarm.get("alarm_type")) %></div></div>
+                    <div class="kv"><div class="k">패널</div><div class="v"><%= h(buildAlarmPanelName(alarm)) %></div></div>
+                    <div class="kv"><div class="k">알람유형</div><div class="v"><%= h(buildAlarmTypeDisplay(alarm)) %></div></div>
                     <div class="kv"><div class="k">심각도</div><div class="v sev-<%= h(alarm.get("severity")) %>"><%= h(alarm.get("severity")) %></div></div>
                     <div class="kv"><div class="k">발생시각</div><div class="v"><%= alarm.get("triggered_at") %></div></div>
                     <%
@@ -402,6 +449,9 @@
     window.addEventListener('resize', function(){ chart.resize(); });
 })();
 </script>
+<%
+} // end try-with-resources
+%>
 </body>
 </html>
 

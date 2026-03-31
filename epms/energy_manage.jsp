@@ -1,7 +1,7 @@
 ﻿<%@ page import="java.sql.*, java.util.*" %>
 <%@ page import="java.time.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_json.jspf" %>
 <%!
@@ -46,6 +46,7 @@
     }
 %>
 <%
+try (Connection conn = openDbConnection()) {
     LocalDate today = LocalDate.now();
 
     String startDate = request.getParameter("startDate");
@@ -860,8 +861,8 @@ window.addEventListener('resize', function(){ stackedChart.resize(); treeChart.r
 </script>
 
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<%
+} // end try-with-resources
+%>
 </body>
 </html>
-<%
-    try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
-%>

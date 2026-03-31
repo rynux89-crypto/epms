@@ -1,7 +1,7 @@
 ﻿<%@ page import="java.sql.*, java.util.*" %>
 <%@ page import="java.time.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 
 <%!
     private static float safeParseFloat(String s, float defVal) {
@@ -44,6 +44,7 @@
 %>
 
 <%
+    try (Connection conn = openDbConnection()) {
     // ===== 湲곕낯 ?뚮씪誘명꽣 ?명똿 (variation_ves.jsp? ?숈씪??UX) =====
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today;
@@ -78,13 +79,12 @@
 
     try {
         try (Statement stmt = conn.createStatement()) {
-            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
-            while (rs.next()) buildingOptions.add(rs.getString(1).trim());
-            rs.close();
-
-            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
-            while (rs.next()) usageOptions.add(rs.getString(1).trim());
-            rs.close();
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name")) {
+                while (rs.next()) buildingOptions.add(rs.getString(1).trim());
+            }
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type")) {
+                while (rs.next()) usageOptions.add(rs.getString(1).trim());
+            }
         }
 
         StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
@@ -248,7 +248,7 @@
     <h2>🔀 전압 불평형 분석 (상전압 AN/BN/CN, 선간전압 AB/BC/CA)</h2>
     <div class="top-actions">
         <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
-        
+        <button class="back-btn" onclick="location.href='current_unbalance.jsp' + location.search">전류 불평형</button>
     </div>
 </div>
 
@@ -629,5 +629,8 @@
 </script>
 
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<%
+    }
+%>
 </body>
 </html>

@@ -1,9 +1,10 @@
 ﻿<%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.Locale" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 
 <%
+    try (Connection conn = openDbConnection()) {
     String harmonicId = request.getParameter("harmonic_id");
     String mode = request.getParameter("mode");
     if (mode == null || mode.trim().isEmpty()) mode = "current";
@@ -126,8 +127,11 @@
     <div class="title-actions">
       <span class="mode-chip">현재: <%= "current".equals(mode) ? "전류보기" : "전압보기" %></span>
       <button class="back-btn" onclick="location.href='<%= backPage %>'">돌아가기</button>
-      <button class="back-btn <%= "current".equals(mode) ? "active-mode" : "" %>" onclick="switchMode('current')" <%= "current".equals(mode) ? "disabled" : "" %>>전류보기</button>
-      <button class="back-btn <%= "voltage".equals(mode) ? "active-mode" : "" %>" onclick="switchMode('voltage')" <%= "voltage".equals(mode) ? "disabled" : "" %>>전압보기</button>
+      <% if ("voltage".equals(mode)) { %>
+      <button class="back-btn" onclick="switchMode('current')">전류보기</button>
+      <% } else { %>
+      <button class="back-btn" onclick="switchMode('voltage')">전압보기</button>
+      <% } %>
     </div>
   </div>
   <div class="meta-bar">
@@ -302,6 +306,8 @@
     chartInstances.forEach(c => c.resize());
   });
 </script>
-<footer>© EPMS Dashboard | SNUT CNT</footer>
+<%
+    }
+%>
 </body>
 </html>

@@ -1,0 +1,453 @@
+<%!
+    // ---------------------------------------------------------------------
+    // AI metric preparation and derived-metric calculation
+    // ---------------------------------------------------------------------
+    private static Map<Integer, Map<String, Double>> buildAiValueMapByMeter(List<AiRow> aiRows, Map<String, String> tokenAlias) {
+        Map<Integer, Map<String, Double>> valueByMeterMetric = new HashMap<>();
+        if (aiRows == null) return valueByMeterMetric;
+        for (AiRow row : aiRows) {
+            Map<String, Double> mm = valueByMeterMetric.computeIfAbsent(row.meterId, k -> new HashMap<>());
+            String token = row.token.trim().toUpperCase(Locale.ROOT);
+            mm.put(token, row.value);
+            String alias = tokenAlias.get(token);
+            if (alias != null && !alias.isEmpty()) mm.put(alias, row.value);
+        }
+        return valueByMeterMetric;
+    }
+
+    private static AiPreparedMetrics prepareAiMetrics(
+            Connection conn,
+            List<AiRow> aiRows,
+            Timestamp measuredAt,
+            Map<String, String> tokenAlias) throws Exception {
+        AiPreparedMetrics prepared = new AiPreparedMetrics();
+        Map<Integer, Map<String, Double>> valueByMeterMetric = buildAiValueMapByMeter(aiRows, tokenAlias);
+        Set<Integer> meterIds = new HashSet<>(valueByMeterMetric.keySet());
+        Map<String, Map<String, Double>> previousByMeter = loadPreviousMeasurementMetrics(conn, meterIds, measuredAt);
+        prepared.valueByMeterMetric = valueByMeterMetric;
+        prepared.previousByMeter = previousByMeter;
+        return prepared;
+    }
+
+    private static void enrichAiDerivedMetrics(Map<String, Double> metricValues, Map<String, Double> previousValues) {
+        if (metricValues == null) return;
+        enrichGroupedMetrics(metricValues);
+        if (previousValues == null || previousValues.isEmpty()) return;
+
+        Double currentVoltageAvg = resolveVoltageAverage(metricValues);
+        Double previousVoltageAvg = resolveVoltageAverage(previousValues);
+        Double vVariation = computeVariationPercent(previousVoltageAvg, currentVoltageAvg, 10.0d);
+        if (vVariation != null) {
+            metricValues.put("V_VARIATION", vVariation);
+            metricValues.put("VOLTAGE_VARIATION", vVariation);
+        }
+
+        Double currentCurrentAvg = resolveCurrentAverage(metricValues);
+        Double previousCurrentAvg = resolveCurrentAverage(previousValues);
+        Double iVariation = computeVariationPercent(previousCurrentAvg, currentCurrentAvg, 1.0d);
+        if (iVariation != null) {
+            metricValues.put("I_VARIATION", iVariation);
+            metricValues.put("CURRENT_VARIATION", iVariation);
+        }
+    }
+
+    private static Double maxAbs(Collection<Double> values) {
+        if (values == null || values.isEmpty()) return null;
+        Double out = null;
+        for (Double v : values) {
+            if (v == null) continue;
+            double a = Math.abs(v.doubleValue());
+            if (out == null || a > out.doubleValue()) out = Double.valueOf(a);
+        }
+        return out;
+    }
+
+    private static boolean looksLikeVoltageKey(String k) {
+        if (k == null) return false;
+        if (k.startsWith("V1N") || k.startsWith("V2N") || k.startsWith("V3N")) return true;
+        if (k.startsWith("V12") || k.startsWith("V23") || k.startsWith("V31")) return true;
+        if (k.startsWith("VVA") || k.equals("VA")) return true;
+        if (k.startsWith("VOLTAGE_") || k.contains("PHASE_VOLTAGE") || k.contains("LINE_VOLTAGE")) return true;
+        return false;
+    }
+
+    private static boolean looksLikeCurrentKey(String k) {
+        if (k == null) return false;
+        if (k.equals("A1") || k.equals("A2") || k.equals("A3") || k.equals("AA") || k.equals("AN")) return true;
+        if (k.startsWith("CURRENT_") || k.contains("AVERAGE_CURRENT")) return true;
+        return false;
+    }
+
+    private static boolean looksLikeThdKey(String k) {
+        if (k == null) return false;
+        if (k.contains("THD")) return true;
+        if (k.matches("^H_[VI][A-Z0-9_]*_1$")) return true;
+        return false;
+    }
+
+    private static boolean looksLikeVoltageThdKey(String k) {
+        if (k == null) return false;
+        if (k.contains("THD_V") || k.contains("THD_VOLTAGE")) return true;
+        if (k.matches("^H_V[A-Z0-9_]*_1$")) return true;
+        return false;
+    }
+
+    private static boolean looksLikeCurrentThdKey(String k) {
+        if (k == null) return false;
+        if (k.contains("THD_I") || k.contains("THD_CURRENT")) return true;
+        if (k.matches("^H_I[A-Z0-9_]*_1$")) return true;
+        return false;
+    }
+
+    private static boolean looksLikeVoltageVariationKey(String k) {
+        if (k == null) return false;
+        return k.contains("VOLTAGE_VARIATION") || k.startsWith("V_VAR");
+    }
+
+    private static boolean looksLikeCurrentVariationKey(String k) {
+        if (k == null) return false;
+        return k.contains("CURRENT_VARIATION") || k.startsWith("I_VAR");
+    }
+
+    private static Double getMetricValue(Map<String, Double> metricValues, String key) {
+        if (metricValues == null || key == null) return null;
+        return metricValues.get(key.trim().toUpperCase(Locale.ROOT));
+    }
+
+    private static Double computeUnbalancePercent(Double a, Double b, Double c, double minAverage) {
+        if (a == null || b == null || c == null) return null;
+        double avg = (Math.abs(a.doubleValue()) + Math.abs(b.doubleValue()) + Math.abs(c.doubleValue())) / 3.0d;
+        if (avg <= minAverage) return null;
+        return AlarmFacade.computeUnbalancePercent(a, b, c);
+    }
+
+    private static Double computeUnbalanceFromTriples(Map<String, Double> metricValues, double minAverage, String[]... triples) {
+        if (metricValues == null || triples == null) return null;
+        for (String[] triple : triples) {
+            if (triple == null || triple.length < 3) continue;
+            Double value = computeUnbalancePercent(
+                getMetricValue(metricValues, triple[0]),
+                getMetricValue(metricValues, triple[1]),
+                getMetricValue(metricValues, triple[2]),
+                minAverage
+            );
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private static Double averageOf(Double a, Double b, Double c, double minAverage) {
+        if (a == null || b == null || c == null) return null;
+        double avg = (Math.abs(a.doubleValue()) + Math.abs(b.doubleValue()) + Math.abs(c.doubleValue())) / 3.0d;
+        return avg <= minAverage ? null : Double.valueOf(avg);
+    }
+
+    private static Double computeVariationPercent(Double prev, Double curr, double minBase) {
+        if (prev == null || curr == null) return null;
+        double base = Math.abs(prev.doubleValue());
+        if (base <= minBase) return null;
+        return AlarmFacade.computeVariationPercent(prev, curr);
+    }
+
+    private static Double resolveVoltageAverage(Map<String, Double> metricValues) {
+        if (metricValues == null) return null;
+        Double phaseAvg = averageOf(
+            getMetricValue(metricValues, "V1N"),
+            getMetricValue(metricValues, "V2N"),
+            getMetricValue(metricValues, "V3N"),
+            10.0d
+        );
+        if (phaseAvg != null) return phaseAvg;
+        phaseAvg = averageOf(
+            getMetricValue(metricValues, "VOLTAGE_AN"),
+            getMetricValue(metricValues, "VOLTAGE_BN"),
+            getMetricValue(metricValues, "VOLTAGE_CN"),
+            10.0d
+        );
+        if (phaseAvg != null) return phaseAvg;
+        return averageOf(
+            getMetricValue(metricValues, "V12"),
+            getMetricValue(metricValues, "V23"),
+            getMetricValue(metricValues, "V31"),
+            10.0d
+        );
+    }
+
+    private static Double resolveCurrentAverage(Map<String, Double> metricValues) {
+        if (metricValues == null) return null;
+        Double currentAvg = averageOf(
+            getMetricValue(metricValues, "A1"),
+            getMetricValue(metricValues, "A2"),
+            getMetricValue(metricValues, "A3"),
+            1.0d
+        );
+        if (currentAvg != null) return currentAvg;
+        return averageOf(
+            getMetricValue(metricValues, "CURRENT_A"),
+            getMetricValue(metricValues, "CURRENT_B"),
+            getMetricValue(metricValues, "CURRENT_C"),
+            1.0d
+        );
+    }
+
+    private static Map<String, Map<String, Double>> loadPreviousMeasurementMetrics(Connection conn, Set<Integer> meterIds, Timestamp measuredAt) {
+        Map<String, Map<String, Double>> out = new HashMap<>();
+        if (conn == null || meterIds == null || meterIds.isEmpty() || measuredAt == null) return out;
+        StringBuilder in = new StringBuilder();
+        int idx = 0;
+        for (Integer meterId : meterIds) {
+            if (meterId == null || meterId.intValue() <= 0) continue;
+            if (idx++ > 0) in.append(",");
+            in.append("?");
+        }
+        if (in.length() == 0) return out;
+
+        String sql =
+            "WITH prev AS ( " +
+            "  SELECT meter_id, measured_at, voltage_an, voltage_bn, voltage_cn, voltage_ab, voltage_bc, voltage_ca, current_a, current_b, current_c, " +
+            "         ROW_NUMBER() OVER (PARTITION BY meter_id ORDER BY measured_at DESC, measurement_id DESC) AS rn " +
+            "  FROM dbo.measurements " +
+            "  WHERE meter_id IN (" + in + ") AND measured_at < ? " +
+            ") " +
+            "SELECT meter_id, voltage_an, voltage_bn, voltage_cn, voltage_ab, voltage_bc, voltage_ca, current_a, current_b, current_c " +
+            "FROM prev WHERE rn = 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            int p = 1;
+            for (Integer meterId : meterIds) {
+                if (meterId == null || meterId.intValue() <= 0) continue;
+                ps.setInt(p++, meterId.intValue());
+            }
+            ps.setTimestamp(p, measuredAt);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int meterId = rs.getInt("meter_id");
+                    Map<String, Double> mm = new HashMap<>();
+                    putIfNotNull(mm, "V1N", parseNullableDouble(rs.getString("voltage_an")));
+                    putIfNotNull(mm, "V2N", parseNullableDouble(rs.getString("voltage_bn")));
+                    putIfNotNull(mm, "V3N", parseNullableDouble(rs.getString("voltage_cn")));
+                    putIfNotNull(mm, "V12", parseNullableDouble(rs.getString("voltage_ab")));
+                    putIfNotNull(mm, "V23", parseNullableDouble(rs.getString("voltage_bc")));
+                    putIfNotNull(mm, "V31", parseNullableDouble(rs.getString("voltage_ca")));
+                    putIfNotNull(mm, "A1", parseNullableDouble(rs.getString("current_a")));
+                    putIfNotNull(mm, "A2", parseNullableDouble(rs.getString("current_b")));
+                    putIfNotNull(mm, "A3", parseNullableDouble(rs.getString("current_c")));
+                    out.put(String.valueOf(meterId), mm);
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return out;
+    }
+
+    private static void putIfNotNull(Map<String, Double> map, String key, Double value) {
+        if (map == null || key == null || value == null) return;
+        map.put(key, value);
+    }
+
+    private static boolean isCalculatedMetricKey(String metricKey) {
+        String mk = normKey(metricKey);
+        return "V_UNBALANCE".equals(mk)
+            || "VOLTAGE_UNBALANCE".equals(mk)
+            || "VOLTAGE_UNBALANCE_RATE".equals(mk)
+            || "I_UNBALANCE".equals(mk)
+            || "CURRENT_UNBALANCE".equals(mk)
+            || "CURRENT_UNBALANCE_RATE".equals(mk)
+            || "V_VARIATION".equals(mk)
+            || "VOLTAGE_VARIATION".equals(mk)
+            || "I_VARIATION".equals(mk)
+            || "CURRENT_VARIATION".equals(mk);
+    }
+
+    private static void enrichGroupedMetrics(Map<String, Double> metricValues) {
+        if (metricValues == null || metricValues.isEmpty()) return;
+
+        List<Double> voltage = new ArrayList<>();
+        List<Double> current = new ArrayList<>();
+        List<Double> thd = new ArrayList<>();
+        List<Double> thdVoltage = new ArrayList<>();
+        List<Double> thdCurrent = new ArrayList<>();
+        List<Double> unbalance = new ArrayList<>();
+        List<Double> voltageVariation = new ArrayList<>();
+        List<Double> currentVariation = new ArrayList<>();
+        List<Double> variation = new ArrayList<>();
+
+        Double pf = null;
+        Double hz = null;
+        Double peak = null;
+
+        for (Map.Entry<String, Double> e : metricValues.entrySet()) {
+            String k = e.getKey();
+            Double v = e.getValue();
+            if (k == null || v == null) continue;
+
+            if (looksLikeVoltageKey(k)) voltage.add(v);
+            if (looksLikeCurrentKey(k)) current.add(v);
+            if (looksLikeThdKey(k)) thd.add(v);
+            if (looksLikeVoltageThdKey(k)) thdVoltage.add(v);
+            if (looksLikeCurrentThdKey(k)) thdCurrent.add(v);
+
+            if (k.contains("UNBALANCE")) unbalance.add(v);
+            if (looksLikeVoltageVariationKey(k)) voltageVariation.add(v);
+            if (looksLikeCurrentVariationKey(k)) currentVariation.add(v);
+            if (k.contains("VARIATION") || k.endsWith("_VAR")) variation.add(v);
+
+            if ("PF".equals(k) || "POWER_FACTOR".equals(k) || "PF_TOTAL".equals(k)) pf = v;
+            if ("HZ".equals(k) || "FREQUENCY".equals(k)) hz = v;
+            if ("PEAK".equals(k) || "MAX_POWER".equals(k)) peak = v;
+        }
+
+        Double vMax = maxAbs(voltage);
+        Double iMax = maxAbs(current);
+        Double thdMax = maxAbs(thd);
+        Double thdVoltageMax = maxAbs(thdVoltage);
+        Double thdCurrentMax = maxAbs(thdCurrent);
+        Double unbMax = maxAbs(unbalance);
+        Double vVarMax = maxAbs(voltageVariation);
+        Double iVarMax = maxAbs(currentVariation);
+        Double varMax = maxAbs(variation);
+        Double vUnbalance = computeUnbalanceFromTriples(metricValues, 10.0d,
+            new String[]{"V1N", "V2N", "V3N"},
+            new String[]{"VOLTAGE_AN", "VOLTAGE_BN", "VOLTAGE_CN"},
+            new String[]{"V12", "V23", "V31"},
+            new String[]{"VOLTAGE_AB", "VOLTAGE_BC", "VOLTAGE_CA"}
+        );
+        Double iUnbalance = computeUnbalanceFromTriples(metricValues, 1.0d,
+            new String[]{"A1", "A2", "A3"},
+            new String[]{"CURRENT_A", "CURRENT_B", "CURRENT_C"}
+        );
+
+        if (vMax != null) {
+            metricValues.put("VOLTAGE", vMax);
+            metricValues.put("VOLTAGE_MAX", vMax);
+        }
+        if (iMax != null) {
+            metricValues.put("CURRENT", iMax);
+            metricValues.put("CURRENT_MAX", iMax);
+        }
+        if (thdMax != null) {
+            metricValues.put("THD", thdMax);
+            metricValues.put("THD_MAX", thdMax);
+            metricValues.put("HARMONIC_THD", thdMax);
+        }
+        if (thdVoltageMax != null) {
+            metricValues.put("THD_VOLTAGE", thdVoltageMax);
+            metricValues.put("THD_VOLTAGE_MAX", thdVoltageMax);
+        }
+        if (thdCurrentMax != null) {
+            metricValues.put("THD_CURRENT", thdCurrentMax);
+            metricValues.put("THD_CURRENT_MAX", thdCurrentMax);
+        }
+        if (unbMax != null) {
+            metricValues.put("UNBALANCE", unbMax);
+            metricValues.put("UNBALANCE_MAX", unbMax);
+        }
+        if (vUnbalance != null) {
+            metricValues.put("V_UNBALANCE", vUnbalance);
+            metricValues.put("VOLTAGE_UNBALANCE", vUnbalance);
+            metricValues.put("VOLTAGE_UNBALANCE_RATE", vUnbalance);
+        }
+        if (iUnbalance != null) {
+            metricValues.put("I_UNBALANCE", iUnbalance);
+            metricValues.put("CURRENT_UNBALANCE", iUnbalance);
+            metricValues.put("CURRENT_UNBALANCE_RATE", iUnbalance);
+        }
+        if (vVarMax != null) {
+            metricValues.put("V_VARIATION", vVarMax);
+            metricValues.put("VOLTAGE_VARIATION", vVarMax);
+        }
+        if (iVarMax != null) {
+            metricValues.put("I_VARIATION", iVarMax);
+            metricValues.put("CURRENT_VARIATION", iVarMax);
+        }
+        if (varMax != null) {
+            metricValues.put("VARIATION", varMax);
+            metricValues.put("VARIATION_MAX", varMax);
+        }
+        if (pf != null) {
+            metricValues.put("POWER_FACTOR", pf);
+            metricValues.put("PF_GROUP", pf);
+        }
+        if (hz != null) {
+            metricValues.put("FREQUENCY_GROUP", hz);
+            metricValues.put("HZ_GROUP", hz);
+        }
+        if (peak != null) {
+            metricValues.put("PEAK", peak);
+            metricValues.put("MAX_POWER", peak);
+            metricValues.put("PEAK_POWER", peak);
+        }
+    }
+
+    private static Map<String, String> loadAiTokenColumnAlias(Connection conn) {
+        Map<String, String> map = new HashMap<>();
+        String sql = "SELECT token, measurement_column FROM dbo.plc_ai_measurements_match";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String token = rs.getString("token");
+                String col = rs.getString("measurement_column");
+                if (token == null || col == null) continue;
+                String t = token.trim().toUpperCase(Locale.ROOT);
+                String c = col.trim().toUpperCase(Locale.ROOT);
+                if (!t.isEmpty() && !c.isEmpty()) map.put(t, c);
+            }
+        } catch (Exception ignore) {
+        }
+        return map;
+    }
+
+    private static Map<String, List<String>> loadMetricCatalogSourceTokens(Connection conn) {
+        Map<String, List<String>> out = new HashMap<>();
+        String sql =
+            "IF OBJECT_ID('dbo.metric_catalog_tag_map','U') IS NOT NULL " +
+            "SELECT metric_key, source_token FROM dbo.metric_catalog_tag_map WHERE enabled = 1 ORDER BY metric_key, sort_no, source_token " +
+            "ELSE SELECT CAST(NULL AS VARCHAR(100)) AS metric_key, CAST(NULL AS VARCHAR(120)) AS source_token WHERE 1=0";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String metricKey = normKey(rs.getString("metric_key"));
+                String sourceToken = normKey(rs.getString("source_token"));
+                if (metricKey.isEmpty() || sourceToken.isEmpty()) continue;
+                List<String> list = out.get(metricKey);
+                if (list == null) {
+                    list = new ArrayList<>();
+                    out.put(metricKey, list);
+                }
+                if (!list.contains(sourceToken)) list.add(sourceToken);
+            }
+        } catch (Exception ignore) {
+        }
+        return out;
+    }
+
+    private static LinkedHashMap<String, Double> resolveAiRuleSourceValues(
+            AlarmRuleDef rule,
+            Map<String, List<String>> metricCatalogTokens,
+            Map<String, Double> metricValues) {
+        LinkedHashMap<String, Double> out = new LinkedHashMap<>();
+        if (rule == null || metricValues == null) return out;
+
+        String metricKey = normKey(rule.getMetricKey());
+        if (isCalculatedMetricKey(metricKey)) {
+            Double computed = metricValues.get(metricKey);
+            if (computed != null) out.put(metricKey, computed);
+            return out;
+        }
+        List<String> candidates = AlarmFacade.splitSourceTokens(rule.getSourceToken());
+        if (candidates.isEmpty() && metricCatalogTokens != null) {
+            List<String> mapped = metricCatalogTokens.get(metricKey);
+            if (mapped != null && !mapped.isEmpty()) candidates = mapped;
+        }
+
+        for (String key : candidates) {
+            Double v = metricValues.get(normKey(key));
+            if (v != null) out.put(normKey(key), v);
+        }
+
+        if (out.isEmpty()) {
+            Double v = metricValues.get(metricKey);
+            if (v != null) out.put(metricKey, v);
+        }
+        return out;
+    }
+%>

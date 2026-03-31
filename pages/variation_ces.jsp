@@ -1,7 +1,7 @@
 ﻿<%@ page import="java.sql.*, java.util.*" %>
 <%@ page import="java.time.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconn.jsp" %>
+<%@ include file="../includes/dbconfig.jspf" %>
 
 <%! 
     private static float safeParseFloat(String s, float defVal) {
@@ -43,6 +43,7 @@
 %>
 
 <%
+    try (Connection conn = openDbConnection()) {
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today;
 
@@ -76,14 +77,12 @@
 
     try {
         try (Statement stmt = conn.createStatement()) {
-            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
-            while (rs.next()) buildingOptions.add(rs.getString(1).trim());
-            rs.close();
-
-            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
-            while (rs.next()) usageOptions.add(rs.getString(1).trim());
-            rs.close();
-
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name")) {
+                while (rs.next()) buildingOptions.add(rs.getString(1).trim());
+            }
+            try (ResultSet rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type")) {
+                while (rs.next()) usageOptions.add(rs.getString(1).trim());
+            }
         }
         StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
         List<Object> meterParams = new ArrayList<>();
@@ -229,8 +228,8 @@
 <body>
 <div class="title-bar">
     <h2>📈 전류 변동율 분석 (Ia / Ib / Ic)</h2>
-    <div style="display:flex; gap:8px; align-items:center;">
-        <button class="back-btn" onclick="location.href='/pages/epms_main.jsp'">EPMS 홈</button>
+    <div class="inline-actions">
+        <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         <button class="back-btn" onclick="location.href='variation_ves.jsp' + location.search">전압 변동율</button>
     </div>
 </div>
@@ -323,7 +322,7 @@
             }
         }
     } catch (Exception e) {
-        out.println("DB 오류: " + e.getMessage());
+        out.println("DB ?ㅻ쪟: " + e.getMessage());
     }
 
     final float EPS = 0.000001f;
@@ -531,6 +530,9 @@ window.addEventListener('resize', () => myChart.resize());
 </script>
 
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<%
+    }
+%>
 </body>
 </html>
 

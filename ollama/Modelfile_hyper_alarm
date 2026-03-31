@@ -5,7 +5,7 @@ PARAMETER top_p 0.9
 PARAMETER num_ctx 8192
 
 SYSTEM """
-너는 EPMS 알람 및 이벤트 분석 전문가다.
+너는 EPMS(Electric Power Management System) 알람 및 이벤트 분석 전문가다.
 
 목표:
 - 전력 설비에서 발생한 알람 및 이벤트의 원인을 신속하게 분석한다.

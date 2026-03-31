@@ -1,13 +1,12 @@
 ﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
-<%@ include file="../../includes/dbconn.jsp" %>
+<%@ include file="../../includes/dbconfig.jspf" %>
 <%
+    try (Connection conn = openDbConnection()) {
     List<Map<String, Object>> plcList = new ArrayList<>();
     Map<Integer, String> meterNameMap = new HashMap<>();
     Map<Integer, String> meterPanelMap = new HashMap<>();
-
-    try {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config ORDER BY plc_id");
              ResultSet rs = ps.executeQuery()) {
@@ -31,9 +30,6 @@
                 meterPanelMap.put(meterId, rs.getString("panel_name"));
             }
         }
-    } finally {
-        try { if (conn != null && !conn.isClosed()) conn.close(); } catch (Exception ignore) {}
-    }
 %>
 <html>
 <head>
@@ -69,6 +65,9 @@
             .data-grid { grid-template-columns: 1fr; }
         }
         .data-col h3 { margin: 0 0 8px 0; }
+        .filter-row { display:flex; align-items:center; gap:8px; margin:6px 0 10px 0; flex-wrap: wrap; }
+        .filter-row label { white-space: nowrap; }
+        .filter-row select { min-width: 220px; }
     </style>
 </head>
 <body>
@@ -149,9 +148,13 @@
         </tbody>
     </table>
 
-    <div style="display:flex; align-items:center; gap:8px; margin:6px 0 10px 0;">
+    <div class="filter-row">
         <label for="meterFilter">meter:</label>
         <select id="meterFilter">
+            <option value="">전체</option>
+        </select>
+        <label for="diFilter">DI:</label>
+        <select id="diFilter">
             <option value="">전체</option>
         </select>
     </div>
@@ -217,15 +220,16 @@ const API = 'modbus_api.jsp';
   const okBox = document.getElementById('okBox');
   const errBox = document.getElementById('errBox');
   const meterFilter = document.getElementById('meterFilter');
+  const diFilter = document.getElementById('diFilter');
   const diRowsBody = document.getElementById('diRows');
   const serverStates = {};
   const lastRowsByPlc = {};
   const lastDiRowsByPlc = {};
   const actionBusy = {};
-  const STATUS_MS_ACTIVE = 5000;
-  const SNAPSHOT_MS_ACTIVE = 15000;
-  const STATUS_MS_HIDDEN = 30000;
-  const SNAPSHOT_MS_HIDDEN = 60000;
+  const STATUS_MS_ACTIVE = 1000;
+  const SNAPSHOT_MS_ACTIVE = 2000;
+  const STATUS_MS_HIDDEN = 10000;
+  const SNAPSHOT_MS_HIDDEN = 15000;
   let statusTimer = null;
   let snapshotTimer = null;
   let statusSyncBusy = false;
@@ -296,6 +300,43 @@ const API = 'modbus_api.jsp';
     meterFilter.value = meters.includes(prev) ? prev : '';
   }
 
+  function diFilterKey(itemName, panelName){
+    return String(itemName || '') + '||' + String(panelName || '');
+  }
+
+  function refreshDiFilter(rows){
+    const prev = diFilter.value;
+    const pairMap = new Map();
+    (rows || []).forEach(function(r){
+      const key = diFilterKey(r.item_name, r.panel_name);
+      if (!pairMap.has(key)) {
+        pairMap.set(key, {
+          item_name: String(r.item_name || ''),
+          panel_name: String(r.panel_name || '')
+        });
+      }
+    });
+
+    const pairs = Array.from(pairMap.values()).sort(function(a, b){
+      const aItem = a.item_name || '';
+      const bItem = b.item_name || '';
+      if (aItem !== bItem) return aItem.localeCompare(bItem);
+      return (a.panel_name || '').localeCompare(b.panel_name || '');
+    });
+
+    let html = '<option value="">전체</option>';
+    pairs.forEach(function(pair){
+      const key = diFilterKey(pair.item_name, pair.panel_name);
+      let label = pair.item_name || '-';
+      if (pair.panel_name) label += ' / ' + pair.panel_name;
+      html += '<option value="' + esc(key) + '">' + esc(label) + '</option>';
+    });
+    diFilter.innerHTML = html;
+    diFilter.value = pairs.some(function(pair){
+      return diFilterKey(pair.item_name, pair.panel_name) === prev;
+    }) ? prev : '';
+  }
+
   function renderRows(rows){
     const filterMeter = meterFilter.value;
     const viewRows = (rows || []).filter(function(r){
@@ -344,12 +385,10 @@ const API = 'modbus_api.jsp';
   }
 
   function renderDiRows(rows){
-    const filterMeter = meterFilter.value;
-    const selectedPanel = filterMeter ? (meterPanelMap[filterMeter] || '') : '';
+    const selectedDiKey = diFilter.value;
     const viewRows = (rows || []).filter(function(r){
-      if (!filterMeter) return true;
-      if (selectedPanel) return (r.panel_name || '') === selectedPanel;
-      return false;
+      if (!selectedDiKey) return true;
+      return diFilterKey(r.item_name, r.panel_name) === selectedDiKey;
     });
 
     if (!viewRows.length){
@@ -389,7 +428,8 @@ const API = 'modbus_api.jsp';
   function setPlcState(plcId, text, isErr){
     const el = document.getElementById('state-' + plcId);
     if (!el) return;
-    const state = isErr ? 'error' : text;
+    const normalized = String(text || '').toLowerCase();
+    const state = normalized === 'stopped' ? 'stopped' : (isErr ? 'error' : text);
     el.innerHTML = getStateBadgeHtml(state);
   }
 
@@ -524,9 +564,11 @@ const API = 'modbus_api.jsp';
       });
 
       const rows = mergedRows();
+      const diRows = mergedDiRows();
       refreshMeterFilter(rows);
+      refreshDiFilter(diRows);
       renderRows(rows);
-      renderDiRows(mergedDiRows());
+      renderDiRows(diRows);
     } catch (e) {
       // ignore snapshot sync errors for UX continuity
     } finally {
@@ -546,9 +588,11 @@ const API = 'modbus_api.jsp';
       lastRowsByPlc[plcId] = data.rows || [];
       lastDiRowsByPlc[plcId] = data.di_rows || [];
       const rows = mergedRows();
+      const diRows = mergedDiRows();
       refreshMeterFilter(rows);
+      refreshDiFilter(diRows);
       renderRows(rows);
-      renderDiRows(mergedDiRows());
+      renderDiRows(diRows);
       return true;
     } catch (e){
       showErr('통신 오류: ' + e.message);
@@ -570,8 +614,10 @@ const API = 'modbus_api.jsp';
       showOk(data.info || '서버 폴링 시작');
       setButtons(plcId, true);
       setPlcState(plcId, 'running', false);
-      // 버튼 클릭 직후 대량 read 응답 파싱을 피하고, 주기 동기화에 맡긴다.
-      setTimeout(function(){ refreshPollingStatus(); }, 300);
+      setTimeout(function(){
+        refreshPollingStatus();
+        loadSnapshot();
+      }, 300);
     } catch (e){
       showErr('통신 오류: ' + e.message);
     } finally {
@@ -590,7 +636,10 @@ const API = 'modbus_api.jsp';
       showOk(data.info || '서버 폴링 중지');
       setButtons(plcId, false);
       setPlcState(plcId, 'stopped', false);
-      setTimeout(function(){ refreshPollingStatus(); }, 300);
+      setTimeout(function(){
+        refreshPollingStatus();
+        loadSnapshot();
+      }, 300);
     } catch (e){
       showErr('통신 오류: ' + e.message);
     } finally {
@@ -648,6 +697,9 @@ const API = 'modbus_api.jsp';
 
   meterFilter.addEventListener('change', function(){
     renderRows(mergedRows());
+  });
+
+  diFilter.addEventListener('change', function(){
     renderDiRows(mergedDiRows());
   });
 
@@ -668,5 +720,8 @@ const API = 'modbus_api.jsp';
   initPage();
 })();
 </script>
+<%
+    }
+%>
 </body>
 </html>
