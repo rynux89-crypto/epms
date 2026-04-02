@@ -1,4 +1,7 @@
 <%
+    // Legacy compatibility include.
+    // New/updated JSP pages should prefer try-with-resources instead of
+    // publishing JDBC objects into page/request scope.
     // Try to close commonly published JDBC resources first when pages
     // expose them through page/request scope.
     String[] resourceNames = new String[] {

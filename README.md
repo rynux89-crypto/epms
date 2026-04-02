@@ -24,7 +24,7 @@ EPMS는 전력 품질/에너지/알람/이벤트/PLC 매핑을 JSP 기반으로 
 - 이벤트: `event_view.jsp`, `event_detail.jsp`
 - 계측기/트리 관리: `meter_register.jsp`, `meter_tree_manage.jsp`
 - 데이터 보관/정리: `data_retention_manage.jsp`
-- PLC/매핑: `plc_register.jsp`, `plc_status.jsp`, `plc_write.jsp`, `plc_excel_import.jsp`, `ai_mapping.jsp`, `di_mapping.jsp`, `ai_measurements_match.jsp`, `ai_measurements_match_manage.jsp`
+- PLC/매핑: `plc_register.jsp`, `plc_status.jsp`, `plc_write.jsp`, `plc_excel_import.jsp`, `ai_mapping.jsp`, `di_mapping.jsp`, `ai_measurements_verify.jsp`, `ai_measurements_mapping_manage.jsp`
 
 ## 3. AI Agent 구성
 

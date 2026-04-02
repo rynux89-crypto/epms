@@ -23,6 +23,27 @@
         for (float v : a) if (v > m) m = v;
         return m;
     }
+    private static float computeVoltageUnbalance(float an, float bn, float cn) {
+        float avg = (an + bn + cn) / 3f;
+        if (Math.abs(avg) < 0.000001f) return 0f;
+        float devA = Math.abs(an - avg);
+        float devB = Math.abs(bn - avg);
+        float devC = Math.abs(cn - avg);
+        float maxDev = Math.max(devA, Math.max(devB, devC));
+        return (maxDev / avg) * 100f;
+    }
+    private static float computeCurrentUnbalance(float a, float b, float c) {
+        float avg = (a + b + c) / 3f;
+        if (Math.abs(avg) < 0.000001f) return 0f;
+        float devA = Math.abs(a - avg);
+        float devB = Math.abs(b - avg);
+        float devC = Math.abs(c - avg);
+        float maxDev = Math.max(devA, Math.max(devB, devC));
+        return (maxDev / avg) * 100f;
+    }
+    private static float computeRepresentativeThd(float a, float b, float c) {
+        return (a + b + c) / 3f;
+    }
 %>
 
 <%
@@ -100,6 +121,9 @@
     List<Float> vab = new ArrayList<>();
     List<Float> vbc = new ArrayList<>();
     List<Float> vca = new ArrayList<>();
+    List<Float> van = new ArrayList<>();
+    List<Float> vbn = new ArrayList<>();
+    List<Float> vcn = new ArrayList<>();
     List<Float> iA = new ArrayList<>();
     List<Float> iB = new ArrayList<>();
     List<Float> iC = new ArrayList<>();
@@ -110,11 +134,18 @@
     List<Float> vAvg = new ArrayList<>();
     List<Float> iAvg = new ArrayList<>();
     List<Float> pfAvg = new ArrayList<>();
+    float latestVUnbalance = 0f;
+    float latestVThd = 0f;
+    float latestIUnbalance = 0f;
+    float latestIThd = 0f;
+    boolean hasQualitySnapshot = false;
+    float voltageRefCenter = 380f;
 
     try {
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT measured_at, frequency, ")
            .append("voltage_ab, voltage_bc, voltage_ca, ")
+           .append("voltage_an, voltage_bn, voltage_cn, ")
            .append("current_a, current_b, current_c, ")
            .append("COALESCE(power_factor_a, power_factor, 0) AS pf_a_eff, ")
            .append("COALESCE(power_factor_b, power_factor, 0) AS pf_b_eff, ")
@@ -145,6 +176,9 @@
                     float vabVal = rs.getFloat("voltage_ab");
                     float vbcVal = rs.getFloat("voltage_bc");
                     float vcaVal = rs.getFloat("voltage_ca");
+                    float vanVal = rs.getFloat("voltage_an");
+                    float vbnVal = rs.getFloat("voltage_bn");
+                    float vcnVal = rs.getFloat("voltage_cn");
                     float iAVal = rs.getFloat("current_a");
                     float iBVal = rs.getFloat("current_b");
                     float iCVal = rs.getFloat("current_c");
@@ -155,6 +189,7 @@
 
                     freq.add(freqVal);
                     vab.add(vabVal); vbc.add(vbcVal); vca.add(vcaVal);
+                    van.add(vanVal); vbn.add(vbnVal); vcn.add(vcnVal);
                     iA.add(iAVal); iB.add(iBVal); iC.add(iCVal);
                     pfA.add(pfAVal); pfB.add(pfBVal); pfC.add(pfCVal);
 
@@ -174,6 +209,45 @@
     float vAvgMean = avgFloat(vAvg), vAvgMin = minFloat(vAvg), vAvgMax = maxFloat(vAvg);
     float iAvgMean = avgFloat(iAvg), iAvgMin = minFloat(iAvg), iAvgMax = maxFloat(iAvg);
     float pfAvgMean = avgFloat(pfAvg), pfAvgMin = minFloat(pfAvg), pfAvgMax = maxFloat(pfAvg);
+    voltageRefCenter = vAvgMean >= 300f ? 380f : 220f;
+
+    if (meter != null && !meter.trim().isEmpty()) {
+        String sqlQualitySnapshot =
+            "SELECT TOP 1 vm.measured_at, vm.voltage_unbalance_rate, vm.harmonic_distortion_rate, " +
+            "       vm.voltage_an, vm.voltage_bn, vm.voltage_cn, vm.current_a, vm.current_b, vm.current_c, " +
+            "       hm.thd_voltage_a, hm.thd_voltage_b, hm.thd_voltage_c, hm.thd_current_a, hm.thd_current_b, hm.thd_current_c " +
+            "FROM vw_meter_measurements vm " +
+            "OUTER APPLY ( " +
+            "    SELECT TOP 1 thd_voltage_a, thd_voltage_b, thd_voltage_c, thd_current_a, thd_current_b, thd_current_c " +
+            "    FROM vw_harmonic_measurements hm " +
+            "    WHERE hm.meter_id = vm.meter_id AND hm.measured_at <= vm.measured_at " +
+            "    ORDER BY hm.measured_at DESC " +
+            ") hm " +
+            "WHERE vm.meter_id = ? AND vm.measured_at BETWEEN ? AND ? " +
+            "ORDER BY vm.measured_at DESC";
+        try (PreparedStatement ps = conn.prepareStatement(sqlQualitySnapshot)) {
+            ps.setString(1, meter.trim());
+            ps.setObject(2, startDate + " " + startTime);
+            ps.setObject(3, endDate + " " + endTime);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    float vunbal = rs.getFloat("voltage_unbalance_rate");
+                    if (rs.wasNull()) {
+                        vunbal = computeVoltageUnbalance(rs.getFloat("voltage_an"), rs.getFloat("voltage_bn"), rs.getFloat("voltage_cn"));
+                    }
+                    float vthd = rs.getFloat("harmonic_distortion_rate");
+                    if (rs.wasNull()) {
+                        vthd = computeRepresentativeThd(rs.getFloat("thd_voltage_a"), rs.getFloat("thd_voltage_b"), rs.getFloat("thd_voltage_c"));
+                    }
+                    latestVUnbalance = vunbal;
+                    latestVThd = vthd;
+                    latestIUnbalance = computeCurrentUnbalance(rs.getFloat("current_a"), rs.getFloat("current_b"), rs.getFloat("current_c"));
+                    latestIThd = computeRepresentativeThd(rs.getFloat("thd_current_a"), rs.getFloat("thd_current_b"), rs.getFloat("thd_current_c"));
+                    hasQualitySnapshot = true;
+                }
+            }
+        } catch (Exception ignore) {}
+    }
 
     ObjectMapper mapper = new ObjectMapper();
     String jsonLabels = mapper.writeValueAsString(labels);
@@ -233,11 +307,41 @@
         font-size: 12px;
         padding: 6px 5px;
       }
+      .quality-strip {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .quality-chip {
+        background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow-soft);
+        padding: 12px 14px;
+      }
+      .quality-chip-label {
+        font-size: 12px;
+        color: #58718f;
+        margin-bottom: 6px;
+        font-weight: 700;
+      }
+      .quality-chip-value {
+        font-size: 22px;
+        line-height: 1.1;
+        font-weight: 800;
+        color: #18324b;
+      }
+      .quality-chip-sub {
+        font-size: 11px;
+        color: #68809d;
+        margin-top: 6px;
+      }
       .pq-overview-layout .summary-wrap { max-width:none; }
       .pq-overview-layout .chart-container {
         min-width: 0;
-        height: calc(100vh - 245px);
-        min-height: 520px;
+        height: calc(100vh - 205px);
+        min-height: 600px;
         margin: 0;
       }
       .chart-stack { display:flex; flex-direction:column; gap:12px; width:100%; height:100%; }
@@ -250,6 +354,11 @@
         }
         .pq-overview-layout .chart-container {
           height: 700px;
+        }
+      }
+      @media (max-width: 700px) {
+        .quality-strip {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -330,6 +439,28 @@
           <tr><td>역률평균 (-)</td><td><%= String.format(java.util.Locale.US, "%.2f", pfAvgMean) %></td><td><%= String.format(java.util.Locale.US, "%.2f", pfAvgMin) %></td><td><%= String.format(java.util.Locale.US, "%.2f", pfAvgMax) %></td></tr>
           </tbody>
       </table>
+      <div class="quality-strip">
+          <div class="quality-chip">
+              <div class="quality-chip-label">전압 불평형율</div>
+              <div class="quality-chip-value"><%= String.format(java.util.Locale.US, "%.2f", latestVUnbalance) %><span style="font-size:14px;"> %</span></div>
+              <div class="quality-chip-sub"><%= hasQualitySnapshot ? "선택 계측기 최신 스냅샷" : "계측기 선택 시 표시" %></div>
+          </div>
+          <div class="quality-chip">
+              <div class="quality-chip-label">전압 왜형율(THD)</div>
+              <div class="quality-chip-value"><%= String.format(java.util.Locale.US, "%.2f", latestVThd) %><span style="font-size:14px;"> %</span></div>
+              <div class="quality-chip-sub"><%= hasQualitySnapshot ? "선택 계측기 최신 스냅샷" : "계측기 선택 시 표시" %></div>
+          </div>
+          <div class="quality-chip">
+              <div class="quality-chip-label">전류 불평형율</div>
+              <div class="quality-chip-value"><%= String.format(java.util.Locale.US, "%.2f", latestIUnbalance) %><span style="font-size:14px;"> %</span></div>
+              <div class="quality-chip-sub"><%= hasQualitySnapshot ? "선택 계측기 최신 스냅샷" : "계측기 선택 시 표시" %></div>
+          </div>
+          <div class="quality-chip">
+              <div class="quality-chip-label">전류 왜형율(THD-I)</div>
+              <div class="quality-chip-value"><%= String.format(java.util.Locale.US, "%.2f", latestIThd) %><span style="font-size:14px;"> %</span></div>
+              <div class="quality-chip-sub"><%= hasQualitySnapshot ? "선택 계측기 최신 스냅샷" : "계측기 선택 시 표시" %></div>
+          </div>
+      </div>
   </div>
 
   <div class="chart-container">
@@ -361,6 +492,9 @@ const ia = <%= jsonIA %>;
 const ib = <%= jsonIB %>;
 const ic = <%= jsonIC %>;
 const pfavg = <%= jsonPFAVG %>;
+const voltageRefCenter = <%= String.format(java.util.Locale.US, "%.2f", voltageRefCenter) %>;
+const voltageRefLow = <%= String.format(java.util.Locale.US, "%.2f", voltageRefCenter * 0.9f) %>;
+const voltageRefHigh = <%= String.format(java.util.Locale.US, "%.2f", voltageRefCenter * 1.1f) %>;
 
 const MAX_POINTS = 2000;
 function buildSampleIndex(length, maxPoints) {
@@ -489,15 +623,54 @@ chartFreq.setOption({
     { type: 'inside', xAxisIndex: 0, filterMode: 'none' }
   ],
   series: [
-    { name: 'Frequency', type: 'line', yAxisIndex: 0, data: sFreq, showSymbol: false, sampling: 'lttb', lineStyle: { color: '#1f2937', width: 2.2 } },
-    { name: 'PF', type: 'line', yAxisIndex: 1, data: sPfavg, showSymbol: false, sampling: 'lttb', lineStyle: { color: '#dc2626', width: 2.0 } }
+    {
+      name: 'Frequency',
+      type: 'line',
+      yAxisIndex: 0,
+      data: sFreq,
+      showSymbol: false,
+      sampling: 'lttb',
+      lineStyle: { color: '#1f2937', width: 2.2 },
+      markLine: {
+        symbol: 'none',
+        label: { formatter: '기준 60Hz' },
+        lineStyle: { type: 'dashed', color: '#64748b' },
+        data: [{ yAxis: 60 }]
+      }
+    },
+    {
+      name: 'PF',
+      type: 'line',
+      yAxisIndex: 1,
+      data: sPfavg,
+      showSymbol: false,
+      sampling: 'lttb',
+      lineStyle: { color: '#dc2626', width: 2.0 },
+      markLine: {
+        symbol: 'none',
+        label: { formatter: 'PF 0.90' },
+        lineStyle: { type: 'dashed', color: '#f97316' },
+        data: [{ yAxis: 0.9 }]
+      }
+    }
   ]
 });
-chartVolt.setOption(optionOf('V', 'V', [
+const voltOption = optionOf('V', 'V', [
   line('Vab', sVab, '#ef4444'),
   line('Vbc', sVbc, '#3b82f6'),
   line('Vca', sVca, '#22c55e')
-], null, null, false));
+], null, null, false);
+voltOption.series[0].markLine = {
+  symbol: 'none',
+  lineStyle: { type: 'dashed', color: '#94a3b8' },
+  label: { formatter: function(p){ return p.name; } },
+  data: [
+    { name: '기준', yAxis: voltageRefCenter },
+    { name: '하한', yAxis: voltageRefLow },
+    { name: '상한', yAxis: voltageRefHigh }
+  ]
+};
+chartVolt.setOption(voltOption);
 chartCurr.setOption(optionOf('A', 'A', [
   line('Ia', sIa, '#f97316'),
   line('Ib', sIb, '#8b5cf6'),

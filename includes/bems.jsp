@@ -25,13 +25,12 @@ class EnergyData{
   double[] hour  = new double[24];
 }
 
-Connection conn=null;
 PreparedStatement ps=null;
 ResultSet rs=null;
 
 try{
   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
-  conn = DriverManager.getConnection(jdbcUrl,jdbcUser,jdbcPass);
+  try (Connection conn = DriverManager.getConnection(jdbcUrl,jdbcUser,jdbcPass)) {
 
   /* =====================================================
      META : building / usage
@@ -367,12 +366,11 @@ try{
 
   j.append("}");
   out.print(j.toString());
-
+  }
 }catch(Exception e){
   out.print("{\"error\":\""+esc(e.getMessage())+"\"}");
 }finally{
   try{if(rs!=null)rs.close();}catch(Exception e){}
   try{if(ps!=null)ps.close();}catch(Exception e){}
-  try{if(conn!=null)conn.close();}catch(Exception e){}
 }
 %>

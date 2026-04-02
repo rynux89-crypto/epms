@@ -1,5 +1,8 @@
 <%@ include file="./dbconfig.jspf" %>
 <%
+    // Legacy compatibility include.
+    // New/updated JSP pages should prefer:
+    // try (Connection conn = openDbConnection()) { ... }
     Connection conn = null;
     try {
         conn = openDbConnection();

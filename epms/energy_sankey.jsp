@@ -14,6 +14,10 @@
     String building = request.getParameter("building");
     String usage = request.getParameter("usage");
     String meter = request.getParameter("meter");
+    boolean meterParamProvided = request.getParameterMap().containsKey("meter");
+    boolean firstLoad = request.getQueryString() == null || request.getQueryString().trim().isEmpty();
+    String viewMode = request.getParameter("view");
+    if (viewMode == null || (!"topdown".equals(viewMode) && !"sankey".equals(viewMode))) viewMode = "sankey";
 
     if (endDate == null || endDate.trim().isEmpty()) endDate = today.toString();
     if (startDate == null || startDate.trim().isEmpty()) startDate = today.minusDays(6).toString();
@@ -32,6 +36,7 @@
     List<String> usageOptions = new ArrayList<>();
     List<String[]> meterOptions = new ArrayList<>();
     Map<Integer, String> meterNames = new HashMap<>();
+    Integer defaultFocusMeterId = null;
 
     try {
         try (Statement st = conn.createStatement()) {
@@ -62,7 +67,11 @@
                     String id = rs.getString("meter_id");
                     String name = rs.getString("name");
                     meterOptions.add(new String[]{id, name});
-                    try { meterNames.put(Integer.parseInt(id), name); } catch (Exception ignore) {}
+                    try {
+                        Integer meterId = Integer.valueOf(Integer.parseInt(id));
+                        meterNames.put(meterId, name);
+                        if ("EAST_VCB_MAIN".equals(name)) defaultFocusMeterId = meterId;
+                    } catch (Exception ignore) {}
                 }
             }
         }
@@ -76,6 +85,7 @@
     }
 
     Map<Integer, List<Integer>> childrenByParent = new LinkedHashMap<>();
+    Map<Integer, List<Integer>> parentsByChild = new LinkedHashMap<>();
     Set<Integer> childSet = new HashSet<>();
     try (PreparedStatement ps = conn.prepareStatement(
             "SELECT parent_meter_id, child_meter_id " +
@@ -88,9 +98,14 @@
             int c = rs.getInt("child_meter_id");
             if (!candidateMeters.contains(p) || !candidateMeters.contains(c)) continue;
             childrenByParent.computeIfAbsent(p, k -> new ArrayList<>()).add(c);
+            parentsByChild.computeIfAbsent(c, k -> new ArrayList<>()).add(p);
             childSet.add(c);
         }
     } catch (Exception ignore) {
+    }
+
+    if ((firstLoad || !meterParamProvided) && defaultFocusMeterId != null && (meter == null || meter.trim().isEmpty())) {
+        meter = String.valueOf(defaultFocusMeterId);
     }
 
     Integer selectedMeterId = parseNullableInt(meter);
@@ -186,23 +201,62 @@
     if (roots.isEmpty()) roots.addAll(scopeMeters);
 
     Map<Integer, Integer> depthMap = new HashMap<>();
+    Map<Integer, Integer> indegreeMap = new HashMap<>();
+    for (Integer id : scopeMeters) indegreeMap.put(id, Integer.valueOf(0));
+    for (Map.Entry<Integer, List<Integer>> e : childrenByParent.entrySet()) {
+        Integer p = e.getKey();
+        if (!scopeMeters.contains(p)) continue;
+        for (Integer c : e.getValue()) {
+            if (!scopeMeters.contains(c)) continue;
+            indegreeMap.put(c, Integer.valueOf(indegreeMap.getOrDefault(c, Integer.valueOf(0)).intValue() + 1));
+        }
+    }
+
     Deque<Integer> dqDepth = new ArrayDeque<>();
-    for (Integer r : roots) {
-        depthMap.put(r, 1);
-        dqDepth.add(r);
+    for (Integer id : scopeMeters) {
+        if (indegreeMap.getOrDefault(id, Integer.valueOf(0)).intValue() == 0) {
+            depthMap.put(id, Integer.valueOf(1));
+            dqDepth.add(id);
+        }
     }
     while (!dqDepth.isEmpty()) {
         int cur = dqDepth.poll();
-        int nextDepth = depthMap.get(cur) + 1;
+        int nextDepth = depthMap.getOrDefault(cur, Integer.valueOf(1)).intValue() + 1;
         List<Integer> ch = childrenByParent.get(cur);
         if (ch == null) continue;
         for (Integer cc : ch) {
-            Integer old = depthMap.get(cc);
-            if (old == null || nextDepth < old.intValue()) {
-                depthMap.put(cc, nextDepth);
-                dqDepth.add(cc);
+            if (!scopeMeters.contains(cc)) continue;
+            Integer oldDepth = depthMap.get(cc);
+            if (oldDepth == null || nextDepth > oldDepth.intValue()) {
+                depthMap.put(cc, Integer.valueOf(nextDepth));
+            }
+            int nextIndegree = indegreeMap.getOrDefault(cc, Integer.valueOf(0)).intValue() - 1;
+            indegreeMap.put(cc, Integer.valueOf(nextIndegree));
+            if (nextIndegree == 0) dqDepth.add(cc);
+        }
+    }
+    for (Integer id : scopeMeters) {
+        if (!depthMap.containsKey(id)) depthMap.put(id, Integer.valueOf(1));
+    }
+
+    Map<Integer, Integer> displayOrderMap = new HashMap<>();
+    int[] orderSeq = new int[]{0};
+    java.util.function.Consumer<Integer> assignOrder = new java.util.function.Consumer<Integer>() {
+        @Override
+        public void accept(Integer node) {
+            if (displayOrderMap.containsKey(node)) return;
+            displayOrderMap.put(node, Integer.valueOf(orderSeq[0]++));
+            List<Integer> ch = childrenByParent.get(node);
+            if (ch == null) return;
+            for (Integer c : ch) {
+                if (!scopeMeters.contains(c)) continue;
+                this.accept(c);
             }
         }
+    };
+    for (Integer r : roots) assignOrder.accept(r);
+    for (Integer id : scopeMeters) {
+        if (!displayOrderMap.containsKey(id)) displayOrderMap.put(id, Integer.valueOf(orderSeq[0]++));
     }
 
     List<Integer> orderedNodes = new ArrayList<>(scopeMeters);
@@ -210,6 +264,9 @@
         int da = depthMap.getOrDefault(a, 99);
         int db = depthMap.getOrDefault(b, 99);
         if (da != db) return Integer.compare(da, db);
+        int oa = displayOrderMap.getOrDefault(a, Integer.valueOf(999999)).intValue();
+        int ob = displayOrderMap.getOrDefault(b, Integer.valueOf(999999)).intValue();
+        if (oa != ob) return Integer.compare(oa, ob);
         return Integer.compare(a, b);
     });
 
@@ -218,8 +275,21 @@
     for (Integer id : orderedNodes) {
         String nm = meterNames.get(id);
         if (nm == null || nm.trim().isEmpty()) nm = "Meter " + id;
+        List<Integer> parents = parentsByChild.get(id);
+        List<String> parentLabels = new ArrayList<>();
+        if (parents != null) {
+            for (Integer pid : parents) {
+                if (!scopeMeters.contains(pid)) continue;
+                String parentName = meterNames.get(pid);
+                if (parentName == null || parentName.trim().isEmpty()) parentName = "Meter " + pid;
+                parentLabels.add(parentName + " (#" + pid + ")");
+            }
+        }
+        String parentsLabel = String.join(", ", parentLabels);
         nodeJson.append(",{\"name\":\"").append(jsq(nm + " (#" + id + ")")).append("\",\"depth\":")
-                .append(depthMap.getOrDefault(id, 99)).append("}");
+                .append(depthMap.getOrDefault(id, 99))
+                .append(",\"parentCount\":").append(parentLabels.size())
+                .append(",\"parentsLabel\":\"").append(jsq(parentsLabel)).append("\"}");
     }
     nodeJson.append("]");
 
@@ -298,6 +368,73 @@
     }
 
     linkJson.append("]");
+
+    int maxDepth = 1;
+    for (Integer id : scopeMeters) maxDepth = Math.max(maxDepth, depthMap.getOrDefault(id, Integer.valueOf(1)).intValue());
+    Map<Integer, List<Integer>> nodesByDepth = new LinkedHashMap<>();
+    for (Integer id : orderedNodes) {
+        int d = depthMap.getOrDefault(id, Integer.valueOf(1)).intValue();
+        nodesByDepth.computeIfAbsent(Integer.valueOf(d), k -> new ArrayList<>()).add(id);
+    }
+
+    StringBuilder graphNodeJson = new StringBuilder("[");
+    boolean firstGraphNode = true;
+    int canvasWidth = 1200;
+    int canvasHeight = Math.max(720, 180 * maxDepth);
+    for (int depth = 1; depth <= maxDepth; depth++) {
+        List<Integer> levelNodes = nodesByDepth.get(Integer.valueOf(depth));
+        if (levelNodes == null || levelNodes.isEmpty()) continue;
+        int levelCount = levelNodes.size();
+        double y = (maxDepth == 1) ? (canvasHeight / 2.0) : (80.0 + ((double)(depth - 1) * (canvasHeight - 160.0) / (double)(maxDepth - 1)));
+        for (int idx = 0; idx < levelCount; idx++) {
+            Integer id = levelNodes.get(idx);
+            String nm = meterNames.get(id);
+            if (nm == null || nm.trim().isEmpty()) nm = "Meter " + id;
+            List<Integer> parents = parentsByChild.get(id);
+            List<String> parentLabels = new ArrayList<>();
+            if (parents != null) {
+                for (Integer pid : parents) {
+                    if (!scopeMeters.contains(pid)) continue;
+                    String parentName = meterNames.get(pid);
+                    if (parentName == null || parentName.trim().isEmpty()) parentName = "Meter " + pid;
+                    parentLabels.add(parentName + " (#" + pid + ")");
+                }
+            }
+            double x = (levelCount == 1) ? (canvasWidth / 2.0) : (80.0 + ((double)idx * (canvasWidth - 160.0) / (double)(levelCount - 1)));
+            if (!firstGraphNode) graphNodeJson.append(",");
+            graphNodeJson.append("{\"id\":\"").append(jsq(String.valueOf(id))).append("\"")
+                    .append(",\"name\":\"").append(jsq(nm + " (#" + id + ")")).append("\"")
+                    .append(",\"x\":").append(String.format(java.util.Locale.US, "%.2f", x))
+                    .append(",\"y\":").append(String.format(java.util.Locale.US, "%.2f", y))
+                    .append(",\"depth\":").append(depth)
+                    .append(",\"parentCount\":").append(parentLabels.size())
+                    .append(",\"parentsLabel\":\"").append(jsq(String.join(", ", parentLabels))).append("\"")
+                    .append("}");
+            firstGraphNode = false;
+        }
+    }
+    graphNodeJson.append("]");
+
+    StringBuilder graphLinkJson = new StringBuilder("[");
+    boolean firstGraphLink = true;
+    for (Integer p : childrenByParent.keySet()) {
+        if (!scopeMeters.contains(p)) continue;
+        for (Integer c : childrenByParent.get(p)) {
+            if (!scopeMeters.contains(c)) continue;
+            double v = subtree.apply(c);
+            String pName = (meterNames.get(p) == null ? "Meter " + p : meterNames.get(p)) + " (#" + p + ")";
+            String cName = (meterNames.get(c) == null ? "Meter " + c : meterNames.get(c)) + " (#" + c + ")";
+            if (!firstGraphLink) graphLinkJson.append(",");
+            graphLinkJson.append("{\"source\":\"").append(jsq(String.valueOf(p))).append("\",\"target\":\"").append(jsq(String.valueOf(c))).append("\"")
+                    .append(",\"value\":").append(String.format(java.util.Locale.US, "%.6f", Math.max(v, epsilonFlow)))
+                    .append(",\"sourceLabel\":\"").append(jsq(pName)).append("\"")
+                    .append(",\"targetLabel\":\"").append(jsq(cName)).append("\"")
+                    .append("}");
+            firstGraphLink = false;
+        }
+    }
+    graphLinkJson.append("]");
+
     boolean noData = (totalUsageKwh <= 0.0);
 %>
 <!doctype html>
@@ -329,6 +466,34 @@
             height: 60vh;
             min-height: 420px;
         }
+        .filter-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px 12px;
+        }
+        .view-mode-group {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            font-weight: 600;
+            color: #334155;
+        }
+        .view-mode-group label {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+            color: #475569;
+        }
+        @media (max-width: 920px) {
+            .view-mode-group {
+                margin-left: 0;
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -340,7 +505,7 @@
     </div>
 </div>
 
-<form method="GET">
+<form method="GET" class="filter-row">
     건물:
     <select name="building" onchange="this.form.meter.value=''; this.form.submit();">
         <option value="">전체</option>
@@ -369,6 +534,11 @@
     <input type="date" name="startDate" value="<%= startDate %>">
     ~
     <input type="date" name="endDate" value="<%= endDate %>">
+    <span class="view-mode-group">
+        보기:
+        <label><input type="radio" name="view" value="sankey" <%= "sankey".equals(viewMode) ? "checked" : "" %>> 좌우 흐름</label>
+        <label><input type="radio" name="view" value="topdown" <%= "topdown".equals(viewMode) ? "checked" : "" %>> 상하 계통도</label>
+    </span>
     <button type="submit">조회</button>
 </form>
 
@@ -395,7 +565,6 @@
 <% if (noData) { %>
 <div class="no-data-banner">데이터가 없습니다</div>
 <% } %>
-
 <div class="chart-container">
     <div id="sankeyChart" style="width:100%; height:100%;"></div>
 </div>
@@ -403,18 +572,33 @@
 <script>
 const sankeyNodes = <%= nodeJson.toString() %>;
 const sankeyLinks = <%= linkJson.toString() %>;
+const topDownNodes = <%= graphNodeJson.toString() %>;
+const topDownLinks = <%= graphLinkJson.toString() %>;
+const viewMode = "<%= jsq(viewMode) %>";
 
 const chart = echarts.init(document.getElementById('sankeyChart'));
-chart.setOption({
+const commonTooltip = {
   tooltip: {
     trigger: 'item',
     formatter: function(p) {
       if (p.dataType === 'edge') {
-        return p.data.source + ' → ' + p.data.target + '<br/>' + Number(p.data.value || 0).toLocaleString('en-US', {maximumFractionDigits:1}) + ' kWh';
+        const sourceLabel = (p.data && p.data.sourceLabel) ? p.data.sourceLabel : p.data.source;
+        const targetLabel = (p.data && p.data.targetLabel) ? p.data.targetLabel : p.data.target;
+        return sourceLabel + ' → ' + targetLabel + '<br/>' + Number(p.data.value || 0).toLocaleString('en-US', {maximumFractionDigits:1}) + ' kWh';
       }
-      return p.name;
+      var html = p.name;
+      if (p.data && p.data.parentCount > 1) {
+        html += '<br/>복수 전원 경로: ' + p.data.parentCount + '개';
+      }
+      if (p.data && p.data.parentsLabel) {
+        html += '<br/>상위 노드: ' + p.data.parentsLabel;
+      }
+      return html;
     }
-  },
+  }
+};
+
+const sankeyOption = {
   series: [{
     type: 'sankey',
     data: sankeyNodes,
@@ -443,13 +627,66 @@ chart.setOption({
       width: 160,
       overflow: 'break'
     },
-    nodeAlign: 'justify',
+    nodeWidth: 14,
+    nodeGap: 14,
+    nodeAlign: 'left',
     layoutIterations: 0,
-    draggable: true,
+    draggable: false,
     emphasis: { focus: 'adjacency' },
-    lineStyle: { color: 'gradient', curveness: 0.5 }
+    lineStyle: { color: 'gradient', curveness: 0.35 }
   }]
-});
+};
+
+const topDownOption = {
+  animationDurationUpdate: 300,
+  series: [{
+    type: 'graph',
+    layout: 'none',
+    data: topDownNodes,
+    links: topDownLinks,
+    roam: true,
+    draggable: false,
+    left: 20,
+    top: 24,
+    right: 20,
+    bottom: 24,
+    symbol: 'roundRect',
+    symbolSize: [120, 22],
+    edgeSymbol: ['none', 'arrow'],
+    edgeSymbolSize: [4, 8],
+    label: {
+      show: true,
+      position: 'inside',
+      fontSize: 11,
+      overflow: 'truncate',
+      width: 110,
+      color: '#0f172a'
+    },
+    edgeLabel: {
+      show: true,
+      formatter: function(p) {
+        return Number(p.data.value || 0).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' kWh';
+      },
+      fontSize: 10,
+      color: '#475569',
+      backgroundColor: 'rgba(255,255,255,0.72)',
+      padding: [1, 3]
+    },
+    lineStyle: {
+      color: '#94a3b8',
+      width: 1.5,
+      curveness: 0.12
+    },
+    itemStyle: {
+      color: '#dbeafe',
+      borderColor: '#3b82f6',
+      borderWidth: 1
+    },
+    emphasis: { focus: 'adjacency' }
+  }]
+};
+
+chart.setOption(Object.assign({}, commonTooltip, viewMode === 'topdown' ? topDownOption : sankeyOption));
 window.addEventListener('resize', function(){ chart.resize(); });
 </script>
 

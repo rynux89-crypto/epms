@@ -104,7 +104,7 @@ This checklist covers the JSP files refactored during the current EPMS cleanup w
   - Rename still propagates where supported.
   - Duplicate-key and missing-key validation still works.
 
-### `epms/ai_measurements_match_manage.jsp`
+### `epms/ai_measurements_mapping_manage.jsp`
 
 - Add one match row.
 - Update it.

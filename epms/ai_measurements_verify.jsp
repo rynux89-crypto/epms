@@ -4,9 +4,9 @@
 <%@ page import="java.text.DecimalFormat" %>
 <%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%@ include file="../includes/ai_measurements_match_support.jspf" %>
 <%!
     private static final DecimalFormat DF_2 = new DecimalFormat("0.00");
-    private static final Set<String> VALID_TARGET_TABLES = new HashSet<String>(Arrays.asList("measurements", "harmonic_measurements"));
 
     private static String fmtNum2(Object value) {
         if (value == null) return "-";
@@ -36,17 +36,6 @@
         if (!hasMappingRows) return "선택한 PLC/Meter에 활성 plc_meter_map 매핑이 없습니다.";
         if (!hasTokenRows) return "활성 지원 토큰에 대한 PLC 샘플 데이터가 없습니다.";
         return null;
-    }
-
-    private static String resolveTargetTable(String targetTable) {
-        if (targetTable == null) return "measurements";
-        String normalized = targetTable.trim().toLowerCase(Locale.ROOT);
-        return VALID_TARGET_TABLES.contains(normalized) ? normalized : null;
-    }
-
-    private static boolean isPlcOnlyToken(String token) {
-        if (token == null) return false;
-        return "IR".equals(token.trim().toUpperCase(Locale.ROOT));
     }
 
     private static String classifyTokenGroup(String token, Integer floatIndex) {
@@ -178,7 +167,7 @@
                     int floatRegisters = 2;
                     String measurementColumn = null;
                     String targetTable = null;
-                    boolean supported = isPlcOnlyToken(token);
+                    boolean supported = isAiMatchPlcOnlyToken(token);
                     if (mapping != null) {
                         Object regsObj = mapping.get("float_registers");
                         if (regsObj instanceof Number) floatRegisters = ((Number)regsObj).intValue();
@@ -305,7 +294,7 @@
 %>
 <html>
 <head>
-    <title>AI Tag - Measurements Matching</title>
+    <title>AI Measurement Verification</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         .page-wrap { max-width: 1500px; margin: 0 auto; }
@@ -349,15 +338,16 @@
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>🔗 AI 태그 - measurements 매칭</h2>
+        <h2>🔎 AI 측정값 적재 검증</h2>
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/ai_mapping.jsp'">AI 매핑</button>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
+            <button class="back-btn" onclick="location.href='/epms/ai_measurements_mapping_manage.jsp'">매핑 정의 관리</button>
         </div>
     </div>
 
     <div class="info-box">
-        기준: <span class="mono">dbo.plc_ai_measurements_match</span>와 현재 <span class="mono">plc_meter_map</span> 매핑 기준 비교 화면입니다.<br/>
+        기준: <span class="mono">dbo.plc_ai_measurements_match</span>와 현재 <span class="mono">plc_meter_map</span> 기준으로 PLC 샘플값과 DB 적재값을 비교하는 검증 화면입니다.<br/>
         참고: <span class="mono">PV1/PV2/PV3</span>, <span class="mono">PI1/PI2/PI3</span>는 현재 화면에서 위상각 의미로 표시되며, 적재값은 PLC 최신 샘플 시각 이하의 최근 행을 기준으로 비교합니다.
     </div>
 
@@ -411,9 +401,9 @@
                             String col = (String)r.get("measurement_column");
                             Integer floatIndex = (Integer)r.get("float_index");
                             String tokenMeaning = describeTokenMeaning((String)r.get("token"), floatIndex);
-                            boolean plcOnly = isPlcOnlyToken((String)r.get("token"));
+                            boolean plcOnly = isAiMatchPlcOnlyToken((String)r.get("token"));
                             String configuredTargetTable = (String)r.get("target_table");
-                            String resolvedTargetTable = resolveTargetTable(configuredTargetTable);
+                            String resolvedTargetTable = resolveAiMatchTargetTable(configuredTargetTable);
                             Object mv = null;
                             if (!plcOnly && col != null) {
                                 if ("harmonic_measurements".equalsIgnoreCase(resolvedTargetTable)) mv = latestHarmonicMeasurement.get(col);

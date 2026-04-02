@@ -172,21 +172,21 @@
     <div class="section energy">
         <div class="section-header">
             <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M13 2L6 13h5l-1 9 8-12h-5l0-8z"/></svg></span>Energy</div>
-            <h2>에너지 관리</h2>
-            <p>누적 전력량 기준 사용량, 피크전력, 에너지 흐름을 분석합니다.</p>
+            <h2>에너지 분석</h2>
+            <p>현황 확인부터 상세 분석, 흐름 추적까지 단계별로 확인합니다.</p>
         </div>
         <div class="section-links">
             <div class="app-card">
                 <a href="energy_overview.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M5 19V9"/><path d="M12 19V5"/><path d="M19 19v-8"/><path d="M4 19h16"/></svg></span><h3>에너지 Overview</h3></div>
-                    <p>전사 에너지와 알람 현황을 한 번에 봅니다.</p>
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M5 19V9"/><path d="M12 19V5"/><path d="M19 19v-8"/><path d="M4 19h16"/></svg></span><h3>에너지 현황</h3></div>
+                    <p>전사 에너지와 알람 상태를 한 화면에서 빠르게 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
                 <a href="energy_manage.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="M6 8l4 4 3-3 5 5"/></svg></span><h3>에너지 관리</h3></div>
-                    <p>기간별 사용량과 KPI, 이상 징후를 분석합니다.</p>
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="M6 8l4 4 3-3 5 5"/></svg></span><h3>에너지 상세분석</h3></div>
+                    <p>기간, 건물, 용도, 계측기를 좁혀 사용량과 이상 징후를 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
@@ -302,16 +302,16 @@
                 </a>
             </div>
             <div class="app-card">
-                <a href="ai_measurements_match.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M10 3v5l-4 7a3 3 0 0 0 2.6 4.5h6.8A3 3 0 0 0 18 15l-4-7V3"/><path d="M9 11h6"/></svg></span><h3>AI-Measurements 매칭</h3></div>
-                    <p>측정 항목과 AI 매핑 결과를 연결합니다.</p>
+                <a href="ai_measurements_verify.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M10 3v5l-4 7a3 3 0 0 0 2.6 4.5h6.8A3 3 0 0 0 18 15l-4-7V3"/><path d="M9 11h6"/></svg></span><h3>AI 적재 검증</h3></div>
+                    <p>PLC 샘플값과 DB 적재값이 올바르게 연결됐는지 검증합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="ai_measurements_match_manage.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="4" rx="1"/><rect x="4" y="14" width="16" height="4" rx="1"/><path d="M9 8h6"/><path d="M9 16h6"/></svg></span><h3>AI-Measurements 매칭 관리</h3></div>
-                    <p>기존 매칭 결과를 관리합니다.</p>
+                <a href="ai_measurements_mapping_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="4" rx="1"/><rect x="4" y="14" width="16" height="4" rx="1"/><path d="M9 8h6"/><path d="M9 16h6"/></svg></span><h3>AI 매핑 정의 관리</h3></div>
+                    <p>AI token과 적재 컬럼/테이블 매핑 정의를 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>

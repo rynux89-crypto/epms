@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Alarm Queue Diagnostics</title>
+    <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         :root{
             --bg:#f4f8fc;
@@ -26,7 +27,7 @@
         .pill.ok{color:var(--ok)}
         .pill.warn{color:var(--warn)}
         .pill.bad{color:var(--bad)}
-        .btn{border:none;border-radius:10px;background:#2f6fde;color:#fff;font-weight:700;padding:10px 16px;cursor:pointer;box-shadow:0 10px 20px rgba(47,111,222,.2)}
+        .btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border:none;border-radius:10px;background:#2f6fde;color:#fff;font-weight:700;padding:10px 16px;cursor:pointer;box-shadow:0 10px 20px rgba(47,111,222,.2)}
         .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}
         .card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
         .metric{padding:18px}
@@ -58,6 +59,7 @@
         <div class="toolbar">
             <div id="refreshInfo" class="pill">Last update: -</div>
             <button id="refreshBtn" class="btn" type="button">새로고침</button>
+            <a class="back-btn" href="<%= request.getContextPath() %>/epms/epms_main.jsp" style="text-decoration:none;">EPMS 메인</a>            
         </div>
     </div>
 

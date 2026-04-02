@@ -179,7 +179,7 @@
     <div class="title-bar">
         <h2>🎵 고조파 동기화 (plc_ai_samples → harmonic_measurements)</h2>
         <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='/epms/ai_measurements_match.jsp'">AI-Measurements 매칭</button>
+            <button class="back-btn" onclick="location.href='/epms/ai_measurements_verify.jsp'">AI 적재 검증</button>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         </div>
     </div>

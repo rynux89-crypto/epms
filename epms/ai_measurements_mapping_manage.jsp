@@ -5,20 +5,8 @@
 <%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
+<%@ include file="../includes/ai_measurements_match_support.jspf" %>
 <%!
-    private static final Set<String> VALID_TARGET_TABLES = new HashSet<String>(Arrays.asList("measurements", "harmonic_measurements"));
-    private static final Set<String> EXCEL_AI_TOKENS = new LinkedHashSet<String>(Arrays.asList(
-        "V12", "V23", "V31", "VVA", "V1N", "V2N", "V3N", "VA",
-        "A1", "A2", "A3", "AN", "AA", "PF", "HZ", "KW", "KWH", "KVAR", "KVARH", "PEAK", "IR",
-        "H_VA_1", "H_VA_3", "H_VA_5", "H_VA_7", "H_VA_9", "H_VA_11",
-        "H_VB_1", "H_VB_3", "H_VB_5", "H_VB_7", "H_VB_9", "H_VB_11",
-        "H_VC_1", "H_VC_3", "H_VC_5", "H_VC_7", "H_VC_9", "H_VC_11",
-        "H_IA_1", "H_IA_3", "H_IA_5", "H_IA_7", "H_IA_9", "H_IA_11",
-        "H_IB_1", "H_IB_3", "H_IB_5", "H_IB_7", "H_IB_9", "H_IB_11",
-        "H_IC_1", "H_IC_3", "H_IC_5", "H_IC_7", "H_IC_9", "H_IC_11",
-        "PV1", "PV2", "PV3", "PI1", "PI2", "PI3"
-    ));
-
     private static class AiMeasurementMatchRequest {
         String action;
         String token;
@@ -32,17 +20,11 @@
     }
 
     private static String normalizeToken(String value) {
-        String trimmed = trimToNull(value);
-        return trimmed == null ? null : trimmed.toUpperCase(java.util.Locale.ROOT);
+        return normalizeAiMatchToken(trimToNull(value));
     }
 
     private static String normalizeTargetTable(String value) {
-        String trimmed = trimToNull(value);
-        return trimmed == null ? null : trimmed.toLowerCase(java.util.Locale.ROOT);
-    }
-
-    private static boolean isPlcOnlyToken(String token) {
-        return "IR".equals(token);
+        return normalizeAiMatchTargetTable(trimToNull(value));
     }
 
     private static String normalizeMeasurementColumn(String value) {
@@ -61,7 +43,7 @@
         req.targetTable = normalizeTargetTable(request.getParameter("target_table"));
         req.supported = parseBoolSafe(request.getParameter("is_supported"));
         req.note = trimToNull(request.getParameter("note"));
-        if (isPlcOnlyToken(req.token)) {
+        if (isAiMatchPlcOnlyToken(req.token)) {
             req.measurementColumn = null;
             req.targetTable = null;
         }
@@ -72,12 +54,12 @@
         if (req == null || req.action == null) return "요청이 올바르지 않습니다.";
         if ("add".equalsIgnoreCase(req.action) || "update".equalsIgnoreCase(req.action)) {
             if (req.token == null) return "token은 필수입니다.";
-            if (!EXCEL_AI_TOKENS.contains(req.token)) return "엑셀 기준에 없는 token입니다: " + req.token;
+            if (!isAiMatchAllowedToken(req.token)) return "엑셀 기준에 없는 token입니다: " + req.token;
             if (req.floatIndex == null || req.floatRegisters == null) return "float_index, float_registers는 숫자 필수입니다.";
             if (req.floatIndex.intValue() <= 0) return "float_index는 1 이상이어야 합니다.";
             if (req.floatRegisters.intValue() <= 0) return "float_registers는 1 이상이어야 합니다.";
-            if (req.targetTable != null && !VALID_TARGET_TABLES.contains(req.targetTable)) return "target_table은 measurements 또는 harmonic_measurements만 허용됩니다.";
-            if (isPlcOnlyToken(req.token) && req.measurementColumn != null) return "IR은 DB 미적재 항목이므로 measurement_column을 지정할 수 없습니다.";
+            if (req.targetTable != null && !isAiMatchValidTargetTable(req.targetTable)) return "target_table은 measurements 또는 harmonic_measurements만 허용됩니다.";
+            if (isAiMatchPlcOnlyToken(req.token) && req.measurementColumn != null) return "IR은 DB 미적재 항목이므로 measurement_column을 지정할 수 없습니다.";
         }
         if ("update".equalsIgnoreCase(req.action) && req.originalFloatIndex == null) {
             return "수정 대상 float_index가 없습니다.";
@@ -191,19 +173,19 @@
             if (err == null && "add".equalsIgnoreCase(formReq.action)) {
                 err = handleAddAiMeasurementMatch(conn, formReq);
                 if (err == null) {
-                    response.sendRedirect("ai_measurements_match_manage.jsp?msg=" + URLEncoder.encode("등록 완료", "UTF-8"));
+                    response.sendRedirect("ai_measurements_mapping_manage.jsp?msg=" + URLEncoder.encode("등록 완료", "UTF-8"));
                     return;
                 }
             } else if (err == null && "update".equalsIgnoreCase(formReq.action)) {
                 err = handleUpdateAiMeasurementMatch(conn, formReq);
                 if (err == null) {
-                    response.sendRedirect("ai_measurements_match_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8"));
+                    response.sendRedirect("ai_measurements_mapping_manage.jsp?msg=" + URLEncoder.encode("수정 완료", "UTF-8"));
                     return;
                 }
             } else if (err == null && "delete".equalsIgnoreCase(formReq.action)) {
                 err = handleDeleteAiMeasurementMatch(conn, formReq);
                 if (err == null) {
-                    response.sendRedirect("ai_measurements_match_manage.jsp?msg=" + URLEncoder.encode("삭제 완료", "UTF-8"));
+                    response.sendRedirect("ai_measurements_mapping_manage.jsp?msg=" + URLEncoder.encode("삭제 완료", "UTF-8"));
                     return;
                 }
             }
@@ -239,7 +221,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI-Measurements 매칭 관리</title>
+    <title>AI Measurement Mapping Management</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         .page-wrap { max-width: 1600px; margin: 0 auto; }
@@ -271,9 +253,9 @@
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>🔗 AI-Measurements 매칭 관리</h2>
+        <h2>🧭 AI 측정값 매핑 정의 관리</h2>
         <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='/epms/ai_measurements_match.jsp'">매칭 검증 화면</button>
+            <button class="back-btn" onclick="location.href='/epms/ai_measurements_verify.jsp'">적재 검증 화면</button>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         </div>
     </div>
@@ -312,7 +294,7 @@
         <label>지원 <input type="checkbox" name="is_supported" value="1" <%= ((Boolean)editRow.get("is_supported")) ? "checked" : "" %> /></label>
         <input type="text" name="note" class="wide-input" value="<%= h(editRow.get("note")) %>" />
         <button type="submit" class="btn-mini">수정 저장</button>
-        <button type="button" class="btn-mini" onclick="location.href='ai_measurements_match_manage.jsp'">취소</button>
+        <button type="button" class="btn-mini" onclick="location.href='ai_measurements_mapping_manage.jsp'">취소</button>
     </form>
     <% } %>
 
@@ -345,7 +327,7 @@
                 <td><%= h(r.get("note")) %></td>
                 <td class="action-cell">
                     <div class="action-wrap">
-                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_match_manage.jsp?edit_float_index=<%= h(r.get("float_index")) %>'">편집</button>
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=<%= h(r.get("float_index")) %>'">편집</button>
                         <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
                             <input type="hidden" name="action" value="delete" />
                             <input type="hidden" name="original_float_index" value="<%= h(r.get("float_index")) %>" />

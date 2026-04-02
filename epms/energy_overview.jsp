@@ -186,7 +186,7 @@ try (Connection conn = openDbConnection()) {
 <!doctype html>
 <html>
 <head>
-  <title>에너지 Overview</title>
+  <title>에너지 현황</title>
   <script src="../js/echarts.js"></script>
   <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
   <style>
@@ -204,15 +204,15 @@ try (Connection conn = openDbConnection()) {
 </head>
 <body>
 <div class="title-bar">
-  <h2>📌 에너지 Overview</h2>
+  <h2>📌 에너지 현황</h2>
   <div style="display:flex;gap:8px;align-items:center;">
     <label style="font-size:12px;color:#334155;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="autoRefreshOn"> 자동갱신</label>
     <select id="autoRefreshSec" style="font-size:12px;padding:4px 6px;"><option value="30">30초</option><option value="60" selected>60초</option></select>
-    <button class="back-btn" onclick="location.href='/epms/energy_manage.jsp'">에너지 관리</button>
+    <button class="back-btn" onclick="location.href='/epms/energy_manage.jsp'">상세 분석</button>
     <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
   </div>
 </div>
-<div class="meta-line">조회 기준: 검색조건 없음(전체) | 일: 최근 30일 / 월: 최근 12개월 / 년: 최근 5개년 | 건물/용도: 당월 누적</div>
+<div class="meta-line">전체 현황 화면 | 일: 최근 30일 / 월: 최근 12개월 / 년: 최근 5개년 | 건물/용도 차트 클릭 시 상세 분석으로 이동</div>
 <% if(queryError!=null && !queryError.trim().isEmpty()){ %><div class="err-box">조회 오류: <%= h(queryError) %></div><% } %>
 
 <div class="kpi-grid">
@@ -238,6 +238,8 @@ function makeAxisTooltip(params,unit,frac){if(!params||!params.length)return '';
 const chartPalette={blue:'#2f6fed',teal:'#17a2b8',green:'#20a46b',orange:'#f08c2e',red:'#dc5a5a',gold:'#d9a441',slate:'#64748b',violet:'#6e59cf'};
 const piePalette=['#2f6fed','#20a46b','#f08c2e','#dc5a5a','#6e59cf','#17a2b8','#d9a441','#94a3b8'];
 const axisStyle={axisLine:{show:false},axisTick:{show:false},axisLabel:{color:'#6b7a90',fontSize:11}};
+const tooltipTextStyle={fontSize:12,color:'#e8eef5',fontWeight:500,lineHeight:18};
+const tooltipBoxStyle={backgroundColor:'rgba(30,41,59,.88)',borderColor:'#d8e1eb',borderWidth:1,padding:[9,11],textStyle:tooltipTextStyle,extraCssText:'box-shadow:0 8px 18px rgba(15,23,42,.16);border-radius:10px;white-space:normal;'};
 function makeValueAxis(unitFrac){return {type:'value',axisLine:{show:false},axisTick:{show:false},axisLabel:{color:'#6b7a90',fontSize:11,formatter:v=>fmtNum(v,unitFrac)},splitLine:{lineStyle:{color:'#e7edf3'}}};}
 function makeCategoryAxis(data, extra){return Object.assign({type:'category',data:data,axisLine:{lineStyle:{color:'#dbe4ee'}},axisTick:{show:false},axisLabel:{color:'#6b7a90',fontSize:11}}, extra||{});}
 function makeEmptyGraphic(text){return {type:'text',left:'center',top:'middle',style:{text:text,fill:'#7b8794',fontSize:13,fontWeight:600}};}
@@ -286,23 +288,36 @@ first=true; for(Map.Entry<String,Integer> e: alarmTypeRatio.entrySet()){ if(!fir
 %>];
 
 const buildingChart=echarts.init(document.getElementById('buildingChart'));
-buildingChart.setOption({color:[chartPalette.blue],tooltip:{trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1),backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:44,right:14,top:16,bottom:42,containLabel:true},xAxis:makeCategoryAxis(buildingNames,{axisLabel:{color:'#6b7a90',fontSize:11,interval:0,rotate:18}}),yAxis:makeValueAxis(0),graphic:buildingVals.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'사용량',type:'bar',barWidth:'48%',data:buildingVals,showBackground:true,backgroundStyle:{color:'#edf2f7',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.blue,borderRadius:[8,8,0,0]}}]});
+buildingChart.setOption({color:[chartPalette.blue],tooltip:Object.assign({trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1)},tooltipBoxStyle),grid:{left:44,right:14,top:16,bottom:42,containLabel:true},xAxis:makeCategoryAxis(buildingNames,{axisLabel:{color:'#6b7a90',fontSize:11,interval:0,rotate:18}}),yAxis:makeValueAxis(0),graphic:buildingVals.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'사용량',type:'bar',barWidth:'48%',data:buildingVals,showBackground:true,backgroundStyle:{color:'#edf2f7',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.blue,borderRadius:[8,8,0,0]}}]});
 const usageChart=echarts.init(document.getElementById('usageChart'));
-usageChart.setOption({color:piePalette,tooltip:{trigger:'item',formatter:p=>p.name+'<br/>'+fmtNum(p.value,1)+' kWh',backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},legend:{type:'scroll',top:0,left:'center',itemWidth:10,itemHeight:10,textStyle:{fontSize:10,color:'#6b7a90'}},graphic:usagePie.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'용도별',type:'pie',radius:['40%','66%'],center:['50%','58%'],minAngle:6,avoidLabelOverlap:true,itemStyle:{borderColor:'#fff',borderWidth:2},label:{color:'#516072',fontSize:11,formatter:'{b}'},labelLine:{length:10,length2:8},data:usagePie}]});
+usageChart.setOption({color:piePalette,tooltip:Object.assign({trigger:'item',formatter:p=>p.name+'<br/>'+fmtNum(p.value,1)+' kWh'},tooltipBoxStyle),legend:{type:'scroll',top:0,left:'center',itemWidth:10,itemHeight:10,textStyle:{fontSize:10,color:'#6b7a90'}},graphic:usagePie.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'용도별',type:'pie',radius:['40%','66%'],center:['50%','58%'],minAngle:6,avoidLabelOverlap:true,itemStyle:{borderColor:'#fff',borderWidth:2},label:{color:'#516072',fontSize:11,formatter:'{b}'},labelLine:{length:10,length2:8},data:usagePie}]});
 const dailyChart=echarts.init(document.getElementById('dailyChart'));
-dailyChart.setOption({color:[chartPalette.green],tooltip:{trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1),backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11},axisPointer:{type:'line',lineStyle:{color:'#9db5d1'}}},grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(dailyLabels,{axisLabel:{color:'#6b7a90',fontSize:11,interval:4}}),yAxis:makeValueAxis(0),series:[{name:'일사용량',type:'line',smooth:true,symbol:'circle',symbolSize:5,showSymbol:false,lineStyle:{width:3,color:chartPalette.green},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(32,164,107,.28)'},{offset:1,color:'rgba(32,164,107,.03)'}])},data:dailyValues}]});
+dailyChart.setOption({color:[chartPalette.green],tooltip:Object.assign({trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1),axisPointer:{type:'line',lineStyle:{color:'#9db5d1'}}},tooltipBoxStyle),grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(dailyLabels,{axisLabel:{color:'#6b7a90',fontSize:11,interval:4}}),yAxis:makeValueAxis(0),series:[{name:'일사용량',type:'line',smooth:true,symbol:'circle',symbolSize:5,showSymbol:false,lineStyle:{width:3,color:chartPalette.green},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(32,164,107,.28)'},{offset:1,color:'rgba(32,164,107,.03)'}])},data:dailyValues}]});
 const monthlyChart=echarts.init(document.getElementById('monthlyChart'));
-monthlyChart.setOption({color:[chartPalette.orange],tooltip:{trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1),backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(monthlyLabels),yAxis:makeValueAxis(0),series:[{name:'월사용량',type:'bar',barMaxWidth:28,data:monthlyValues,showBackground:true,backgroundStyle:{color:'#f3f4f6',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.orange,borderRadius:[8,8,0,0]}}]});
+monthlyChart.setOption({color:[chartPalette.orange],tooltip:Object.assign({trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1)},tooltipBoxStyle),grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(monthlyLabels),yAxis:makeValueAxis(0),series:[{name:'월사용량',type:'bar',barMaxWidth:28,data:monthlyValues,showBackground:true,backgroundStyle:{color:'#f3f4f6',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.orange,borderRadius:[8,8,0,0]}}]});
 const yearlyChart=echarts.init(document.getElementById('yearlyChart'));
-yearlyChart.setOption({color:[chartPalette.violet],tooltip:{trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1),backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(yearlyLabels),yAxis:makeValueAxis(0),series:[{name:'년사용량',type:'bar',barMaxWidth:34,data:yearlyValues,showBackground:true,backgroundStyle:{color:'#f3f4f6',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.violet,borderRadius:[8,8,0,0]}}]});
+yearlyChart.setOption({color:[chartPalette.violet],tooltip:Object.assign({trigger:'axis',formatter:p=>makeAxisTooltip(p,'kWh',1)},tooltipBoxStyle),grid:{left:46,right:16,top:16,bottom:34,containLabel:true},xAxis:makeCategoryAxis(yearlyLabels),yAxis:makeValueAxis(0),series:[{name:'년사용량',type:'bar',barMaxWidth:34,data:yearlyValues,showBackground:true,backgroundStyle:{color:'#f3f4f6',borderRadius:[8,8,0,0]},itemStyle:{color:chartPalette.violet,borderRadius:[8,8,0,0]}}]});
 const heatMax=heatData.reduce((mx,r)=>Math.max(mx,r[2]||0),0);
 const alarmHeatChart=echarts.init(document.getElementById('alarmHeatChart'));
-alarmHeatChart.setOption({tooltip:{position:'top',formatter:p=>heatDays[p.data[1]]+' '+p.data[0]+'시<br/>알람 '+fmtNum(p.data[2],0)+'건',backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:34,right:14,top:10,bottom:28,containLabel:true},xAxis:{type:'category',data:heatHours,splitArea:{show:true,areaStyle:{color:['#f8fafc','#f8fafc']}},axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:10,color:'#6b7a90'}},yAxis:{type:'category',data:heatDays,splitArea:{show:true,areaStyle:{color:['#f8fafc','#f8fafc']}},axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:11,color:'#6b7a90'}},visualMap:{min:0,max:Math.max(1,heatMax),orient:'horizontal',left:'center',bottom:0,calculable:false,text:['많음','적음'],textStyle:{color:'#6b7a90',fontSize:10},inRange:{color:['#edf6ff','#b9d9ff','#6aa9ff','#2f6fed']}},series:[{type:'heatmap',data:heatData,label:{show:false},emphasis:{itemStyle:{shadowBlur:10,shadowColor:'rgba(47,111,237,.35)'}}}]});
+alarmHeatChart.setOption({tooltip:Object.assign({position:'top',formatter:p=>heatDays[p.data[1]]+' '+p.data[0]+'시<br/>알람 '+fmtNum(p.data[2],0)+'건'},tooltipBoxStyle),grid:{left:34,right:14,top:10,bottom:28,containLabel:true},xAxis:{type:'category',data:heatHours,splitArea:{show:true,areaStyle:{color:['#f8fafc','#f8fafc']}},axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:10,color:'#6b7a90'}},yAxis:{type:'category',data:heatDays,splitArea:{show:true,areaStyle:{color:['#f8fafc','#f8fafc']}},axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:11,color:'#6b7a90'}},visualMap:{min:0,max:Math.max(1,heatMax),orient:'horizontal',left:'center',bottom:0,calculable:false,text:['많음','적음'],textStyle:{color:'#6b7a90',fontSize:10},inRange:{color:['#edf6ff','#b9d9ff','#6aa9ff','#2f6fed']}},series:[{type:'heatmap',data:heatData,label:{show:false},emphasis:{itemStyle:{shadowBlur:10,shadowColor:'rgba(47,111,237,.35)'}}}]});
 const alarmTopMeterChart=echarts.init(document.getElementById('alarmTopMeterChart'));
-alarmTopMeterChart.setOption({color:[chartPalette.red],tooltip:{trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>makeAxisTooltip(p,'건',0),backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},grid:{left:120,right:18,top:12,bottom:18,containLabel:true},xAxis:makeValueAxis(0),yAxis:{type:'category',data:topMeterNames,inverse:true,axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:10,color:'#6b7a90'}},graphic:topMeterVals.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'알람건수',type:'bar',barMaxWidth:20,data:topMeterVals,label:{show:true,position:'right',color:'#7a2e2e',fontSize:10},itemStyle:{color:chartPalette.red,borderRadius:[0,8,8,0]}}]});
+alarmTopMeterChart.setOption({color:[chartPalette.red],tooltip:Object.assign({trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>makeAxisTooltip(p,'건',0)},tooltipBoxStyle),grid:{left:120,right:18,top:12,bottom:18,containLabel:true},xAxis:makeValueAxis(0),yAxis:{type:'category',data:topMeterNames,inverse:true,axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:10,color:'#6b7a90'}},graphic:topMeterVals.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'알람건수',type:'bar',barMaxWidth:20,data:topMeterVals,label:{show:true,position:'right',color:'#7a2e2e',fontSize:10},itemStyle:{color:chartPalette.red,borderRadius:[0,8,8,0]}}]});
 const alarmTypeChart=echarts.init(document.getElementById('alarmTypeChart'));
-alarmTypeChart.setOption({color:piePalette,tooltip:{trigger:'item',formatter:p=>p.name+'<br/>'+fmtNum(p.value,0)+' 건',backgroundColor:'rgba(15,23,42,.92)',borderWidth:0,textStyle:{fontSize:11}},legend:{type:'scroll',bottom:0,textStyle:{fontSize:10,color:'#6b7a90'}},graphic:alarmTypePie.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'알람유형',type:'pie',radius:['38%','64%'],center:['50%','44%'],minAngle:6,itemStyle:{borderColor:'#fff',borderWidth:2},data:alarmTypePie,label:{color:'#516072',fontSize:10,formatter:'{d}%'}}]});
+alarmTypeChart.setOption({color:piePalette,tooltip:Object.assign({trigger:'item',formatter:p=>p.name+'<br/>'+fmtNum(p.value,0)+' 건'},tooltipBoxStyle),legend:{type:'scroll',bottom:0,textStyle:{fontSize:10,color:'#6b7a90'}},graphic:alarmTypePie.length?undefined:makeEmptyGraphic('데이터 없음'),series:[{name:'알람유형',type:'pie',radius:['38%','64%'],center:['50%','44%'],minAngle:6,itemStyle:{borderColor:'#fff',borderWidth:2},data:alarmTypePie,label:{color:'#516072',fontSize:10,formatter:'{d}%'}}]});
 
+function goEnergyManage(filterKey, filterValue){
+  const value=(filterValue||'').trim();
+  if(!value) return;
+  const qs=new URLSearchParams();
+  qs.set(filterKey, value);
+  window.location.href='/epms/energy_manage.jsp?'+qs.toString();
+}
+buildingChart.on('click',function(p){ if(p&&p.name) goEnergyManage('building', p.name); });
+usageChart.on('click',function(p){ if(p&&p.name) goEnergyManage('usage', p.name); });
+const buildingEl=document.getElementById('buildingChart');
+const usageEl=document.getElementById('usageChart');
+if(buildingEl) buildingEl.style.cursor='pointer';
+if(usageEl) usageEl.style.cursor='pointer';
 window.addEventListener('resize',function(){buildingChart.resize();usageChart.resize();dailyChart.resize();monthlyChart.resize();yearlyChart.resize();alarmHeatChart.resize();alarmTopMeterChart.resize();alarmTypeChart.resize();});
 const REFRESH_KEY_ON='energyOverviewAutoRefreshOn', REFRESH_KEY_SEC='energyOverviewAutoRefreshSec';
 const autoRefreshOn=document.getElementById('autoRefreshOn'), autoRefreshSec=document.getElementById('autoRefreshSec');

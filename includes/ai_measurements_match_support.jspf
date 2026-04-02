@@ -1,0 +1,50 @@
+<%!
+    private static final Set<String> AI_MATCH_VALID_TARGET_TABLES = new LinkedHashSet<String>(Arrays.asList(
+        "measurements",
+        "harmonic_measurements"
+    ));
+
+    private static final Set<String> AI_MATCH_ALLOWED_TOKENS = new LinkedHashSet<String>(Arrays.asList(
+        "V12", "V23", "V31", "VVA", "V1N", "V2N", "V3N", "VA",
+        "A1", "A2", "A3", "AN", "AA", "PF", "HZ", "KW", "KWH", "KVAR", "KVARH", "PEAK", "IR",
+        "H_VA_1", "H_VA_3", "H_VA_5", "H_VA_7", "H_VA_9", "H_VA_11",
+        "H_VB_1", "H_VB_3", "H_VB_5", "H_VB_7", "H_VB_9", "H_VB_11",
+        "H_VC_1", "H_VC_3", "H_VC_5", "H_VC_7", "H_VC_9", "H_VC_11",
+        "H_IA_1", "H_IA_3", "H_IA_5", "H_IA_7", "H_IA_9", "H_IA_11",
+        "H_IB_1", "H_IB_3", "H_IB_5", "H_IB_7", "H_IB_9", "H_IB_11",
+        "H_IC_1", "H_IC_3", "H_IC_5", "H_IC_7", "H_IC_9", "H_IC_11",
+        "PV1", "PV2", "PV3", "PI1", "PI2", "PI3"
+    ));
+
+    private static String normalizeAiMatchToken(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed.toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeAiMatchTargetTable(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean isAiMatchValidTargetTable(String value) {
+        String normalized = normalizeAiMatchTargetTable(value);
+        return normalized != null && AI_MATCH_VALID_TARGET_TABLES.contains(normalized);
+    }
+
+    private static String resolveAiMatchTargetTable(String value) {
+        if (value == null) return "measurements";
+        String normalized = normalizeAiMatchTargetTable(value);
+        return normalized != null && AI_MATCH_VALID_TARGET_TABLES.contains(normalized) ? normalized : null;
+    }
+
+    private static boolean isAiMatchAllowedToken(String value) {
+        String normalized = normalizeAiMatchToken(value);
+        return normalized != null && AI_MATCH_ALLOWED_TOKENS.contains(normalized);
+    }
+
+    private static boolean isAiMatchPlcOnlyToken(String token) {
+        return "IR".equals(normalizeAiMatchToken(token));
+    }
+%>

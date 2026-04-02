@@ -6,6 +6,7 @@
 <%@ include file="../includes/epms_json.jspf" %>
 <%!
     private static double nz(Double v) { return v == null ? 0.0 : v; }
+    private static final int QUERY_TIMEOUT_SEC = 15;
 
     private static String meterLabel(int meterId, Map<Integer, String> names) {
         String n = names.get(meterId);
@@ -171,12 +172,19 @@ try (Connection conn = openDbConnection()) {
     }
 
     Map<Integer, Map<LocalDate, Double>> meterDaily = new HashMap<>();
+    Map<Integer, Map<String, Double>> meterMonthly = new HashMap<>();
     Map<Integer, Double> meterTotalKwh = new HashMap<>();
     Map<LocalDate, Double> dayTotalKwh = new HashMap<>();
     Map<LocalDate, Double> dayPeakKw = new HashMap<>();
     Map<LocalDate, Integer> dayResetCnt = new HashMap<>();
 
-    String meterDaySql =
+    try (Statement st = conn.createStatement()) {
+        st.setQueryTimeout(QUERY_TIMEOUT_SEC);
+        st.execute("IF OBJECT_ID('tempdb..#energy_manage_day') IS NOT NULL DROP TABLE #energy_manage_day");
+        st.execute("CREATE TABLE #energy_manage_day (meter_id INT NOT NULL, d DATE NOT NULL, peak_kw FLOAT NULL, day_kwh FLOAT NULL)");
+    }
+
+    String populateMeterDaySql =
         "WITH base AS ( " +
         "  SELECT ms.meter_id, CAST(ms.measured_at AS date) AS d, ms.measured_at, " +
         "         CAST(ms.energy_consumed_total AS float) AS energy_total, " +
@@ -202,16 +210,31 @@ try (Connection conn = openDbConnection()) {
         "         end_total - LAG(end_total) OVER (PARTITION BY meter_id ORDER BY d) AS day_kwh " +
         "  FROM day_meter " +
         ") " +
-        "SELECT meter_id, d, peak_kw, day_kwh " +
-        "FROM day_diff WHERE d BETWEEN ? AND ? ORDER BY d, meter_id";
+        "INSERT INTO #energy_manage_day (meter_id, d, peak_kw, day_kwh) " +
+        "SELECT meter_id, d, peak_kw, day_kwh FROM day_diff WHERE d BETWEEN ? AND ?";
 
-    try (PreparedStatement ps = conn.prepareStatement(meterDaySql)) {
+    try (PreparedStatement ps = conn.prepareStatement(populateMeterDaySql)) {
         int idx = 1;
+        ps.setQueryTimeout(QUERY_TIMEOUT_SEC);
         ps.setString(idx++, startDate);
         ps.setString(idx++, endDate);
         for (Object p : whereParams) ps.setObject(idx++, p);
         ps.setString(idx++, startDate);
         ps.setString(idx++, endDate);
+        ps.executeUpdate();
+    }
+
+    try (Statement st = conn.createStatement()) {
+        st.setQueryTimeout(QUERY_TIMEOUT_SEC);
+        st.execute("CREATE CLUSTERED INDEX IX_energy_manage_day_d_meter ON #energy_manage_day (d, meter_id)");
+    }
+
+    String meterDaySql =
+        "SELECT meter_id, d, peak_kw, day_kwh " +
+        "FROM #energy_manage_day ORDER BY d, meter_id";
+
+    try (PreparedStatement ps = conn.prepareStatement(meterDaySql)) {
+        ps.setQueryTimeout(QUERY_TIMEOUT_SEC);
 
         try (ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -222,8 +245,11 @@ try (Connection conn = openDbConnection()) {
                 Double raw = (Double) rs.getObject("day_kwh");
                 double rawKwh = raw == null ? 0.0 : raw.doubleValue();
                 double safeKwh = rawKwh >= 0.0 ? rawKwh : 0.0;
+                String monthKey = String.format(java.util.Locale.ROOT, "%04d-%02d", d.getYear(), d.getMonthValue());
 
                 meterDaily.computeIfAbsent(mid, k -> new HashMap<>()).put(d, safeKwh);
+                Map<String, Double> monthMap = meterMonthly.computeIfAbsent(mid, k -> new HashMap<>());
+                monthMap.put(monthKey, monthMap.getOrDefault(monthKey, 0.0) + safeKwh);
                 meterTotalKwh.put(mid, meterTotalKwh.getOrDefault(mid, 0.0) + safeKwh);
 
                 dayTotalKwh.put(d, dayTotalKwh.getOrDefault(d, 0.0) + safeKwh);
@@ -285,6 +311,7 @@ try (Connection conn = openDbConnection()) {
         "WHERE ms.measured_at >= ? AND ms.measured_at < DATEADD(day, 1, ?) " + where.toString();
     try (PreparedStatement ps = conn.prepareStatement(kpiSql)) {
         int idx = 1;
+        ps.setQueryTimeout(QUERY_TIMEOUT_SEC);
         ps.setString(idx++, startDate);
         ps.setString(idx++, endDate);
         for (Object p : whereParams) ps.setObject(idx++, p);
@@ -451,13 +478,10 @@ try (Connection conn = openDbConnection()) {
         for (String x : stackLabels) {
             double v = 0.0;
             if ("month".equals(bucket)) {
-                YearMonth xm = YearMonth.parse(x);
                 for (Integer leaf : groupLeaves.getOrDefault(g, Collections.emptySet())) {
-                    Map<LocalDate, Double> dm = meterDaily.get(leaf);
-                    if (dm == null) continue;
-                    for (Map.Entry<LocalDate, Double> ent : dm.entrySet()) {
-                        if (YearMonth.from(ent.getKey()).equals(xm)) v += nz(ent.getValue());
-                    }
+                    Map<String, Double> mm = meterMonthly.get(leaf);
+                    if (mm == null) continue;
+                    v += mm.getOrDefault(x, 0.0);
                 }
             } else {
                 LocalDate xd = LocalDate.parse(x);
@@ -523,7 +547,7 @@ try (Connection conn = openDbConnection()) {
 <!doctype html>
 <html>
 <head>
-    <title>에너지 관리</title>
+    <title>에너지 상세분석</title>
     <script src="../js/echarts.js"></script>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
@@ -558,14 +582,16 @@ try (Connection conn = openDbConnection()) {
 </head>
 <body>
 <div class="title-bar">
-    <h2>📊 에너지 관리</h2>
+    <h2>📊 에너지 상세분석</h2>
     <div style="display:flex; gap:8px; align-items:center;">
+        <button class="back-btn" onclick="location.href='/epms/energy_overview.jsp'">에너지 현황</button>
         <button class="back-btn" onclick="location.href='/epms/energy_sankey.jsp' + location.search">에너지 흐름 분석</button>
         <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
     </div>
 </div>
 
 <form method="GET">
+    <div style="font-size:12px;color:#64748b;margin-bottom:8px;">기간, 건물, 용도, 계측기를 좁혀서 사용량과 이상 징후를 분석합니다.</div>
     집계:
     <select name="bucket">
         <option value="day" <%= "day".equals(bucket) ? "selected" : "" %>>일</option>

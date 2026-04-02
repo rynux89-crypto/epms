@@ -313,6 +313,7 @@ try (Connection conn = openDbConnection()) {
     <div class="title-bar">
         <h2>🗂️ 계측기 등록 관리</h2>
         <div class="inline-actions">
+            <button class="back-btn" onclick="location.href='meter_excel_import.jsp'">엑셀 일괄 등록</button>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
         </div>
     </div>

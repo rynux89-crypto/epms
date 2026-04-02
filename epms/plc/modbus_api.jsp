@@ -9,6 +9,7 @@
 <%@ page import="javax.servlet.ServletContext" %>
 <%@ page import="epms.util.ModbusSupport" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
+<%@ include file="../../includes/ai_measurements_match_support.jspf" %>
 <%@ include file="../../includes/epms_parse.jspf" %>
 <%@ include file="../../includes/epms_json.jspf" %>
 <%! 
@@ -66,6 +67,7 @@
         volatile String lastInfo = "";
         volatile String lastError = "";
         volatile long lastRunAt = 0L;
+        volatile long lastSuccessAt = 0L;
         volatile long nextAiPollAt = 0L;
     }
 
@@ -585,7 +587,7 @@
             double value = ((Number)valueObj).doubleValue();
             if (meterId <= 0 || token.trim().isEmpty()) continue;
             // Read IR from PLC for visibility, but do not persist IR-related records.
-            if ("IR".equalsIgnoreCase(token.trim())) continue;
+            if (isAiMatchPlcOnlyToken(token)) continue;
             if (rows.length() > 0) rows.append(';');
             rows.append(meterId).append('|')
                 .append(b64url(token)).append('|')
@@ -795,7 +797,7 @@
                 String target = rs.getString("target_table");
                 Map<String, Object> m = new HashMap<>();
                 m.put("measurement_column", col.trim());
-                m.put("target_table", target == null ? "" : target.trim().toLowerCase(Locale.ROOT));
+                m.put("target_table", normalizeAiMatchTargetTable(target));
                 out.put(token.trim().toUpperCase(Locale.ROOT), m);
             }
         }
@@ -852,6 +854,12 @@
         return s == null ? "" : s.trim().toUpperCase(Locale.ROOT);
     }
 
+    private static String compactKey(String s) {
+        String x = normKey(s);
+        if (x.isEmpty()) return "";
+        return x.replaceAll("[^A-Z0-9]+", "");
+    }
+
     private static Map<String, Integer> loadMeterIdByExactName(Connection conn) throws Exception {
         Map<String, Integer> out = new HashMap<>();
         try (PreparedStatement ps = conn.prepareStatement(
@@ -867,10 +875,72 @@
         return out;
     }
 
-    private static int resolveDiAlarmMeterId(Map<String, Integer> meterIdByName, int fallbackMeterId, String itemName) {
-        if (meterIdByName != null) {
-            Integer exact = meterIdByName.get(normKey(itemName));
+    private static Map<String, Integer> loadMeterIdByExactNamePanel(Connection conn) throws Exception {
+        Map<String, Integer> out = new HashMap<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT meter_id, name, panel_name FROM dbo.meters " +
+                "WHERE name IS NOT NULL AND LTRIM(RTRIM(name)) <> '' " +
+                "  AND panel_name IS NOT NULL AND LTRIM(RTRIM(panel_name)) <> ''");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String nameKey = normKey(rs.getString("name"));
+                String panelKey = normKey(rs.getString("panel_name"));
+                if (nameKey.isEmpty() || panelKey.isEmpty()) continue;
+                String key = nameKey + "|" + panelKey;
+                if (!out.containsKey(key)) out.put(key, Integer.valueOf(rs.getInt("meter_id")));
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, Integer> loadUniqueMeterIdByPanel(Connection conn, boolean compact) throws Exception {
+        Map<String, Integer> firstSeen = new HashMap<>();
+        Set<String> duplicates = new HashSet<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT meter_id, panel_name FROM dbo.meters WHERE panel_name IS NOT NULL AND LTRIM(RTRIM(panel_name)) <> ''");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String raw = rs.getString("panel_name");
+                String key = compact ? compactKey(raw) : normKey(raw);
+                if (key.isEmpty()) continue;
+                Integer meterId = Integer.valueOf(rs.getInt("meter_id"));
+                if (firstSeen.containsKey(key) && !Objects.equals(firstSeen.get(key), meterId)) {
+                    duplicates.add(key);
+                } else if (!firstSeen.containsKey(key)) {
+                    firstSeen.put(key, meterId);
+                }
+            }
+        }
+        for (String dup : duplicates) firstSeen.remove(dup);
+        return firstSeen;
+    }
+
+    private static int resolveDiAlarmMeterId(
+            Map<String, Integer> meterIdByName,
+            Map<String, Integer> meterIdByNamePanel,
+            Map<String, Integer> uniqueMeterIdByPanel,
+            Map<String, Integer> uniqueMeterIdByCompactPanel,
+            int fallbackMeterId,
+            String itemName,
+            String panelName) {
+        String itemKey = normKey(itemName);
+        String panelKey = normKey(panelName);
+        if (!itemKey.isEmpty() && !panelKey.isEmpty() && meterIdByNamePanel != null) {
+            Integer exactNamePanel = meterIdByNamePanel.get(itemKey + "|" + panelKey);
+            if (exactNamePanel != null && exactNamePanel.intValue() > 0) return exactNamePanel.intValue();
+        }
+        if (!itemKey.isEmpty() && meterIdByName != null) {
+            Integer exact = meterIdByName.get(itemKey);
             if (exact != null && exact.intValue() > 0) return exact.intValue();
+        }
+        if (!panelKey.isEmpty() && uniqueMeterIdByPanel != null) {
+            Integer byPanel = uniqueMeterIdByPanel.get(panelKey);
+            if (byPanel != null && byPanel.intValue() > 0) return byPanel.intValue();
+        }
+        String compactPanel = compactKey(panelName);
+        if (!compactPanel.isEmpty() && uniqueMeterIdByCompactPanel != null) {
+            Integer byCompactPanel = uniqueMeterIdByCompactPanel.get(compactPanel);
+            if (byCompactPanel != null && byCompactPanel.intValue() > 0) return byCompactPanel.intValue();
         }
         return 0;
     }
@@ -1090,7 +1160,7 @@
 
             int meterId = ((Number)meterObj).intValue();
             String token = String.valueOf(tokenObj).trim().toUpperCase(Locale.ROOT);
-            if ("IR".equals(token)) continue;
+            if (isAiMatchPlcOnlyToken(token)) continue;
             Map<String, Object> mm = matchMap.get(token);
             if (mm == null) continue;
 
@@ -1186,6 +1256,9 @@
              PreparedStatement close = conn.prepareStatement(closeSql)) {
             ensureAlarmLogRuleColumns(conn);
             Map<String, Integer> meterIdByName = loadMeterIdByExactName(conn);
+            Map<String, Integer> meterIdByNamePanel = loadMeterIdByExactNamePanel(conn);
+            Map<String, Integer> uniqueMeterIdByPanel = loadUniqueMeterIdByPanel(conn, false);
+            Map<String, Integer> uniqueMeterIdByCompactPanel = loadUniqueMeterIdByPanel(conn, true);
             Map<String, DiRuleMeta> diRuleMetaMap = loadCachedDiRuleMeta(conn);
             for (Map<String, Object> row : diRows) {
                 int pointId = ((Number)row.get("point_id")).intValue();
@@ -1197,7 +1270,15 @@
                 String panelName = String.valueOf(row.get("panel_name") == null ? "" : row.get("panel_name"));
 
                 int deviceId = pointId;
-                int alarmMeterId = resolveDiAlarmMeterId(meterIdByName, pointId, itemName);
+                int alarmMeterId = resolveDiAlarmMeterId(
+                    meterIdByName,
+                    meterIdByNamePanel,
+                    uniqueMeterIdByPanel,
+                    uniqueMeterIdByCompactPanel,
+                    pointId,
+                    itemName,
+                    panelName
+                );
                 Integer alarmMeterKey = alarmMeterId > 0 ? Integer.valueOf(alarmMeterId) : null;
                 String eventType = buildDiEventType(diAddress, bitNo, tagName);
                 String diRuleCode = resolveDiRuleCode(eventType, tagName);
@@ -1542,12 +1623,18 @@
         st.lastRows = Collections.emptyList();
         st.lastDiRows = Collections.emptyList();
         st.lastRunAt = 0L;
+        st.lastSuccessAt = 0L;
         st.nextAiPollAt = 0L;
         st.running = true;
         st.autoStartAllowed = true;
         st.pollingMs = pollingMs;
         st.lastInfo = "";
         st.lastError = "";
+    }
+
+    private static String formatPollTimestamp(long epochMs) {
+        if (epochMs <= 0L) return "";
+        return new Timestamp(epochMs).toString();
     }
 
     private static boolean applyInvalidPlcState(PollState st, PlcConfig cfg) {
@@ -1585,6 +1672,7 @@
                       ", events_opened=" + diPersist[0] + ", events_closed=" + diPersist[1];
         st.lastError = "";
         st.lastRunAt = System.currentTimeMillis();
+        st.lastSuccessAt = st.lastRunAt;
     }
 
     private static void applyAiPollSuccess(PollState st, int plcId, AiReadData aiData, int[] aiPersist, int[] aiAlarmPersist, long usedElapsed) {
@@ -1603,6 +1691,7 @@
                       ", ai_alarm_opened=" + aiAlarmPersist[0] + ", ai_alarm_closed=" + aiAlarmPersist[1];
         st.lastError = "";
         st.lastRunAt = System.currentTimeMillis();
+        st.lastSuccessAt = st.lastRunAt;
     }
 
     private static void clearCaches(Integer plcId) {
@@ -1806,9 +1895,50 @@
     private static String resolvePollStatus(PlcConfig cfg, PollState st) {
         boolean enabled = cfg != null && cfg.enabled;
         if (!enabled) return "inactive";
-        if (st != null && st.running) return "running";
         if (st != null && st.lastError != null && !st.lastError.trim().isEmpty()) return "error";
+        if (st != null && st.running) return "running";
         return "stopped";
+    }
+
+    private static String resolvePollStatusReason(PlcConfig cfg, PollState st, String status) {
+        PollState safeState = (st == null) ? new PollState() : st;
+        PlcConfig safeCfg = (cfg == null) ? new PlcConfig() : cfg;
+        String normalized = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
+        if ("inactive".equals(normalized)) {
+            return "plc_config.enabled=0 상태입니다.";
+        }
+        if ("running".equals(normalized)) {
+            return safeState.lastInfo == null ? "" : safeState.lastInfo;
+        }
+        if ("error".equals(normalized)) {
+            String error = safeState.lastError == null ? "" : safeState.lastError.trim();
+            String lastSuccess = formatPollTimestamp(safeState.lastSuccessAt);
+            if (!error.isEmpty() && !lastSuccess.isEmpty()) {
+                return error + " | PLC 재연결 재시도 중 | 마지막 정상 읽기: " + lastSuccess;
+            }
+            if (!error.isEmpty()) {
+                return error + " | PLC 재연결 재시도 중";
+            }
+            if (!lastSuccess.isEmpty()) {
+                return "PLC 재연결 재시도 중 | 마지막 정상 읽기: " + lastSuccess;
+            }
+            return "PLC 재연결 재시도 중";
+        }
+        if (!safeCfg.exists || safeCfg.ip == null || safeCfg.ip.trim().isEmpty()) {
+            return "PLC 설정을 찾을 수 없거나 IP가 비어 있습니다.";
+        }
+        if (!safeState.autoStartAllowed) {
+            return (safeState.lastInfo != null && !safeState.lastInfo.trim().isEmpty())
+                ? safeState.lastInfo
+                : "수동 중지로 polling 재시작이 막혀 있습니다.";
+        }
+        if (safeState.lastRunAt <= 0L) {
+            return "서버 재시작 또는 JSP 재로딩으로 polling 상태가 초기화된 것으로 보입니다.";
+        }
+        if (safeState.lastInfo != null && !safeState.lastInfo.trim().isEmpty()) {
+            return safeState.lastInfo;
+        }
+        return "현재 활성 polling 작업이 없습니다.";
     }
 
     private static void appendPollStateJson(StringBuilder s, Integer id, PlcConfig cfg, PollState st, boolean includeRows) {
@@ -1818,6 +1948,7 @@
             safeState.pollingMs = safeCfg.pollingMs;
         }
         String status = resolvePollStatus(safeCfg, safeState);
+        String statusReason = resolvePollStatusReason(safeCfg, safeState, status);
         long attempt = safeState.attemptCount.get();
         long success = safeState.successCount.get();
         double successRate = (attempt > 0L) ? (success * 100.0d / attempt) : 0.0d;
@@ -1840,6 +1971,8 @@
          .append("\"proc_ms\":").append(safeState.lastProcMs).append(",")
          .append("\"avg_read_ms\":").append(String.format(java.util.Locale.US, "%.1f", avgReadMs)).append(",")
          .append("\"last_run_at\":").append(safeState.lastRunAt).append(",")
+         .append("\"auto_start_allowed\":").append(safeState.autoStartAllowed ? "true" : "false").append(",")
+         .append("\"status_reason\":\"").append(escJson(statusReason)).append("\",")
          .append("\"last_info\":\"").append(escJson(safeState.lastInfo)).append("\",")
          .append("\"last_error\":\"").append(escJson(safeState.lastError)).append("\"");
         if (includeRows) {
@@ -1891,11 +2024,13 @@
     }
 
     if ("polling_status".equalsIgnoreCase(reqCtx.action)) {
+        ensurePollingStarted(pollRt, reqCtx.plcId);
         out.print(buildPollingStateJson(pollRt, false));
         return;
     }
 
     if ("polling_snapshot".equalsIgnoreCase(reqCtx.action)) {
+        ensurePollingStarted(pollRt, reqCtx.plcId);
         out.print(buildPollingStateJson(pollRt, true));
         return;
     }

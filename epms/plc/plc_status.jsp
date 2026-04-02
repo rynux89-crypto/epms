@@ -36,11 +36,12 @@
     <title>PLC Status</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
-        .page-wrap { max-width: 1300px; margin: 0 auto; }
-        .info-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #eef6ff; border: 1px solid #cfe2ff; color: #1d4f91; font-size: 13px; }
+        .page-wrap { width: min(96vw, 1680px); margin: 0 auto; }
+        .info-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #eef6ff; border: 1px solid #cfe2ff; color: #1d4f91; font-size: 13px; box-sizing: border-box; }
         .ok-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #ebfff1; border: 1px solid #b7ebc6; color: #0f7a2a; font-size: 13px; font-weight: 700; }
         .err-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #fff1f1; border: 1px solid #ffc9c9; color: #b42318; font-size: 13px; font-weight: 700; }
-        .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+        .plc-table-wrap { width: 100%; border: 1px solid #d9e3ee; border-radius: 18px; overflow: hidden; background: rgba(255,255,255,0.92); box-sizing: border-box; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
         .b-on { background: #e8f7ec; color: #1b7f3b; border: 1px solid #b9e6c6; }
         .b-off { background: #fff3e0; color: #b45309; border: 1px solid #ffd8a8; }
         .state-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
@@ -48,18 +49,28 @@
         .state-stopped { background: #f4f6f8; color: #475569; border: 1px solid #d8e0e8; }
         .state-inactive { background: #fff4e5; color: #b45309; border: 1px solid #fed7aa; }
         .state-error { background: #fff1f2; color: #b42318; border: 1px solid #fecdd3; }
+        .state-wrap { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+        .state-reason { font-size: 11px; line-height: 1.4; color: #64748b; white-space: normal; word-break: keep-all; overflow-wrap: break-word; max-width: 220px; }
         .mono { font-family: Consolas, "Courier New", monospace; }
         td { font-size: 12px; }
-        th { font-size: 11px; }
+        th { font-size: 11px; white-space: normal; word-break: keep-all; line-height: 1.25; }
         .ctrl-col { width: 280px; min-width: 280px; }
         .ctrl { display: inline-flex; gap: 6px; flex-wrap: wrap; white-space: normal; }
         .ctrl button { min-width: 52px; padding: 2px 6px; font-size: 11px; }
         .plc-table th, .plc-table td { padding: 6px 8px; }
+        .plc-table { width: 100%; min-width: 100%; table-layout: auto; box-sizing: border-box; }
         .plc-table th:nth-child(1), .plc-table td:nth-child(1) { width: 60px; }
         .plc-table th:nth-child(2), .plc-table td:nth-child(2) { width: 170px; }
+        .plc-table th:nth-child(3), .plc-table td:nth-child(3) { width: 70px; }
+        .plc-table th:nth-child(4), .plc-table td:nth-child(4) { width: 80px; }
+        .plc-table th:nth-child(5), .plc-table td:nth-child(5) { width: 110px; }
+        .plc-table th:nth-child(6), .plc-table td:nth-child(6) { width: 90px; }
+        .plc-table th:nth-child(8), .plc-table td:nth-child(8) { width: 240px; min-width: 240px; vertical-align: top; }
+        .plc-table th:nth-child(9), .plc-table td:nth-child(9),
+        .plc-table th:nth-child(10), .plc-table td:nth-child(10) { width: 110px; min-width: 110px; }
         .plc-table th:nth-child(11), .plc-table td:nth-child(11) { width: 150px; white-space: nowrap; }
         .plc-table th:nth-child(12), .plc-table td:nth-child(12),
-        .plc-table th:nth-child(13), .plc-table td:nth-child(13) { width: 80px; white-space: nowrap; }
+        .plc-table th:nth-child(13), .plc-table td:nth-child(13) { width: 120px; min-width: 120px; white-space: nowrap; }
         .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
         @media (max-width: 1100px) {
             .data-grid { grid-template-columns: 1fr; }
@@ -81,31 +92,32 @@
 
     <div class="info-box">
         PLC 선택 없이 각 행에서 개별 제어합니다.<br/>
-        ACTIVE는 PLC 사용 가능 상태이고, 실제 읽는 중 여부는 운영상태 컬럼에서 확인합니다.<br/>
+        사용 여부는 PLC 설정 활성화 상태이고, 실제 통신 상태는 운영상태 컬럼에서 확인합니다.<br/>
         DI/AI 읽기 횟수는 현재 상태가 아니라 서버 시작 후 누적 읽기 횟수입니다.<br/>
-        시작: 서버 백그라운드에서 polling_ms 주기로 연속 읽기(화면 닫힘 후에도 지속), 중지: 해당 PLC 연속 읽기 중단
+        시작: 서버 백그라운드에서 자동 읽기 주기(ms) 기준으로 연속 읽기(화면 닫힘 후에도 지속), 중지: 해당 PLC 연속 읽기 중단
     </div>
 
     <div id="okBox" class="ok-box" style="display:none;"></div>
     <div id="errBox" class="err-box" style="display:none;"></div>
 
     <h3 style="margin-top:12px;">PLC 등록 상태</h3>
+    <div class="plc-table-wrap">
     <table class="plc-table">
         <thead>
         <tr>
-            <th>plc_id</th>
-            <th>ip</th>
-            <th>port</th>
-            <th>unit_id</th>
-            <th>polling_ms</th>
-            <th>enabled</th>
-            <th class="ctrl-col">control</th>
+            <th>PLC ID</th>
+            <th>PLC IP</th>
+            <th>포트</th>
+            <th>Unit ID</th>
+            <th>자동 읽기 주기(ms)</th>
+            <th>사용 여부</th>
+            <th class="ctrl-col">제어</th>
             <th>운영상태</th>
             <th>DI 누적 읽기 횟수</th>
             <th>AI 누적 읽기 횟수</th>
             <th>마지막 읽기 시각</th>
-            <th>di_read_ms</th>
-            <th>ai_read_ms</th>
+            <th>DI 읽기 시간(ms)</th>
+            <th>AI 읽기 시간(ms)</th>
         </tr>
         </thead>
         <tbody>
@@ -121,7 +133,7 @@
                 <td><%= p.get("unit_id") %></td>
                 <td><%= p.get("polling_ms") %></td>
                 <td>
-                    <% if (enabled) { %><span class="badge b-on">ACTIVE</span><% } else { %><span class="badge b-off">INACTIVE</span><% } %>
+                    <% if (enabled) { %><span class="badge b-on">사용</span><% } else { %><span class="badge b-off">미사용</span><% } %>
                 </td>
                 <td class="ctrl-col">
                     <div class="ctrl">
@@ -147,6 +159,7 @@
         <% } %>
         </tbody>
     </table>
+    </div>
 
     <div class="filter-row">
         <label for="meterFilter">meter:</label>
@@ -425,12 +438,25 @@ const API = 'modbus_api.jsp';
     }
   }
 
-  function setPlcState(plcId, text, isErr){
+  function getStateReasonText(st, state){
+    if (!st) return '';
+    const normalized = String(state || '').toLowerCase();
+    if (normalized === 'running') {
+      return '';
+    }
+    return String(st.status_reason || st.last_error || st.last_info || '').trim();
+  }
+
+  function setPlcState(plcId, text, isErr, st){
     const el = document.getElementById('state-' + plcId);
     if (!el) return;
     const normalized = String(text || '').toLowerCase();
     const state = normalized === 'stopped' ? 'stopped' : (isErr ? 'error' : text);
-    el.innerHTML = getStateBadgeHtml(state);
+    const reason = getStateReasonText(st, state);
+    el.innerHTML = '<div class="state-wrap">' +
+      getStateBadgeHtml(state) +
+      (reason ? ('<div class="state-reason">' + esc(reason) + '</div>') : '') +
+      '</div>';
   }
 
   function toNum(v){
@@ -530,7 +556,7 @@ const API = 'modbus_api.jsp';
         setReadCounts(plcId, st.di_read_count, st.ai_read_count);
         setLastRunAt(plcId, st.last_run_at);
         setReadMs(plcId, st.last_read_ms, st.di_read_ms, st.ai_read_ms, st.proc_ms);
-        setPlcState(plcId, st.status || (running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error');
+        setPlcState(plcId, st.status || (running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error', st);
       });
     } catch (e) {
       // ignore status sync errors for UX continuity
@@ -560,7 +586,7 @@ const API = 'modbus_api.jsp';
         setReadCounts(plcId, st.di_read_count, st.ai_read_count);
         setLastRunAt(plcId, st.last_run_at);
         setReadMs(plcId, st.last_read_ms, st.di_read_ms, st.ai_read_ms, st.proc_ms);
-        setPlcState(plcId, st.status || (st.running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error');
+        setPlcState(plcId, st.status || (st.running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error', st);
       });
 
       const rows = mergedRows();
@@ -613,7 +639,7 @@ const API = 'modbus_api.jsp';
       }
       showOk(data.info || '서버 폴링 시작');
       setButtons(plcId, true);
-      setPlcState(plcId, 'running', false);
+      setPlcState(plcId, 'running', false, { status_reason: data.info || '' });
       setTimeout(function(){
         refreshPollingStatus();
         loadSnapshot();
@@ -635,7 +661,7 @@ const API = 'modbus_api.jsp';
       }
       showOk(data.info || '서버 폴링 중지');
       setButtons(plcId, false);
-      setPlcState(plcId, 'stopped', false);
+      setPlcState(plcId, 'stopped', false, { status_reason: data.info || '서버 폴링 중지' });
       setTimeout(function(){
         refreshPollingStatus();
         loadSnapshot();

@@ -73,8 +73,8 @@
 
                     String insSql =
                         "INSERT INTO dbo.plc_config " +
-                        "(plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled, updated_at, insert_ms) " +
-                        "VALUES (?, ?, ?, ?, ?, 1, SYSUTCDATETIME(), 600000)";
+                        "(plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled, updated_at) " +
+                        "VALUES (?, ?, ?, ?, ?, 1, SYSUTCDATETIME())";
                     try (PreparedStatement ps = conn.prepareStatement(insSql)) {
                         ps.setInt(1, nextId);
                         ps.setString(2, plcIp);
@@ -165,7 +165,7 @@
 
     List<Map<String, Object>> rows = new ArrayList<>();
     String listSql =
-        "SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled, updated_at, insert_ms " +
+        "SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled, updated_at " +
         "FROM dbo.plc_config ORDER BY plc_id";
     try (PreparedStatement ps = conn.prepareStatement(listSql);
          ResultSet rs = ps.executeQuery()) {
@@ -178,7 +178,6 @@
             r.put("polling_ms", rs.getInt("polling_ms"));
             r.put("enabled", rs.getBoolean("enabled"));
             r.put("updated_at", rs.getTimestamp("updated_at"));
-            r.put("insert_ms", rs.getInt("insert_ms"));
             rows.add(r);
         }
     } catch (Exception e) {
@@ -249,7 +248,7 @@
                 <input id="unit_id" type="number" name="unit_id" min="1" max="255" value="1" required>
             </div>
             <div class="input-group">
-                <label for="polling_seconds">Polling (sec)</label>
+                <label for="polling_seconds">자동 읽기 주기 (sec)</label>
                 <input id="polling_seconds" type="number" name="polling_seconds" min="1" max="86400" value="1" required>
             </div>
             <button class="submit-btn" type="submit">Add PLC</button>
@@ -263,7 +262,7 @@
             <th>IP</th>
             <th>Port</th>
             <th>Unit</th>
-            <th>Polling (sec)</th>
+            <th>자동 읽기 주기 (sec)</th>
             <th>Status</th>
             <th>Update</th>
             <th>Control</th>

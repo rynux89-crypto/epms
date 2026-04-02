@@ -75,7 +75,7 @@
 
 10. Screen verification
 - Review:
-  - [ai_measurements_match.jsp](/c:/Tomcat%209.0/webapps/ROOT/epms/ai_measurements_match.jsp)
+  - [ai_measurements_verify.jsp](/c:/Tomcat%209.0/webapps/ROOT/epms/ai_measurements_verify.jsp)
   - [ai_mapping.jsp](/c:/Tomcat%209.0/webapps/ROOT/epms/ai_mapping.jsp)
   - [di_mapping.jsp](/c:/Tomcat%209.0/webapps/ROOT/epms/di_mapping.jsp)
 
