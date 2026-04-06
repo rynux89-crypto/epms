@@ -9,7 +9,6 @@ public final class ModbusApiActionSupport {
     public static String handlePollingState(ServletContext servletContext, Integer plcId, String alarmApiUrl, boolean includeRows) {
         ModbusPollingSupport.PollRuntime pollRt = ModbusPollingSupport.getPollRuntime(servletContext);
         try {
-            ModbusPollingSupport.ensurePollingStarted(pollRt, plcId, alarmApiUrl);
             return ModbusApiResponseSupport.buildPollingStateJson(
                     ModbusConfigRepository.loadAllConfigSnapshots(),
                     pollRt.states,

@@ -1,0 +1,1429 @@
+﻿
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Measurement Mapping Management</title>
+    <link rel="stylesheet" type="text/css" href="/css/main.css">
+    <style>
+        .page-wrap { max-width: 1600px; margin: 0 auto; }
+        .ok-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #eefbf1; border: 1px solid #c2efcc; color: #1f7a38; font-size: 13px; }
+        .err-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #fff1f1; border: 1px solid #ffc9c9; color: #b42318; font-size: 13px; font-weight: 700; }
+        .section-title { margin: 14px 0 6px; font-size: 15px; font-weight: 700; color: #1f3347; }
+        .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .mono { font-family: Consolas, "Courier New", monospace; }
+        .small-input { width: 90px; }
+        .mid-input { width: 160px; }
+        .wide-input { width: 240px; }
+        .btn-mini { padding: 5px 8px; font-size: 12px; }
+        .btn-action {
+            width: 56px;
+            height: 34px;
+            padding: 0;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: center;
+            line-height: 1;
+        }
+        .action-cell { vertical-align: middle; }
+        .action-wrap { display: inline-flex; align-items: center; gap: 6px; }
+        .action-wrap form { margin: 0; display: inline-flex; align-items: center; }
+        td, th { font-size: 12px; white-space: nowrap; vertical-align: middle; padding-top: 4px; padding-bottom: 4px; }
+        .action-cell { padding-top: 2px; padding-bottom: 2px; }
+    </style>
+</head>
+<body>
+<div class="page-wrap">
+    <div class="title-bar">
+        <h2>🧭 AI 측정값 매핑 정의 관리</h2>
+        <div class="inline-actions">
+            <button class="back-btn" onclick="location.href='/epms/ai_measurements_verify.jsp'">적재 검증 화면</button>
+            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
+        </div>
+    </div>
+
+    
+    
+    <div class="ok-box">기준: 엑셀 <span class="mono">PLC_IO_Address_AI</span> token과 운영 중인 추가 token을 함께 허용합니다. 편집/삭제 기준은 <span class="mono">token + float_index</span>입니다. <span class="mono">IR</span>은 PLC 전용이므로 measurement_column / target_table을 비웁니다.</div>
+
+    <div class="section-title">신규 등록</div>
+    <form method="post" class="toolbar">
+        <input type="hidden" name="action" value="add" />
+        <input type="text" name="token" class="mid-input mono" placeholder="TOKEN (예: KW, KWH, VA, VAH, IR)" required />
+        <input type="number" name="float_index" class="small-input" placeholder="index" required />
+        <input type="number" name="float_registers" class="small-input" placeholder="regs" value="2" required />
+        <input type="text" name="measurement_column" class="wide-input mono" placeholder="measurement_column" />
+        <input type="text" name="target_table" class="mid-input mono" placeholder="measurements | harmonic_measurements" />
+        <label>지원 <input type="checkbox" name="is_supported" value="1" checked /></label>
+        <input type="text" name="note" class="wide-input" placeholder="note" />
+        <button type="submit" class="btn-mini">등록</button>
+    </form>
+
+    
+
+    <div class="section-title">목록/수정/삭제</div>
+    <table>
+        <thead>
+        <tr>
+            <th>token</th>
+            <th>float_index</th>
+            <th>float_registers</th>
+            <th>measurement_column</th>
+            <th>target_table</th>
+            <th>is_supported</th>
+            <th>note</th>
+            <th>동작</th>
+        </tr>
+        </thead>
+        <tbody>
+        
+            
+            <tr>
+                <td class="mono">V12</td>
+                <td class="mono">1</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_ab</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 A-B</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=1&edit_token=V12'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="V12" />
+                            <input type="hidden" name="original_float_index" value="1" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">V23</td>
+                <td class="mono">2</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_bc</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 B-C</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=2&edit_token=V23'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="V23" />
+                            <input type="hidden" name="original_float_index" value="2" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">V31</td>
+                <td class="mono">3</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_ca</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 C-B</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=3&edit_token=V31'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="V31" />
+                            <input type="hidden" name="original_float_index" value="3" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">VVA</td>
+                <td class="mono">4</td>
+                <td class="mono">2</td>
+                <td class="mono">line_voltage_avg</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>선간전압평균</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=4&edit_token=VVA'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="VVA" />
+                            <input type="hidden" name="original_float_index" value="4" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">V1N</td>
+                <td class="mono">5</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_an</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 A-N</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=5&edit_token=V1N'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="V1N" />
+                            <input type="hidden" name="original_float_index" value="5" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">V2N</td>
+                <td class="mono">6</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_bn</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 B-N</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=6&edit_token=V2N'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="V2N" />
+                            <input type="hidden" name="original_float_index" value="6" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">V3N</td>
+                <td class="mono">7</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_cn</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 C-N</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=7&edit_token=V3N'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="V3N" />
+                            <input type="hidden" name="original_float_index" value="7" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">A1</td>
+                <td class="mono">9</td>
+                <td class="mono">2</td>
+                <td class="mono">current_a</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>A current</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=9&edit_token=A1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="A1" />
+                            <input type="hidden" name="original_float_index" value="9" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">A2</td>
+                <td class="mono">10</td>
+                <td class="mono">2</td>
+                <td class="mono">current_b</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>B current</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=10&edit_token=A2'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="A2" />
+                            <input type="hidden" name="original_float_index" value="10" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">A3</td>
+                <td class="mono">11</td>
+                <td class="mono">2</td>
+                <td class="mono">current_c</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>C current</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=11&edit_token=A3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="A3" />
+                            <input type="hidden" name="original_float_index" value="11" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">AN</td>
+                <td class="mono">12</td>
+                <td class="mono">2</td>
+                <td class="mono">current_n</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>N current</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=12&edit_token=AN'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="AN" />
+                            <input type="hidden" name="original_float_index" value="12" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">AA</td>
+                <td class="mono">13</td>
+                <td class="mono">2</td>
+                <td class="mono">average_current</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>Current Average</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=13&edit_token=AA'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="AA" />
+                            <input type="hidden" name="original_float_index" value="13" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PF</td>
+                <td class="mono">14</td>
+                <td class="mono">2</td>
+                <td class="mono">power_factor</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>역률</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=14&edit_token=PF'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PF" />
+                            <input type="hidden" name="original_float_index" value="14" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">HZ</td>
+                <td class="mono">15</td>
+                <td class="mono">2</td>
+                <td class="mono">frequency</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>주파수</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=15&edit_token=HZ'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="HZ" />
+                            <input type="hidden" name="original_float_index" value="15" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">KW</td>
+                <td class="mono">16</td>
+                <td class="mono">2</td>
+                <td class="mono">active_power_total</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>유효전력</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=16&edit_token=KW'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="KW" />
+                            <input type="hidden" name="original_float_index" value="16" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">KWH</td>
+                <td class="mono">17</td>
+                <td class="mono">2</td>
+                <td class="mono">energy_consumed_total</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>유효전력량</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=17&edit_token=KWH'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="KWH" />
+                            <input type="hidden" name="original_float_index" value="17" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">VA</td>
+                <td class="mono">18</td>
+                <td class="mono">2</td>
+                <td class="mono">apparent_power_total</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>????</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=18&edit_token=VA'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="VA" />
+                            <input type="hidden" name="original_float_index" value="18" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">VAH</td>
+                <td class="mono">19</td>
+                <td class="mono">2</td>
+                <td class="mono">apparent_energy_total</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>?????</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=19&edit_token=VAH'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="VAH" />
+                            <input type="hidden" name="original_float_index" value="19" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PEAK</td>
+                <td class="mono">20</td>
+                <td class="mono">2</td>
+                <td class="mono">max_power</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>피크</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=20&edit_token=PEAK'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PEAK" />
+                            <input type="hidden" name="original_float_index" value="20" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VA_1</td>
+                <td class="mono">22</td>
+                <td class="mono">2</td>
+                <td class="mono">thd_voltage_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 A 1차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=22&edit_token=H_VA_1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VA_1" />
+                            <input type="hidden" name="original_float_index" value="22" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VA_3</td>
+                <td class="mono">23</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h3_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 A 3차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=23&edit_token=H_VA_3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VA_3" />
+                            <input type="hidden" name="original_float_index" value="23" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VA_5</td>
+                <td class="mono">24</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h5_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 A 5차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=24&edit_token=H_VA_5'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VA_5" />
+                            <input type="hidden" name="original_float_index" value="24" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VA_7</td>
+                <td class="mono">25</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h7_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 A 7차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=25&edit_token=H_VA_7'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VA_7" />
+                            <input type="hidden" name="original_float_index" value="25" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VA_9</td>
+                <td class="mono">26</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h9_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 A 9차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=26&edit_token=H_VA_9'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VA_9" />
+                            <input type="hidden" name="original_float_index" value="26" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VA_11</td>
+                <td class="mono">27</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h11_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 A 11차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=27&edit_token=H_VA_11'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VA_11" />
+                            <input type="hidden" name="original_float_index" value="27" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VB_1</td>
+                <td class="mono">28</td>
+                <td class="mono">2</td>
+                <td class="mono">thd_voltage_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 B 1차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=28&edit_token=H_VB_1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VB_1" />
+                            <input type="hidden" name="original_float_index" value="28" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VB_3</td>
+                <td class="mono">29</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h3_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 B 3차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=29&edit_token=H_VB_3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VB_3" />
+                            <input type="hidden" name="original_float_index" value="29" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VB_5</td>
+                <td class="mono">30</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h5_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 B 5차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=30&edit_token=H_VB_5'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VB_5" />
+                            <input type="hidden" name="original_float_index" value="30" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VB_7</td>
+                <td class="mono">31</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h7_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 B 7차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=31&edit_token=H_VB_7'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VB_7" />
+                            <input type="hidden" name="original_float_index" value="31" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VB_9</td>
+                <td class="mono">32</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h9_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 B 9차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=32&edit_token=H_VB_9'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VB_9" />
+                            <input type="hidden" name="original_float_index" value="32" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VB_11</td>
+                <td class="mono">33</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h11_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 B 11차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=33&edit_token=H_VB_11'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VB_11" />
+                            <input type="hidden" name="original_float_index" value="33" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VC_1</td>
+                <td class="mono">34</td>
+                <td class="mono">2</td>
+                <td class="mono">thd_voltage_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 C 1차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=34&edit_token=H_VC_1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VC_1" />
+                            <input type="hidden" name="original_float_index" value="34" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VC_3</td>
+                <td class="mono">35</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h3_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 C 3차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=35&edit_token=H_VC_3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VC_3" />
+                            <input type="hidden" name="original_float_index" value="35" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VC_5</td>
+                <td class="mono">36</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h5_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 C 5차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=36&edit_token=H_VC_5'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VC_5" />
+                            <input type="hidden" name="original_float_index" value="36" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VC_7</td>
+                <td class="mono">37</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h7_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 C 7차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=37&edit_token=H_VC_7'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VC_7" />
+                            <input type="hidden" name="original_float_index" value="37" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VC_9</td>
+                <td class="mono">38</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h9_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 C 9차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=38&edit_token=H_VC_9'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VC_9" />
+                            <input type="hidden" name="original_float_index" value="38" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_VC_11</td>
+                <td class="mono">39</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_h11_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전압 C 11차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=39&edit_token=H_VC_11'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_VC_11" />
+                            <input type="hidden" name="original_float_index" value="39" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IA_1</td>
+                <td class="mono">40</td>
+                <td class="mono">2</td>
+                <td class="mono">thd_current_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 A 1차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=40&edit_token=H_IA_1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IA_1" />
+                            <input type="hidden" name="original_float_index" value="40" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IA_3</td>
+                <td class="mono">41</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h3_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 A 3차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=41&edit_token=H_IA_3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IA_3" />
+                            <input type="hidden" name="original_float_index" value="41" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IA_5</td>
+                <td class="mono">42</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h5_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 A 5차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=42&edit_token=H_IA_5'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IA_5" />
+                            <input type="hidden" name="original_float_index" value="42" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IA_7</td>
+                <td class="mono">43</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h7_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 A 7차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=43&edit_token=H_IA_7'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IA_7" />
+                            <input type="hidden" name="original_float_index" value="43" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IA_9</td>
+                <td class="mono">44</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h9_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 A 9차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=44&edit_token=H_IA_9'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IA_9" />
+                            <input type="hidden" name="original_float_index" value="44" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IA_11</td>
+                <td class="mono">45</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h11_a</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 A 11차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=45&edit_token=H_IA_11'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IA_11" />
+                            <input type="hidden" name="original_float_index" value="45" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IB_1</td>
+                <td class="mono">46</td>
+                <td class="mono">2</td>
+                <td class="mono">thd_current_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 B 1차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=46&edit_token=H_IB_1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IB_1" />
+                            <input type="hidden" name="original_float_index" value="46" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IB_3</td>
+                <td class="mono">47</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h3_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 B 3차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=47&edit_token=H_IB_3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IB_3" />
+                            <input type="hidden" name="original_float_index" value="47" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IB_5</td>
+                <td class="mono">48</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h5_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 B 5차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=48&edit_token=H_IB_5'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IB_5" />
+                            <input type="hidden" name="original_float_index" value="48" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IB_7</td>
+                <td class="mono">49</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h7_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 B 7차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=49&edit_token=H_IB_7'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IB_7" />
+                            <input type="hidden" name="original_float_index" value="49" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IB_9</td>
+                <td class="mono">50</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h9_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 B 9차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=50&edit_token=H_IB_9'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IB_9" />
+                            <input type="hidden" name="original_float_index" value="50" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IB_11</td>
+                <td class="mono">51</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h11_b</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 B 11차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=51&edit_token=H_IB_11'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IB_11" />
+                            <input type="hidden" name="original_float_index" value="51" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IC_1</td>
+                <td class="mono">52</td>
+                <td class="mono">2</td>
+                <td class="mono">thd_current_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 C 1차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=52&edit_token=H_IC_1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IC_1" />
+                            <input type="hidden" name="original_float_index" value="52" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IC_3</td>
+                <td class="mono">53</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h3_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 C 3차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=53&edit_token=H_IC_3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IC_3" />
+                            <input type="hidden" name="original_float_index" value="53" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IC_5</td>
+                <td class="mono">54</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h5_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 C 5차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=54&edit_token=H_IC_5'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IC_5" />
+                            <input type="hidden" name="original_float_index" value="54" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IC_7</td>
+                <td class="mono">55</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h7_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 C 7차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=55&edit_token=H_IC_7'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IC_7" />
+                            <input type="hidden" name="original_float_index" value="55" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IC_9</td>
+                <td class="mono">56</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h9_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 C 9차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=56&edit_token=H_IC_9'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IC_9" />
+                            <input type="hidden" name="original_float_index" value="56" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">H_IC_11</td>
+                <td class="mono">57</td>
+                <td class="mono">2</td>
+                <td class="mono">current_h11_c</td>
+                <td class="mono">harmonic_measurements</td>
+                <td>1</td>
+                <td>전류 C 11차 고조파</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=57&edit_token=H_IC_11'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="H_IC_11" />
+                            <input type="hidden" name="original_float_index" value="57" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PV1</td>
+                <td class="mono">58</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_phase_a</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 위상 A</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=58&edit_token=PV1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PV1" />
+                            <input type="hidden" name="original_float_index" value="58" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PV2</td>
+                <td class="mono">59</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_phase_b</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 위상 B</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=59&edit_token=PV2'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PV2" />
+                            <input type="hidden" name="original_float_index" value="59" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PV3</td>
+                <td class="mono">60</td>
+                <td class="mono">2</td>
+                <td class="mono">voltage_phase_c</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>전압 위상 C</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=60&edit_token=PV3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PV3" />
+                            <input type="hidden" name="original_float_index" value="60" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PI1</td>
+                <td class="mono">61</td>
+                <td class="mono">2</td>
+                <td class="mono">current_phase_a</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>역률 A</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=61&edit_token=PI1'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PI1" />
+                            <input type="hidden" name="original_float_index" value="61" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PI2</td>
+                <td class="mono">62</td>
+                <td class="mono">2</td>
+                <td class="mono">current_phase_b</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>역률 B</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=62&edit_token=PI2'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PI2" />
+                            <input type="hidden" name="original_float_index" value="62" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PI3</td>
+                <td class="mono">63</td>
+                <td class="mono">2</td>
+                <td class="mono">current_phase_c</td>
+                <td class="mono">measurements</td>
+                <td>1</td>
+                <td>역률 C</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=63&edit_token=PI3'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PI3" />
+                            <input type="hidden" name="original_float_index" value="63" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PST</td>
+                <td class="mono">63</td>
+                <td class="mono">2</td>
+                <td class="mono">flicker_pst</td>
+                <td class="mono">flicker_measurements</td>
+                <td>1</td>
+                <td>Flicker PST</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=63&edit_token=PST'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PST" />
+                            <input type="hidden" name="original_float_index" value="63" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="mono">PLT</td>
+                <td class="mono">64</td>
+                <td class="mono">2</td>
+                <td class="mono">flicker_plt</td>
+                <td class="mono">flicker_measurements</td>
+                <td>1</td>
+                <td>Flicker PLT</td>
+                <td class="action-cell">
+                    <div class="action-wrap">
+                        <button type="button" class="btn-mini btn-action" onclick="location.href='ai_measurements_mapping_manage.jsp?edit_float_index=64&edit_token=PLT'">편집</button>
+                        <form method="post" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="original_token" value="PLT" />
+                            <input type="hidden" name="original_float_index" value="64" />
+                            <button type="submit" class="btn-mini btn-action">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            
+        
+        </tbody>
+    </table>
+</div>
+<footer>© EPMS Dashboard | SNUT CNT</footer>
+</body>
+</html>
+

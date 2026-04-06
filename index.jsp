@@ -63,6 +63,7 @@ try {
       maxHeightVh: <%= chatMaxHeightVh %>,
       fontSizePx: <%= chatFontSizePx %>
     };
+    window.EPMS_AGENT_ENDPOINT = "<%= request.getContextPath() %>/epms/agent.jsp";
   </script>
   <script src="<%= request.getContextPath() %>/js/epms_agent.js?v=<%= ASSET_VERSION %>"></script>
 </body>

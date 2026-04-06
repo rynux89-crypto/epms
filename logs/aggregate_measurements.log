@@ -1,0 +1,28 @@
+﻿[2026-04-03 09:21:12] [INFO] aggregate run start mode=all server=localhost,1433 db=epms
+[2026-04-03 09:21:13] [INFO] hourly aggregation completed
+[2026-04-03 09:21:13] [INFO] daily aggregation completed
+[2026-04-03 09:21:13] [INFO] aggregate run finished
+[2026-04-03 09:24:41] [INFO] aggregate run start mode=rollup server=localhost,1433 db=epms
+[2026-04-03 09:24:41] [INFO] aggregate run start mode=hourly server=localhost,1433 db=epms
+[2026-04-03 09:24:41] [INFO] daily aggregation completed
+[2026-04-03 09:24:42] [INFO] aggregate run finished
+[2026-04-03 09:24:43] [INFO] hourly aggregation completed
+[2026-04-03 09:24:43] [INFO] aggregate run finished
+[2026-04-03 09:28:46] [INFO] aggregate run start mode=rollup server=localhost,1433 db=epms
+[2026-04-03 09:28:46] [INFO] aggregate run start mode=hourly server=localhost,1433 db=epms
+[2026-04-03 09:28:47] [INFO] daily aggregation completed
+[2026-04-03 09:28:47] [INFO] aggregate run finished
+[2026-04-03 09:28:47] [INFO] hourly aggregation completed
+[2026-04-03 09:28:47] [INFO] aggregate run finished
+[2026-04-03 09:30:02] [INFO] aggregate run start mode=hourly server=localhost,1433 db=epms
+[2026-04-03 09:30:03] [INFO] hourly aggregation completed
+[2026-04-03 09:30:03] [INFO] aggregate run finished
+[2026-04-03 09:43:26] [INFO] aggregate run start mode=rollup server=localhost,1433 db=epms
+[2026-04-03 09:43:26] [INFO] aggregate run start mode=hourly server=localhost,1433 db=epms
+[2026-04-03 09:43:27] [INFO] daily aggregation completed
+[2026-04-03 09:43:27] [INFO] aggregate run finished
+[2026-04-03 09:43:27] [INFO] hourly aggregation completed
+[2026-04-03 09:43:27] [INFO] aggregate run finished
+[2026-04-03 09:45:02] [INFO] aggregate run start mode=hourly server=localhost,1433 db=epms
+[2026-04-03 09:45:03] [INFO] hourly aggregation completed
+[2026-04-03 09:45:03] [INFO] aggregate run finished

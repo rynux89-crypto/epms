@@ -23,10 +23,15 @@ public final class ModbusPollingExecutionSupport {
         st.lastReadDurationMs = 0L;
         st.lastDiReadMs = 0L;
         st.lastAiReadMs = 0L;
+        st.lastAiSamplePersistMs = 0L;
+        st.lastAiTargetPersistMs = 0L;
+        st.lastAiAlarmPersistMs = 0L;
         st.lastProcMs = 0L;
         st.lastRows = Collections.emptyList();
         st.lastDiRows = Collections.emptyList();
         st.lastRunAt = 0L;
+        st.lastDiRunAt = 0L;
+        st.lastAiRunAt = 0L;
         st.lastSuccessAt = 0L;
         st.nextAiPollAt = 0L;
         st.running = true;
@@ -48,7 +53,8 @@ public final class ModbusPollingExecutionSupport {
                 runDiCycle(st, plcId, cfg, resources.diTagList, client);
                 now = System.currentTimeMillis();
                 if (st.nextAiPollAt <= now) {
-                    runAiCycle(st, plcId, cfg, resources.aiMapList, resources.aiMatchMap, client, pollingMs, alarmApiUrl);
+                    long scheduledAiAt = st.nextAiPollAt > 0L ? st.nextAiPollAt : now;
+                    runAiCycle(st, plcId, cfg, resources.aiMapList, resources.aiMatchMap, client, pollingMs, alarmApiUrl, scheduledAiAt);
                 }
             }
         } catch (Exception e) {
@@ -65,10 +71,12 @@ public final class ModbusPollingExecutionSupport {
             List<PlcDiTagEntry> diTagList,
             epms.util.ModbusSupport.ModbusTcpClient client) throws Exception {
         try {
+            long diStartedAt = System.currentTimeMillis();
             st.diInProgress.set(true);
+            st.lastDiRunAt = diStartedAt;
             st.attemptCount.incrementAndGet();
             ModbusCycleSupport.DiCycleResult diResult =
-                    ModbusCycleSupport.runDiCycle(plcId, cfg, diTagList, client, new Timestamp(System.currentTimeMillis()));
+                    ModbusCycleSupport.runDiCycle(plcId, cfg, diTagList, client, new Timestamp(diStartedAt));
             if (!st.autoStartAllowed || !st.running) return;
             applyDiPollSuccess(st, plcId, diResult.diData, diResult.diPersist, diResult.elapsedMs);
         } finally {
@@ -84,15 +92,27 @@ public final class ModbusPollingExecutionSupport {
             Map<String, PlcAiMeasurementMatchEntry> aiMatchMap,
             epms.util.ModbusSupport.ModbusTcpClient client,
             int pollingMs,
-            String alarmApiUrl) throws Exception {
+            String alarmApiUrl,
+            long scheduledAiAt) throws Exception {
         try {
+            long aiStartedAt = System.currentTimeMillis();
             st.aiInProgress.set(true);
+            st.lastAiRunAt = aiStartedAt;
             st.attemptCount.incrementAndGet();
             ModbusCycleSupport.AiCycleResult aiResult =
-                    ModbusCycleSupport.runAiCycle(plcId, cfg, aiMapList, aiMatchMap, client, new Timestamp(System.currentTimeMillis()), alarmApiUrl);
+                    ModbusCycleSupport.runAiCycle(plcId, cfg, aiMapList, aiMatchMap, client, new Timestamp(aiStartedAt), alarmApiUrl);
             if (!st.autoStartAllowed || !st.running) return;
-            applyAiPollSuccess(st, plcId, aiResult.aiData, aiResult.aiPersist, aiResult.aiAlarmPersist, aiResult.elapsedMs);
-            st.nextAiPollAt = System.currentTimeMillis() + Math.max(1000, pollingMs);
+            applyAiPollSuccess(
+                    st,
+                    plcId,
+                    aiResult.aiData,
+                    aiResult.aiPersist,
+                    aiResult.aiAlarmPersist,
+                    aiResult.elapsedMs,
+                    aiResult.samplePersistMs,
+                    aiResult.targetPersistMs,
+                    aiResult.alarmPersistMs);
+            st.nextAiPollAt = scheduledAiAt + Math.max(1000, pollingMs);
         } finally {
             st.aiInProgress.set(false);
         }
@@ -136,19 +156,34 @@ public final class ModbusPollingExecutionSupport {
         st.lastSuccessAt = st.lastRunAt;
     }
 
-    private static void applyAiPollSuccess(ModbusPollingSupport.PollState st, int plcId, PlcAiReadData aiData, int[] aiPersist, int[] aiAlarmPersist, long usedElapsed) {
+    private static void applyAiPollSuccess(
+            ModbusPollingSupport.PollState st,
+            int plcId,
+            PlcAiReadData aiData,
+            int[] aiPersist,
+            int[] aiAlarmPersist,
+            long usedElapsed,
+            long samplePersistMs,
+            long targetPersistMs,
+            long alarmPersistMs) {
         if (st == null || !st.autoStartAllowed || !st.running) return;
         st.successCount.incrementAndGet();
         st.readCount.incrementAndGet();
         st.aiReadCount.incrementAndGet();
         st.lastReadDurationMs = usedElapsed;
         st.lastAiReadMs = aiData.durationMs;
+        st.lastAiSamplePersistMs = samplePersistMs;
+        st.lastAiTargetPersistMs = targetPersistMs;
+        st.lastAiAlarmPersistMs = alarmPersistMs;
         st.lastProcMs = 0L;
         st.readDurationSumMs.addAndGet(usedElapsed);
         st.lastRows = new ArrayList<PlcAiReadRow>(aiData.rows);
         st.lastInfo = "AI read success. PLC " + plcId + ", meters=" + aiData.meterRead + ", total_floats=" + aiData.totalFloat +
                 ", measurements_ins=" + aiPersist[0] + ", harmonic_ins=" + aiPersist[1] +
                 ", flicker_ins=" + aiPersist[2] +
+                ", sample_persist_ms=" + samplePersistMs +
+                ", target_persist_ms=" + targetPersistMs +
+                ", alarm_persist_ms=" + alarmPersistMs +
                 ", ai_alarm_opened=" + aiAlarmPersist[0] + ", ai_alarm_closed=" + aiAlarmPersist[1];
         st.lastError = "";
         st.lastRunAt = System.currentTimeMillis();

@@ -3,6 +3,17 @@
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%!
+    private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+        DatabaseMetaData meta = conn.getMetaData();
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), null, tableName, new String[]{"TABLE"})) {
+            if (rs.next()) return true;
+        }
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), "dbo", tableName, new String[]{"TABLE"})) {
+            return rs.next();
+        }
+    }
+%>
 <%
     try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
@@ -45,36 +56,79 @@
             }
         }
 
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT m.map_id, m.plc_id, m.meter_id, m.start_address, m.float_count, m.byte_order, m.enabled, ")
-           .append("       CONVERT(VARCHAR(19), m.updated_at, 120) AS updated_at_text, ")
-           .append("       mt.name AS meter_name, mt.panel_name, mt.building_name ")
-           .append("FROM dbo.plc_meter_map m ")
-           .append("LEFT JOIN dbo.meters mt ON mt.meter_id = m.meter_id ")
-           .append("WHERE m.enabled = 1 ");
-        if (plcId != null) sql.append("AND m.plc_id = ? ");
-        if (!panelName.isEmpty()) sql.append("AND mt.panel_name = ? ");
-        sql.append("ORDER BY m.meter_id");
+        if (tableExists(conn, "plc_ai_mapping_master")) {
+            StringBuilder sql = new StringBuilder();
+            sql.append("SELECT ")
+               .append("       CAST(NULL AS INT) AS map_id, ")
+               .append("       am.plc_id, am.meter_id, ")
+               .append("       MIN(am.reg_address) AS start_address, ")
+               .append("       COUNT(1) AS float_count, ")
+               .append("       MAX(am.byte_order) AS byte_order, ")
+               .append("       MAX(CASE WHEN am.enabled = 1 THEN 1 ELSE 0 END) AS enabled, ")
+               .append("       CONVERT(VARCHAR(19), MAX(am.updated_at), 120) AS updated_at_text, ")
+               .append("       mt.name AS meter_name, mt.panel_name, mt.building_name ")
+               .append("FROM dbo.plc_ai_mapping_master am ")
+               .append("LEFT JOIN dbo.meters mt ON mt.meter_id = am.meter_id ")
+               .append("WHERE am.enabled = 1 ");
+            if (plcId != null) sql.append("AND am.plc_id = ? ");
+            if (!panelName.isEmpty()) sql.append("AND mt.panel_name = ? ");
+            sql.append("GROUP BY am.plc_id, am.meter_id, mt.name, mt.panel_name, mt.building_name ")
+               .append("ORDER BY am.meter_id");
 
-        try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
-            int paramIdx = 1;
-            if (plcId != null) ps.setInt(paramIdx++, plcId);
-            if (!panelName.isEmpty()) ps.setString(paramIdx++, panelName);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    Map<String, Object> r = new HashMap<>();
-                    r.put("map_id", rs.getInt("map_id"));
-                    r.put("plc_id", rs.getInt("plc_id"));
-                    r.put("meter_id", rs.getInt("meter_id"));
-                    r.put("start_address", rs.getInt("start_address"));
-                    r.put("float_count", rs.getInt("float_count"));
-                    r.put("byte_order", rs.getString("byte_order"));
-                    r.put("enabled", rs.getBoolean("enabled"));
-                    r.put("updated_at", rs.getString("updated_at_text"));
-                    r.put("meter_name", rs.getString("meter_name"));
-                    r.put("panel_name", rs.getString("panel_name"));
-                    r.put("building_name", rs.getString("building_name"));
-                    rows.add(r);
+            try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+                int paramIdx = 1;
+                if (plcId != null) ps.setInt(paramIdx++, plcId);
+                if (!panelName.isEmpty()) ps.setString(paramIdx++, panelName);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> r = new HashMap<>();
+                        r.put("map_id", rs.getObject("map_id"));
+                        r.put("plc_id", rs.getInt("plc_id"));
+                        r.put("meter_id", rs.getInt("meter_id"));
+                        r.put("start_address", rs.getInt("start_address"));
+                        r.put("float_count", rs.getInt("float_count"));
+                        r.put("byte_order", rs.getString("byte_order"));
+                        r.put("enabled", rs.getInt("enabled") == 1);
+                        r.put("updated_at", rs.getString("updated_at_text"));
+                        r.put("meter_name", rs.getString("meter_name"));
+                        r.put("panel_name", rs.getString("panel_name"));
+                        r.put("building_name", rs.getString("building_name"));
+                        rows.add(r);
+                    }
+                }
+            }
+        } else {
+            StringBuilder sql = new StringBuilder();
+            sql.append("SELECT m.map_id, m.plc_id, m.meter_id, m.start_address, m.float_count, m.byte_order, m.enabled, ")
+               .append("       CONVERT(VARCHAR(19), m.updated_at, 120) AS updated_at_text, ")
+               .append("       mt.name AS meter_name, mt.panel_name, mt.building_name ")
+               .append("FROM dbo.plc_meter_map m ")
+               .append("LEFT JOIN dbo.meters mt ON mt.meter_id = m.meter_id ")
+               .append("WHERE m.enabled = 1 ");
+            if (plcId != null) sql.append("AND m.plc_id = ? ");
+            if (!panelName.isEmpty()) sql.append("AND mt.panel_name = ? ");
+            sql.append("ORDER BY m.meter_id");
+
+            try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+                int paramIdx = 1;
+                if (plcId != null) ps.setInt(paramIdx++, plcId);
+                if (!panelName.isEmpty()) ps.setString(paramIdx++, panelName);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> r = new HashMap<>();
+                        r.put("map_id", rs.getInt("map_id"));
+                        r.put("plc_id", rs.getInt("plc_id"));
+                        r.put("meter_id", rs.getInt("meter_id"));
+                        r.put("start_address", rs.getInt("start_address"));
+                        r.put("float_count", rs.getInt("float_count"));
+                        r.put("byte_order", rs.getString("byte_order"));
+                        r.put("enabled", rs.getBoolean("enabled"));
+                        r.put("updated_at", rs.getString("updated_at_text"));
+                        r.put("meter_name", rs.getString("meter_name"));
+                        r.put("panel_name", rs.getString("panel_name"));
+                        r.put("building_name", rs.getString("building_name"));
+                        rows.add(r);
+                    }
                 }
             }
         }

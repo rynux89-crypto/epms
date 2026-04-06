@@ -40,7 +40,7 @@
         .info-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #eef6ff; border: 1px solid #cfe2ff; color: #1d4f91; font-size: 13px; box-sizing: border-box; }
         .ok-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #ebfff1; border: 1px solid #b7ebc6; color: #0f7a2a; font-size: 13px; font-weight: 700; }
         .err-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #fff1f1; border: 1px solid #ffc9c9; color: #b42318; font-size: 13px; font-weight: 700; }
-        .plc-table-wrap { width: 100%; border: 1px solid #d9e3ee; border-radius: 18px; overflow: hidden; background: rgba(255,255,255,0.92); box-sizing: border-box; }
+        .plc-table-wrap { width: 100%; border: 1px solid #d9e3ee; border-radius: 18px; overflow-x: auto; overflow-y: hidden; background: rgba(255,255,255,0.92); box-sizing: border-box; }
         .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
         .b-on { background: #e8f7ec; color: #1b7f3b; border: 1px solid #b9e6c6; }
         .b-off { background: #fff3e0; color: #b45309; border: 1px solid #ffd8a8; }
@@ -50,27 +50,28 @@
         .state-inactive { background: #fff4e5; color: #b45309; border: 1px solid #fed7aa; }
         .state-error { background: #fff1f2; color: #b42318; border: 1px solid #fecdd3; }
         .state-wrap { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-        .state-reason { font-size: 11px; line-height: 1.4; color: #64748b; white-space: normal; word-break: keep-all; overflow-wrap: break-word; max-width: 220px; }
+        .state-reason { font-size: 11px; line-height: 1.35; color: #64748b; white-space: normal; word-break: keep-all; overflow-wrap: break-word; max-width: 165px; }
         .mono { font-family: Consolas, "Courier New", monospace; }
         td { font-size: 12px; }
         th { font-size: 11px; white-space: normal; word-break: keep-all; line-height: 1.25; }
-        .ctrl-col { width: 280px; min-width: 280px; }
+        .ctrl-col { width: 184px; min-width: 184px; }
         .ctrl { display: inline-flex; gap: 6px; flex-wrap: wrap; white-space: normal; }
         .ctrl button { min-width: 52px; padding: 2px 6px; font-size: 11px; }
         .plc-table th, .plc-table td { padding: 6px 8px; }
-        .plc-table { width: 100%; min-width: 100%; table-layout: auto; box-sizing: border-box; }
-        .plc-table th:nth-child(1), .plc-table td:nth-child(1) { width: 60px; }
-        .plc-table th:nth-child(2), .plc-table td:nth-child(2) { width: 170px; }
-        .plc-table th:nth-child(3), .plc-table td:nth-child(3) { width: 70px; }
-        .plc-table th:nth-child(4), .plc-table td:nth-child(4) { width: 80px; }
-        .plc-table th:nth-child(5), .plc-table td:nth-child(5) { width: 110px; }
-        .plc-table th:nth-child(6), .plc-table td:nth-child(6) { width: 90px; }
-        .plc-table th:nth-child(8), .plc-table td:nth-child(8) { width: 240px; min-width: 240px; vertical-align: top; }
+        .plc-table { width: 100%; min-width: 1370px; table-layout: fixed; box-sizing: border-box; }
+        .plc-table th:nth-child(1), .plc-table td:nth-child(1) { width: 58px; }
+        .plc-table th:nth-child(2), .plc-table td:nth-child(2) { width: 122px; }
+        .plc-table th:nth-child(3), .plc-table td:nth-child(3) { width: 50px; }
+        .plc-table th:nth-child(4), .plc-table td:nth-child(4) { width: 54px; }
+        .plc-table th:nth-child(5), .plc-table td:nth-child(5) { width: 90px; }
+        .plc-table th:nth-child(6), .plc-table td:nth-child(6) { width: 72px; }
+        .plc-table th:nth-child(8), .plc-table td:nth-child(8) { width: 186px; min-width: 186px; vertical-align: top; }
         .plc-table th:nth-child(9), .plc-table td:nth-child(9),
-        .plc-table th:nth-child(10), .plc-table td:nth-child(10) { width: 110px; min-width: 110px; }
-        .plc-table th:nth-child(11), .plc-table td:nth-child(11) { width: 150px; white-space: nowrap; }
-        .plc-table th:nth-child(12), .plc-table td:nth-child(12),
-        .plc-table th:nth-child(13), .plc-table td:nth-child(13) { width: 120px; min-width: 120px; white-space: nowrap; }
+        .plc-table th:nth-child(11), .plc-table td:nth-child(11),
+        .plc-table th:nth-child(12), .plc-table td:nth-child(12) { width: 78px; min-width: 78px; }
+        .plc-table th:nth-child(10), .plc-table td:nth-child(10),
+        .plc-table th:nth-child(13), .plc-table td:nth-child(13) { width: 136px; min-width: 136px; white-space: nowrap; }
+        .plc-table th:nth-child(14), .plc-table td:nth-child(14) { width: 82px; min-width: 82px; white-space: nowrap; }
         .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
         @media (max-width: 1100px) {
             .data-grid { grid-template-columns: 1fr; }
@@ -94,7 +95,8 @@
         PLC 선택 없이 각 행에서 개별 제어합니다.<br/>
         사용 여부는 PLC 설정 활성화 상태이고, 실제 통신 상태는 운영상태 컬럼에서 확인합니다.<br/>
         DI/AI 읽기 횟수는 현재 상태가 아니라 서버 시작 후 누적 읽기 횟수입니다.<br/>
-        시작: 서버 백그라운드에서 자동 읽기 주기(ms) 기준으로 연속 읽기(화면 닫힘 후에도 지속), 중지: 해당 PLC 연속 읽기 중단
+        시작: 서버 백그라운드에서 자동 읽기 주기(ms) 기준으로 연속 읽기(화면 닫힘 후에도 지속), 중지: 해당 PLC 연속 읽기 중단<br/>
+        이 화면은 상태만 조회하며 PLC 연속 읽기를 자동 시작하지 않습니다. AI 읽기 주기는 각 PLC의 자동 읽기 주기(ms)와 동일합니다.
     </div>
 
     <div id="okBox" class="ok-box" style="display:none;"></div>
@@ -114,15 +116,16 @@
             <th class="ctrl-col">제어</th>
             <th>운영상태</th>
             <th>DI 누적 읽기 횟수</th>
+            <th>DI 마지막 읽은 시각</th>
+            <th>DI 읽은 시간(ms)</th>
             <th>AI 누적 읽기 횟수</th>
-            <th>마지막 읽기 시각</th>
-            <th>DI 읽기 시간(ms)</th>
-            <th>AI 읽기 시간(ms)</th>
+            <th>AI 마지막 읽은 시각</th>
+            <th>AI 읽은 시간(ms)</th>
         </tr>
         </thead>
         <tbody>
         <% if (plcList.isEmpty()) { %>
-        <tr><td colspan="13">등록된 PLC가 없습니다.</td></tr>
+        <tr><td colspan="14">등록된 PLC가 없습니다.</td></tr>
         <% } else { %>
             <% for (Map<String, Object> p : plcList) { %>
             <% boolean enabled = (Boolean)p.get("enabled"); %>
@@ -150,9 +153,10 @@
                     <% } %>
                 </td>
                 <td id="dicount-<%= p.get("plc_id") %>">0</td>
-                <td id="aicount-<%= p.get("plc_id") %>">0</td>
-                <td id="lastrun-<%= p.get("plc_id") %>">-</td>
+                <td id="lastdirun-<%= p.get("plc_id") %>">-</td>
                 <td id="dims-<%= p.get("plc_id") %>">-</td>
+                <td id="aicount-<%= p.get("plc_id") %>">0</td>
+                <td id="lastairun-<%= p.get("plc_id") %>">-</td>
                 <td id="aims-<%= p.get("plc_id") %>">-</td>
             </tr>
             <% } %>
@@ -162,12 +166,8 @@
     </div>
 
     <div class="filter-row">
-        <label for="meterFilter">meter:</label>
-        <select id="meterFilter">
-            <option value="">전체</option>
-        </select>
-        <label for="diFilter">DI:</label>
-        <select id="diFilter">
+        <label for="panelFilter">panel:</label>
+        <select id="panelFilter">
             <option value="">전체</option>
         </select>
     </div>
@@ -229,24 +229,23 @@ const API = 'modbus_api.jsp';
       <% if (!firstPanel) { %>,<% } %>"<%= e.getKey() %>":"<%= (e.getValue() == null ? "" : e.getValue().replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")) %>"<% firstPanel = false; %>
     <% } %>
   };
+  const DEFAULT_PANEL = String(meterPanelMap['1'] || '').trim();
   const rowsBody = document.getElementById('readRows');
   const okBox = document.getElementById('okBox');
   const errBox = document.getElementById('errBox');
-  const meterFilter = document.getElementById('meterFilter');
-  const diFilter = document.getElementById('diFilter');
+  const panelFilter = document.getElementById('panelFilter');
   const diRowsBody = document.getElementById('diRows');
   const serverStates = {};
   const lastRowsByPlc = {};
   const lastDiRowsByPlc = {};
   const actionBusy = {};
-  const STATUS_MS_ACTIVE = 1000;
-  const SNAPSHOT_MS_ACTIVE = 2000;
-  const STATUS_MS_HIDDEN = 10000;
-  const SNAPSHOT_MS_HIDDEN = 15000;
-  let statusTimer = null;
+  const SNAPSHOT_MS_ACTIVE = 1000;
+  const SNAPSHOT_MS_HIDDEN = 30000;
+  const INITIAL_AI_RETRY_DELAY_MS = 1200;
+  const INITIAL_AI_RETRY_MAX = 5;
   let snapshotTimer = null;
-  let statusSyncBusy = false;
   let snapshotSyncBusy = false;
+  let panelFilterInitialized = false;
 
   function showOk(msg){
     if (!msg) return;
@@ -262,6 +261,32 @@ const API = 'modbus_api.jsp';
     okBox.style.display = 'none';
   }
 
+  function summarizeHtmlResponse(text){
+    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return '빈 응답';
+    const lowered = normalized.toLowerCase();
+    if (lowered.indexOf('<!doctype') >= 0 || lowered.indexOf('<html') >= 0) {
+      return '서버가 JSON 대신 HTML 오류 페이지를 반환했습니다.';
+    }
+    return normalized.slice(0, 180);
+  }
+
+  async function parseJsonResponse(res){
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+    const raw = await res.text();
+    if (!res.ok) {
+      throw new Error('HTTP ' + res.status + ' ' + summarizeHtmlResponse(raw));
+    }
+    if (contentType.indexOf('application/json') < 0) {
+      throw new Error(summarizeHtmlResponse(raw));
+    }
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      throw new Error('JSON 파싱 실패: ' + summarizeHtmlResponse(raw));
+    }
+  }
+
   function esc(s){
     return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
   }
@@ -273,17 +298,38 @@ const API = 'modbus_api.jsp';
       : String(v ?? '');
   }
 
-  function mergedRows() {
+  function collectPanelNames() {
+    const panels = new Set();
+    const plcIds = Object.keys(lastRowsByPlc).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    plcIds.forEach(function(plcId){
+      (lastRowsByPlc[plcId] || []).forEach(function(r){
+        const panelName = String(meterPanelMap[String(r.meter_id)] || '').trim();
+        if (panelName) panels.add(panelName);
+      });
+    });
+    const diPlcIds = Object.keys(lastDiRowsByPlc).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    diPlcIds.forEach(function(plcId){
+      (lastDiRowsByPlc[plcId] || []).forEach(function(r){
+        const panelName = String(r.panel_name || '').trim();
+        if (panelName) panels.add(panelName);
+      });
+    });
+    return Array.from(panels).sort(function(a, b){ return a.localeCompare(b); });
+  }
+
+  function mergedRows(selectedPanel) {
     const plcIds = Object.keys(lastRowsByPlc).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
     let idx = 1;
     const out = [];
     plcIds.forEach(function(plcId){
       (lastRowsByPlc[plcId] || []).forEach(function(r){
+        const panelName = meterPanelMap[String(r.meter_id)] || '';
+        if (selectedPanel && panelName !== selectedPanel) return;
         out.push({
           idx: idx++,
           plc_id: plcId,
           meter_id: r.meter_id,
-          panel_name: meterPanelMap[String(r.meter_id)] || '',
+          panel_name: panelName,
           token: r.token,
           reg1: r.reg1,
           reg2: r.reg2,
@@ -294,68 +340,25 @@ const API = 'modbus_api.jsp';
     return out;
   }
 
-  function refreshMeterFilter(rows){
-    const prev = meterFilter.value;
-    const meterSet = new Set();
-    (rows || []).forEach(function(r){
-      meterSet.add(String(r.meter_id));
-    });
-    const meters = Array.from(meterSet).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-    let html = '<option value="">전체</option>';
-    meters.forEach(function(m){
-      const meterName = meterNameMap[m];
-      const panelName = meterPanelMap[m];
-      const panelSuffix = panelName ? (' / ' + panelName) : '';
-      const label = meterName ? (meterName + ' (#' + m + ')' + panelSuffix) : ('meter ' + m + panelSuffix);
-      html += '<option value="' + m + '">' + esc(label) + '</option>';
-    });
-    meterFilter.innerHTML = html;
-    meterFilter.value = meters.includes(prev) ? prev : '';
-  }
-
-  function diFilterKey(itemName, panelName){
-    return String(itemName || '') + '||' + String(panelName || '');
-  }
-
-  function refreshDiFilter(rows){
-    const prev = diFilter.value;
-    const pairMap = new Map();
-    (rows || []).forEach(function(r){
-      const key = diFilterKey(r.item_name, r.panel_name);
-      if (!pairMap.has(key)) {
-        pairMap.set(key, {
-          item_name: String(r.item_name || ''),
-          panel_name: String(r.panel_name || '')
-        });
-      }
-    });
-
-    const pairs = Array.from(pairMap.values()).sort(function(a, b){
-      const aItem = a.item_name || '';
-      const bItem = b.item_name || '';
-      if (aItem !== bItem) return aItem.localeCompare(bItem);
-      return (a.panel_name || '').localeCompare(b.panel_name || '');
-    });
+  function refreshPanelFilter(){
+    const prev = panelFilter.value;
+    const sortedPanels = collectPanelNames();
 
     let html = '<option value="">전체</option>';
-    pairs.forEach(function(pair){
-      const key = diFilterKey(pair.item_name, pair.panel_name);
-      let label = pair.item_name || '-';
-      if (pair.panel_name) label += ' / ' + pair.panel_name;
-      html += '<option value="' + esc(key) + '">' + esc(label) + '</option>';
+    sortedPanels.forEach(function(panelName){
+      html += '<option value="' + esc(panelName) + '">' + esc(panelName) + '</option>';
     });
-    diFilter.innerHTML = html;
-    diFilter.value = pairs.some(function(pair){
-      return diFilterKey(pair.item_name, pair.panel_name) === prev;
-    }) ? prev : '';
+    panelFilter.innerHTML = html;
+    if (!panelFilterInitialized) {
+      panelFilter.value = (DEFAULT_PANEL && sortedPanels.includes(DEFAULT_PANEL)) ? DEFAULT_PANEL : (sortedPanels.includes(prev) ? prev : '');
+      panelFilterInitialized = true;
+      return;
+    }
+    panelFilter.value = sortedPanels.includes(prev) ? prev : '';
   }
 
   function renderRows(rows){
-    const filterMeter = meterFilter.value;
-    const viewRows = (rows || []).filter(function(r){
-      if (!filterMeter) return true;
-      return String(r.meter_id) === filterMeter;
-    });
+    const viewRows = rows || [];
 
     if (!viewRows.length){
       rowsBody.innerHTML = '<tr><td colspan="7">아직 AI 데이터가 없습니다.</td></tr>';
@@ -375,12 +378,13 @@ const API = 'modbus_api.jsp';
     rowsBody.innerHTML = html;
   }
 
-  function mergedDiRows() {
+  function mergedDiRows(selectedPanel) {
     const plcIds = Object.keys(lastDiRowsByPlc).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
     let idx = 1;
     const out = [];
     plcIds.forEach(function(plcId){
       (lastDiRowsByPlc[plcId] || []).forEach(function(r){
+        if (selectedPanel && String(r.panel_name || '') !== selectedPanel) return;
         out.push({
           idx: idx++,
           plc_id: plcId,
@@ -398,11 +402,7 @@ const API = 'modbus_api.jsp';
   }
 
   function renderDiRows(rows){
-    const selectedDiKey = diFilter.value;
-    const viewRows = (rows || []).filter(function(r){
-      if (!selectedDiKey) return true;
-      return diFilterKey(r.item_name, r.panel_name) === selectedDiKey;
-    });
+    const viewRows = rows || [];
 
     if (!viewRows.length){
       diRowsBody.innerHTML = '<tr><td colspan="9">아직 DI 데이터가 없습니다.</td></tr>';
@@ -491,10 +491,16 @@ const API = 'modbus_api.jsp';
     return yyyy + '-' + MM + '-' + dd + ' ' + hh + ':' + mm + ':' + ss;
   }
 
-  function setLastRunAt(plcId, lastRunAt){
-    const el = document.getElementById('lastrun-' + plcId);
+  function setLastDiRunAt(plcId, lastDiRunAt){
+    const el = document.getElementById('lastdirun-' + plcId);
     if (!el) return;
-    el.textContent = fmtTs(lastRunAt);
+    el.textContent = fmtTs(lastDiRunAt);
+  }
+
+  function setLastAiRunAt(plcId, lastAiRunAt){
+    const el = document.getElementById('lastairun-' + plcId);
+    if (!el) return;
+    el.textContent = fmtTs(lastAiRunAt);
   }
 
   function setReadMs(plcId, lastMs, diMs, aiMs, procMs){
@@ -537,32 +543,7 @@ const API = 'modbus_api.jsp';
       body: body.toString(),
       cache: 'no-store'
     });
-    return await res.json();
-  }
-
-  async function refreshPollingStatus(){
-    if (statusSyncBusy) return;
-    statusSyncBusy = true;
-    try {
-      const res = await fetch(API + '?action=polling_status&_ts=' + Date.now(), { cache: 'no-store' });
-      const data = await res.json();
-      if (!data.ok) return;
-      const states = data.states || [];
-      states.forEach(function(st){
-        const plcId = String(st.plc_id);
-        serverStates[plcId] = st;
-        const running = !!st.running;
-        setButtons(plcId, running);
-        setReadCounts(plcId, st.di_read_count, st.ai_read_count);
-        setLastRunAt(plcId, st.last_run_at);
-        setReadMs(plcId, st.last_read_ms, st.di_read_ms, st.ai_read_ms, st.proc_ms);
-        setPlcState(plcId, st.status || (running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error', st);
-      });
-    } catch (e) {
-      // ignore status sync errors for UX continuity
-    } finally {
-      statusSyncBusy = false;
-    }
+    return await parseJsonResponse(res);
   }
 
   async function loadSnapshot(){
@@ -570,7 +551,7 @@ const API = 'modbus_api.jsp';
     snapshotSyncBusy = true;
     try {
       const res = await fetch(API + '?action=polling_snapshot&_ts=' + Date.now(), { cache: 'no-store' });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!data.ok) return;
 
       Object.keys(lastRowsByPlc).forEach(function(k){ delete lastRowsByPlc[k]; });
@@ -584,17 +565,16 @@ const API = 'modbus_api.jsp';
         lastDiRowsByPlc[plcId] = st.di_rows || [];
         setButtons(plcId, !!st.running);
         setReadCounts(plcId, st.di_read_count, st.ai_read_count);
-        setLastRunAt(plcId, st.last_run_at);
+        setLastDiRunAt(plcId, st.last_di_run_at);
         setReadMs(plcId, st.last_read_ms, st.di_read_ms, st.ai_read_ms, st.proc_ms);
+        setLastAiRunAt(plcId, st.last_ai_run_at);
         setPlcState(plcId, st.status || (st.running ? 'running' : 'stopped'), !!st.last_error && String(st.status || '').toLowerCase() === 'error', st);
       });
 
-      const rows = mergedRows();
-      const diRows = mergedDiRows();
-      refreshMeterFilter(rows);
-      refreshDiFilter(diRows);
-      renderRows(rows);
-      renderDiRows(diRows);
+      refreshPanelFilter();
+      const selectedPanel = panelFilter.value;
+      renderRows(mergedRows(selectedPanel));
+      renderDiRows(mergedDiRows(selectedPanel));
     } catch (e) {
       // ignore snapshot sync errors for UX continuity
     } finally {
@@ -613,12 +593,10 @@ const API = 'modbus_api.jsp';
       showOk(data.info || '읽기 성공');
       lastRowsByPlc[plcId] = data.rows || [];
       lastDiRowsByPlc[plcId] = data.di_rows || [];
-      const rows = mergedRows();
-      const diRows = mergedDiRows();
-      refreshMeterFilter(rows);
-      refreshDiFilter(diRows);
-      renderRows(rows);
-      renderDiRows(diRows);
+      refreshPanelFilter();
+      const selectedPanel = panelFilter.value;
+      renderRows(mergedRows(selectedPanel));
+      renderDiRows(mergedDiRows(selectedPanel));
       return true;
     } catch (e){
       showErr('통신 오류: ' + e.message);
@@ -641,7 +619,6 @@ const API = 'modbus_api.jsp';
       setButtons(plcId, true);
       setPlcState(plcId, 'running', false, { status_reason: data.info || '' });
       setTimeout(function(){
-        refreshPollingStatus();
         loadSnapshot();
       }, 300);
     } catch (e){
@@ -663,7 +640,6 @@ const API = 'modbus_api.jsp';
       setButtons(plcId, false);
       setPlcState(plcId, 'stopped', false, { status_reason: data.info || '서버 폴링 중지' });
       setTimeout(function(){
-        refreshPollingStatus();
         loadSnapshot();
       }, 300);
     } catch (e){
@@ -676,16 +652,11 @@ const API = 'modbus_api.jsp';
   function getPollIntervals(){
     const hidden = document.visibilityState === 'hidden';
     return {
-      statusMs: hidden ? STATUS_MS_HIDDEN : STATUS_MS_ACTIVE,
       snapshotMs: hidden ? SNAPSHOT_MS_HIDDEN : SNAPSHOT_MS_ACTIVE
     };
   }
 
   function stopPollTimers(){
-    if (statusTimer) {
-      clearInterval(statusTimer);
-      statusTimer = null;
-    }
     if (snapshotTimer) {
       clearInterval(snapshotTimer);
       snapshotTimer = null;
@@ -695,8 +666,31 @@ const API = 'modbus_api.jsp';
   function startPollTimers(){
     stopPollTimers();
     const intervals = getPollIntervals();
-    statusTimer = setInterval(refreshPollingStatus, intervals.statusMs);
     snapshotTimer = setInterval(loadSnapshot, intervals.snapshotMs);
+  }
+
+  function needsInitialAiRefresh(){
+    const plcIds = Object.keys(serverStates);
+    if (!plcIds.length) return false;
+    return plcIds.some(function(plcId){
+      const st = serverStates[plcId];
+      if (!st || st.enabled === false) return false;
+      if (st.running === false) return false;
+      const diCount = toNum(st.di_read_count);
+      const aiCount = toNum(st.ai_read_count);
+      const rows = Array.isArray(st.rows) ? st.rows.length : 0;
+      return diCount > 0 && aiCount === 0 && rows === 0;
+    });
+  }
+
+  async function warmupInitialAiSnapshot(){
+    for (let attempt = 0; attempt < INITIAL_AI_RETRY_MAX; attempt++) {
+      if (!needsInitialAiRefresh()) return;
+      await new Promise(function(resolve){
+        setTimeout(resolve, INITIAL_AI_RETRY_DELAY_MS);
+      });
+      await loadSnapshot();
+    }
   }
 
   document.querySelectorAll('.btn-read-once').forEach(function(btn){
@@ -721,25 +715,22 @@ const API = 'modbus_api.jsp';
     });
   });
 
-  meterFilter.addEventListener('change', function(){
-    renderRows(mergedRows());
-  });
-
-  diFilter.addEventListener('change', function(){
-    renderDiRows(mergedDiRows());
+  panelFilter.addEventListener('change', function(){
+    const selectedPanel = panelFilter.value;
+    renderRows(mergedRows(selectedPanel));
+    renderDiRows(mergedDiRows(selectedPanel));
   });
 
   document.addEventListener('visibilitychange', function(){
     startPollTimers();
     if (document.visibilityState === 'visible') {
-      refreshPollingStatus();
       loadSnapshot();
     }
   });
 
   async function initPage(){
     await loadSnapshot();
-    await refreshPollingStatus();
+    await warmupInitialAiSnapshot();
     startPollTimers();
   }
 

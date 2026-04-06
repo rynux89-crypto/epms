@@ -6,6 +6,16 @@
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
 <%!
+    private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+        DatabaseMetaData meta = conn.getMetaData();
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), null, tableName, new String[]{"TABLE"})) {
+            if (rs.next()) return true;
+        }
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), "dbo", tableName, new String[]{"TABLE"})) {
+            return rs.next();
+        }
+    }
+
     private static class MetricCatalogRequest {
         String action;
         String originalMetricKey;
@@ -145,29 +155,37 @@
         }
     }
 
-    private static List<String> loadAvailableAiTokens(Connection conn) {
+    private static List<String> loadAvailableAiTokens(Connection conn, boolean hasAiMaster) {
         List<String> out = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT DISTINCT token FROM dbo.plc_ai_measurements_match WHERE is_supported = 1 AND token IS NOT NULL ORDER BY token");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                String token = trimToNull(rs.getString(1));
-                if (token != null) out.add(token.toUpperCase(Locale.ROOT));
+        try {
+            String sql = hasAiMaster
+                    ? "SELECT DISTINCT token FROM dbo.plc_ai_mapping_master WHERE enabled = 1 AND db_insert_yn = 1 AND token IS NOT NULL ORDER BY token"
+                    : "SELECT DISTINCT token FROM dbo.plc_ai_measurements_match WHERE is_supported = 1 AND token IS NOT NULL ORDER BY token";
+            try (PreparedStatement ps = conn.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String token = trimToNull(rs.getString(1));
+                    if (token != null) out.add(token.toUpperCase(Locale.ROOT));
+                }
             }
         } catch (Exception ignore) {}
         return out;
     }
 
-    private static List<String> loadAvailableDiTokens(Connection conn) {
+    private static List<String> loadAvailableDiTokens(Connection conn, boolean hasDiMaster) {
         List<String> out = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement(
-                "IF OBJECT_ID('dbo.plc_di_tag_map','U') IS NOT NULL " +
-                "SELECT DISTINCT tag_name FROM dbo.plc_di_tag_map WHERE enabled = 1 AND tag_name IS NOT NULL ORDER BY tag_name " +
-                "ELSE SELECT CAST(NULL AS NVARCHAR(200)) WHERE 1=0");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                String token = trimToNull(rs.getString(1));
-                if (token != null) out.add(token.toUpperCase(Locale.ROOT));
+        try {
+            String sql = hasDiMaster
+                    ? "SELECT DISTINCT tag_name FROM dbo.plc_di_mapping_master WHERE enabled = 1 AND tag_name IS NOT NULL ORDER BY tag_name"
+                    : "IF OBJECT_ID('dbo.plc_di_tag_map','U') IS NOT NULL " +
+                      "SELECT DISTINCT tag_name FROM dbo.plc_di_tag_map WHERE enabled = 1 AND tag_name IS NOT NULL ORDER BY tag_name " +
+                      "ELSE SELECT CAST(NULL AS NVARCHAR(200)) WHERE 1=0";
+            try (PreparedStatement ps = conn.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String token = trimToNull(rs.getString(1));
+                    if (token != null) out.add(token.toUpperCase(Locale.ROOT));
+                }
             }
         } catch (Exception ignore) {}
         return out;
@@ -386,6 +404,8 @@
 <%
     try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
+    boolean hasAiMaster = tableExists(conn, "plc_ai_mapping_master");
+    boolean hasDiMaster = tableExists(conn, "plc_di_mapping_master");
     String self = request.getRequestURI();
     String msg = request.getParameter("msg");
     String err = request.getParameter("err");
@@ -478,8 +498,8 @@
         }
 
         metricTagMappings = loadMetricTagMappings(conn);
-        availableAiTokens = loadAvailableAiTokens(conn);
-        availableDiTokens = loadAvailableDiTokens(conn);
+        availableAiTokens = loadAvailableAiTokens(conn, hasAiMaster);
+        availableDiTokens = loadAvailableDiTokens(conn, hasDiMaster);
 
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT metric_key, display_name, source_type, enabled FROM dbo.metric_catalog ORDER BY metric_key");
@@ -704,6 +724,7 @@
     <div class="note-box">
         이 화면에서는 <b>지표키</b>와 <b>소속 태그들</b>을 같이 관리합니다.<br>
         알람 규칙에서 이 지표키를 선택하면, 여기에 등록된 여러 태그가 같은 규칙의 적용 대상이 됩니다.<br>
+        AI 후보는 <span class="mono"><%= hasAiMaster ? "plc_ai_mapping_master" : "plc_ai_measurements_match" %></span>, DI 후보는 <span class="mono"><%= hasDiMaster ? "plc_di_mapping_master" : "plc_di_tag_map" %></span> 기준입니다.<br>
         예: <b>POWER_FACTOR</b>에 <b>PF, PFA, PFB, PFC</b>를 등록하면 역률 규칙 하나로 여러 태그를 함께 평가할 수 있습니다.
     </div>
 

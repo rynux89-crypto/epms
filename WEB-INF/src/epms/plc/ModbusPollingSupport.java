@@ -33,6 +33,9 @@ public final class ModbusPollingSupport {
         public volatile long lastReadDurationMs = 0L;
         public volatile long lastDiReadMs = 0L;
         public volatile long lastAiReadMs = 0L;
+        public volatile long lastAiSamplePersistMs = 0L;
+        public volatile long lastAiTargetPersistMs = 0L;
+        public volatile long lastAiAlarmPersistMs = 0L;
         public volatile long lastProcMs = 0L;
         public volatile List<PlcAiReadRow> lastRows = Collections.emptyList();
         public volatile List<PlcDiReadRow> lastDiRows = Collections.emptyList();
@@ -42,6 +45,8 @@ public final class ModbusPollingSupport {
         public volatile String lastInfo = "";
         public volatile String lastError = "";
         public volatile long lastRunAt = 0L;
+        public volatile long lastDiRunAt = 0L;
+        public volatile long lastAiRunAt = 0L;
         public volatile long lastSuccessAt = 0L;
         public volatile long nextAiPollAt = 0L;
     }

@@ -6,6 +6,16 @@
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/epms_parse.jspf" %>
 <%!
+    private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+        DatabaseMetaData meta = conn.getMetaData();
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), null, tableName, new String[]{"TABLE"})) {
+            if (rs.next()) return true;
+        }
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), "dbo", tableName, new String[]{"TABLE"})) {
+            return rs.next();
+        }
+    }
+
     private static final String DEFAULT_MESSAGE_TEMPLATE = "source=${source}, value=${value}, 기준 ${operator} ${t1}";
     private static final String DEFAULT_BETWEEN_TEMPLATE = "source=${source}, value=${value}, 기준 ${operator} ${t1} ~ ${t2}";
     private static final String DEFAULT_OUTSIDE_TEMPLATE = "source=${source}, value=${value}, 기준 ${t1} ~ ${t2} 범위 이탈";
@@ -22,9 +32,16 @@
 
     private static Map<String, List<String>> loadMeasurementColumnTokens(Connection conn) {
         Map<String, List<String>> map = new HashMap<>();
-        String sql =
-            "IF OBJECT_ID('dbo.plc_ai_measurements_match','U') IS NOT NULL " +
-            "SELECT token, measurement_column FROM dbo.plc_ai_measurements_match WHERE is_supported = 1";
+        String sql;
+        try {
+            sql = tableExists(conn, "plc_ai_mapping_master")
+                ? "SELECT DISTINCT token, measurement_column FROM dbo.plc_ai_mapping_master WHERE enabled = 1 AND db_insert_yn = 1 AND measurement_column IS NOT NULL"
+                : "IF OBJECT_ID('dbo.plc_ai_measurements_match','U') IS NOT NULL " +
+                  "SELECT token, measurement_column FROM dbo.plc_ai_measurements_match WHERE is_supported = 1";
+        } catch (Exception e) {
+            sql = "IF OBJECT_ID('dbo.plc_ai_measurements_match','U') IS NOT NULL " +
+                  "SELECT token, measurement_column FROM dbo.plc_ai_measurements_match WHERE is_supported = 1";
+        }
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {

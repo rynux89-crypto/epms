@@ -133,9 +133,14 @@ public final class ModbusApiResponseSupport {
          .append("\"last_read_ms\":").append(safeState.lastReadDurationMs).append(",")
          .append("\"di_read_ms\":").append(safeState.lastDiReadMs).append(",")
          .append("\"ai_read_ms\":").append(safeState.lastAiReadMs).append(",")
+         .append("\"ai_sample_persist_ms\":").append(safeState.lastAiSamplePersistMs).append(",")
+         .append("\"ai_target_persist_ms\":").append(safeState.lastAiTargetPersistMs).append(",")
+         .append("\"ai_alarm_persist_ms\":").append(safeState.lastAiAlarmPersistMs).append(",")
          .append("\"proc_ms\":").append(safeState.lastProcMs).append(",")
          .append("\"avg_read_ms\":").append(String.format(Locale.US, "%.1f", avgReadMs)).append(",")
          .append("\"last_run_at\":").append(safeState.lastRunAt).append(",")
+         .append("\"last_di_run_at\":").append(safeState.lastDiRunAt).append(",")
+         .append("\"last_ai_run_at\":").append(safeState.lastAiRunAt).append(",")
          .append("\"auto_start_allowed\":").append(safeState.autoStartAllowed ? "true" : "false").append(",")
          .append("\"status_reason\":\"").append(escapeJson(statusReason)).append("\",")
          .append("\"last_info\":\"").append(escapeJson(safeState.lastInfo)).append("\",")
@@ -246,6 +251,40 @@ public final class ModbusApiResponseSupport {
 
     private static String escapeJson(String s) {
         if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+        StringBuilder out = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            switch (ch) {
+                case '\\':
+                    out.append("\\\\");
+                    break;
+                case '"':
+                    out.append("\\\"");
+                    break;
+                case '\n':
+                    out.append("\\n");
+                    break;
+                case '\r':
+                    out.append("\\r");
+                    break;
+                case '\t':
+                    out.append("\\t");
+                    break;
+                case '\b':
+                    out.append("\\b");
+                    break;
+                case '\f':
+                    out.append("\\f");
+                    break;
+                default:
+                    if (ch < 0x20) {
+                        out.append(String.format(Locale.US, "\\u%04x", (int) ch));
+                    } else {
+                        out.append(ch);
+                    }
+                    break;
+            }
+        }
+        return out.toString();
     }
 }

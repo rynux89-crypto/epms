@@ -66,6 +66,7 @@ function Resolve-AiCanonicalToken([string]$rawToken, [string]$mainHeader, [strin
     if ($t -eq '') { return '' }
     $t = $t -replace '^[\\??]+', ''
     $t = ($t -replace '\s+', '').Trim().ToUpperInvariant()
+    if ($t -eq 'KHH') { return 'KWH' }
     return $t
 }
 
@@ -147,6 +148,7 @@ function Get-RowCellValue([System.Data.DataRow]$row, [string]$col){
 
 function Build-AiMatchSyncMap([string]$metricOrder){
     $map = @{}
+    $counts = @{}
     $order = Normalize-Str $metricOrder
     if ($order -eq '') { return $map }
     $tokens = @($order -split '\s*,\s*')
@@ -154,7 +156,14 @@ function Build-AiMatchSyncMap([string]$metricOrder){
         $token = (Normalize-Str $tokens[$i]).ToUpperInvariant()
         if ($token -eq '') { continue }
         if ($token -eq 'IR') { continue }
+        if (-not $counts.ContainsKey($token)) { $counts[$token] = 0 }
+        $counts[$token] = [int]$counts[$token] + 1
         $map[$token] = $i + 1
+    }
+    foreach ($token in @($counts.Keys)) {
+        if ([int]$counts[$token] -gt 1) {
+            $map.Remove($token)
+        }
     }
     return $map
 }
@@ -219,10 +228,10 @@ function Apply-AiMatchSync($sqlCn, $tx, [hashtable]$syncMap){
         if ($exists -le 0) {
             $ins = $sqlCn.CreateCommand()
             $ins.Transaction = $tx
-            $ins.CommandText = @"
+$ins.CommandText = @"
 INSERT INTO dbo.plc_ai_measurements_match
 (token, float_index, float_registers, measurement_column, target_table, is_supported, note, updated_at)
-VALUES (@token, @float_index, 2, NULL, NULL, 0, 'AUTO_SYNC', SYSDATETIME())
+VALUES (@token, @float_index, 2, NULL, 'measurements', 0, 'AUTO_SYNC', SYSDATETIME())
 "@
             [void]$ins.Parameters.Add('@token', [System.Data.SqlDbType]::VarChar, 100)
             [void]$ins.Parameters.Add('@float_index', [System.Data.SqlDbType]::Int)
@@ -356,6 +365,154 @@ function Resolve-AiMetricOrderV2([System.Data.DataTable]$aiSheet, [string]$fallb
     }
     if ($tokens.Count -lt 1) { return $fallback }
     return [string]::Join(',', $tokens)
+}
+
+function Sync-AiMasterForPlc($sqlCn, $tx, [int]$plcId){
+    $cmd = $sqlCn.CreateCommand()
+    $cmd.Transaction = $tx
+    $cmd.CommandText = @"
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+;WITH ai_src AS (
+    SELECT
+        pm.plc_id,
+        pm.meter_id,
+        ROW_NUMBER() OVER (PARTITION BY pm.plc_id, pm.meter_id ORDER BY (SELECT 1)) AS float_index,
+        UPPER(LTRIM(RTRIM(CASE WHEN x.i.value('.', 'nvarchar(100)') = 'KHH' THEN 'KWH' ELSE x.i.value('.', 'nvarchar(100)') END))) AS token,
+        pm.start_address + ((ROW_NUMBER() OVER (PARTITION BY pm.plc_id, pm.meter_id ORDER BY (SELECT 1)) - 1) * 2) AS reg_address,
+        COALESCE(NULLIF(pm.byte_order, ''), 'ABCD') AS byte_order
+    FROM dbo.plc_meter_map pm
+    CROSS APPLY (
+        SELECT TRY_CAST('<r><i>' +
+                        REPLACE(REPLACE(REPLACE(ISNULL(pm.metric_order, ''), '&', '&amp;'), '<', '&lt;'), ',', '</i><i>') +
+                        '</i></r>' AS XML) AS metric_xml
+    ) q
+    CROSS APPLY q.metric_xml.nodes('/r/i') x(i)
+    WHERE pm.plc_id = @plc_id
+      AND pm.enabled = 1
+      AND ISNULL(pm.metric_order, '') <> ''
+),
+ai_meta AS (
+    SELECT
+        UPPER(LTRIM(RTRIM(token))) AS token,
+        float_index,
+        measurement_column,
+        target_table,
+        is_supported,
+        note
+    FROM dbo.plc_ai_measurements_match
+),
+ai_seed AS (
+    SELECT
+        s.plc_id,
+        s.meter_id,
+        s.float_index,
+        s.token,
+        s.reg_address,
+        s.byte_order,
+        CASE
+            WHEN s.token = 'IR' THEN NULL
+            WHEN s.token = 'VA' AND s.float_index = 8 THEN 'phase_voltage_avg'
+            WHEN s.token = 'VA' AND s.float_index = 18 THEN 'apparent_power_total'
+            WHEN s.token = 'VAH' AND s.float_index = 19 THEN 'apparent_energy_total'
+            WHEN s.token = 'KWH' AND s.float_index = 17 THEN 'energy_consumed_total'
+            WHEN s.token = 'PST' AND s.float_index = 63 THEN 'flicker_pst'
+            WHEN s.token = 'PLT' AND s.float_index = 64 THEN 'flicker_plt'
+            ELSE m.measurement_column
+        END AS measurement_column,
+        CASE
+            WHEN s.token IN ('PST', 'PLT') THEN 'flicker_measurements'
+            WHEN s.token = 'IR' THEN 'measurements'
+            ELSE COALESCE(NULLIF(m.target_table, ''), 'measurements')
+        END AS target_table,
+        CASE
+            WHEN s.token = 'IR' THEN CAST(0 AS BIT)
+            WHEN m.is_supported IS NULL THEN CAST(0 AS BIT)
+            ELSE CAST(m.is_supported AS BIT)
+        END AS db_insert_yn,
+        CAST(1 AS BIT) AS enabled,
+        CASE
+            WHEN s.token = 'IR' THEN N'DB PLC ONLY'
+            WHEN s.token = 'VA' AND s.float_index = 8 THEN N'phase_voltage_avg'
+            WHEN s.token = 'VA' AND s.float_index = 18 THEN N'apparent_power_total'
+            WHEN s.token = 'VAH' AND s.float_index = 19 THEN N'apparent_energy_total'
+            ELSE m.note
+        END AS note
+    FROM ai_src s
+    LEFT JOIN ai_meta m
+      ON m.token = s.token
+     AND (m.float_index = s.float_index OR m.float_index IS NULL)
+)
+MERGE dbo.plc_ai_mapping_master AS t
+USING ai_seed AS s
+ON (t.plc_id = s.plc_id AND t.meter_id = s.meter_id AND t.float_index = s.float_index)
+WHEN MATCHED THEN
+    UPDATE SET
+        token = s.token,
+        reg_address = s.reg_address,
+        byte_order = s.byte_order,
+        measurement_column = s.measurement_column,
+        target_table = s.target_table,
+        db_insert_yn = s.db_insert_yn,
+        enabled = s.enabled,
+        note = s.note,
+        updated_at = SYSUTCDATETIME()
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (plc_id, meter_id, float_index, token, reg_address, byte_order, measurement_column, target_table, db_insert_yn, enabled, note, updated_at)
+    VALUES (s.plc_id, s.meter_id, s.float_index, s.token, s.reg_address, s.byte_order, s.measurement_column, s.target_table, s.db_insert_yn, s.enabled, s.note, SYSUTCDATETIME())
+WHEN NOT MATCHED BY SOURCE AND t.plc_id = @plc_id THEN
+    UPDATE SET
+        enabled = 0,
+        updated_at = SYSUTCDATETIME();
+"@
+    [void]$cmd.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+    $cmd.Parameters['@plc_id'].Value = $plcId
+    [void]$cmd.ExecuteNonQuery()
+}
+
+function Sync-DiMasterForPlc($sqlCn, $tx, [int]$plcId){
+    $cmd = $sqlCn.CreateCommand()
+    $cmd.Transaction = $tx
+    $cmd.CommandText = @"
+;WITH di_seed AS (
+    SELECT
+        dt.plc_id,
+        dt.point_id,
+        dt.di_address,
+        dt.bit_no,
+        dt.tag_name,
+        dt.item_name,
+        dt.panel_name,
+        CAST(CASE WHEN ISNULL(dm.enabled, 1) = 1 AND ISNULL(dt.enabled, 1) = 1 THEN 1 ELSE 0 END AS BIT) AS enabled,
+        CAST(NULL AS NVARCHAR(400)) AS note
+    FROM dbo.plc_di_tag_map dt
+    LEFT JOIN dbo.plc_di_map dm
+      ON dm.plc_id = dt.plc_id
+     AND dm.point_id = dt.point_id
+    WHERE dt.plc_id = @plc_id
+)
+MERGE dbo.plc_di_mapping_master AS t
+USING di_seed AS s
+ON (t.plc_id = s.plc_id AND t.point_id = s.point_id AND t.di_address = s.di_address AND t.bit_no = s.bit_no)
+WHEN MATCHED THEN
+    UPDATE SET
+        tag_name = s.tag_name,
+        item_name = s.item_name,
+        panel_name = s.panel_name,
+        enabled = s.enabled,
+        note = s.note,
+        updated_at = SYSUTCDATETIME()
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled, note, updated_at)
+    VALUES (s.plc_id, s.point_id, s.di_address, s.bit_no, s.tag_name, s.item_name, s.panel_name, s.enabled, s.note, SYSUTCDATETIME())
+WHEN NOT MATCHED BY SOURCE AND t.plc_id = @plc_id THEN
+    UPDATE SET
+        enabled = 0,
+        updated_at = SYSUTCDATETIME();
+"@
+    [void]$cmd.Parameters.Add('@plc_id', [System.Data.SqlDbType]::Int)
+    $cmd.Parameters['@plc_id'].Value = $plcId
+    [void]$cmd.ExecuteNonQuery()
 }
 
 function New-SqlConnection {
@@ -1202,6 +1359,9 @@ WHEN NOT MATCHED THEN
                 $cmd.Parameters['@panel_name'].Value = $r.panel_name
                 [void]$cmd.ExecuteNonQuery()
             }
+
+            Sync-AiMasterForPlc -sqlCn $sqlCn -tx $tx -plcId $PlcId
+            Sync-DiMasterForPlc -sqlCn $sqlCn -tx $tx -plcId $PlcId
 
             $tx.Commit()
             $aiMatchSyncPlan | Add-Member -NotePropertyName applied_count -NotePropertyValue $aiMatchSyncUpdated -Force

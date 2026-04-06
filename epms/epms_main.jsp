@@ -197,6 +197,13 @@
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
+            <div class="app-card">
+                <a href="aggregated_measurements.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15V9"/><path d="M12 15V5"/><path d="M17 15v-3"/></svg></span><h3>일/월/년 집계 조회</h3></div>
+                    <p>일간, 월간, 년간 집계 테이블을 뷰 기준으로 조회합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
         </div>
     </div>
 

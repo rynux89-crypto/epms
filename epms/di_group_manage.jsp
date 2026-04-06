@@ -5,6 +5,16 @@
 <%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%!
+    private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+        DatabaseMetaData meta = conn.getMetaData();
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), null, tableName, new String[]{"TABLE"})) {
+            if (rs.next()) return true;
+        }
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), "dbo", tableName, new String[]{"TABLE"})) {
+            return rs.next();
+        }
+    }
+
     private static String nvl(String v) {
         return v == null ? "" : v.trim();
     }
@@ -90,6 +100,7 @@
 <%
     try (Connection conn = openDbConnection()) {
     request.setCharacterEncoding("UTF-8");
+    boolean hasDiMaster = tableExists(conn, "plc_di_mapping_master");
     String self = request.getRequestURI();
     String msg = request.getParameter("msg");
     String err = request.getParameter("err");
@@ -155,8 +166,10 @@
             if (plcId != null) { where.append("AND plc_id = ? "); seedParams.add(plcId); }
 
             LinkedHashSet<String> keysToSeed = new LinkedHashSet<>();
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT tag_name, item_name, panel_name FROM dbo.plc_di_tag_map " + where.toString())) {
+            String seedSql = hasDiMaster
+                    ? "SELECT tag_name, item_name, panel_name FROM dbo.plc_di_mapping_master " + where.toString()
+                    : "SELECT tag_name, item_name, panel_name FROM dbo.plc_di_tag_map " + where.toString();
+            try (PreparedStatement ps = conn.prepareStatement(seedSql)) {
                 for (int i = 0; i < seedParams.size(); i++) ps.setInt(i + 1, seedParams.get(i));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
@@ -258,8 +271,9 @@
         }
 
         StringBuilder infSql = new StringBuilder(
-            "SELECT plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name " +
-            "FROM dbo.plc_di_tag_map WHERE enabled = 1 ");
+            (hasDiMaster
+                ? "SELECT plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name FROM dbo.plc_di_mapping_master WHERE enabled = 1 "
+                : "SELECT plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name FROM dbo.plc_di_tag_map WHERE enabled = 1 "));
         List<Integer> infParams = new ArrayList<>();
         if (plcId != null) { infSql.append("AND plc_id = ? "); infParams.add(plcId); }
         infSql.append("ORDER BY plc_id, di_address, bit_no");
@@ -363,7 +377,7 @@
     <% if (err != null && !err.trim().isEmpty()) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <div class="note-box">
-        활성 DI 매핑(<span class="mono">plc_di_tag_map.enabled=1</span>)을 기준으로 그룹 후보를 추론합니다.<br/>
+        활성 DI 매핑(<span class="mono">plc_di_mapping_master.enabled=1</span> 우선, 없으면 <span class="mono">plc_di_tag_map.enabled=1</span>)을 기준으로 그룹 후보를 추론합니다.<br/>
         현재 프로젝트에 존재하는 DI만 후보로 보이며, 없는 그룹(예: ELD)은 나타나지 않습니다.
     </div>
 

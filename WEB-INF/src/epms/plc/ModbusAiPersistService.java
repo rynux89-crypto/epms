@@ -8,6 +8,7 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,7 +42,8 @@ public final class ModbusAiPersistService {
             if (isAiMatchPlcOnlyToken(token)) {
                 continue;
             }
-            PlcAiMeasurementMatchEntry mm = matchMap == null ? null : matchMap.get(token);
+            String matchKey = ModbusConfigRepository.buildAiMatchKey(token, row.floatIndex);
+            PlcAiMeasurementMatchEntry mm = matchMap == null ? null : matchMap.get(matchKey);
             if (mm == null) {
                 continue;
             }
@@ -67,14 +69,18 @@ public final class ModbusAiPersistService {
         }
 
         try (Connection conn = EpmsDataSourceProvider.resolveDataSource().getConnection()) {
-            for (Map.Entry<Integer, Map<String, Double>> e : measurementsByMeter.entrySet()) {
-                measurementsInserted += insertRowDynamic(conn, "measurements", e.getKey().intValue(), measuredAt, e.getValue());
-            }
-            for (Map.Entry<Integer, Map<String, Double>> e : harmonicByMeter.entrySet()) {
-                harmonicInserted += insertRowDynamic(conn, "harmonic_measurements", e.getKey().intValue(), measuredAt, e.getValue());
-            }
-            for (Map.Entry<Integer, Map<String, Double>> e : flickerByMeter.entrySet()) {
-                flickerInserted += insertRowDynamic(conn, "flicker_measurements", e.getKey().intValue(), measuredAt, e.getValue());
+            boolean originalAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                measurementsInserted += insertRowsDynamicBatch(conn, "measurements", measuredAt, measurementsByMeter);
+                harmonicInserted += insertRowsDynamicBatch(conn, "harmonic_measurements", measuredAt, harmonicByMeter);
+                flickerInserted += insertRowsDynamicBatch(conn, "flicker_measurements", measuredAt, flickerByMeter);
+                conn.commit();
+            } catch (Exception ex) {
+                conn.rollback();
+                throw ex;
+            } finally {
+                conn.setAutoCommit(originalAutoCommit);
             }
         }
         return new int[]{measurementsInserted, harmonicInserted, flickerInserted};
@@ -120,24 +126,53 @@ public final class ModbusAiPersistService {
         return inserted;
     }
 
-    private static int insertRowDynamic(Connection conn, String tableName, int meterId, Timestamp measuredAt, Map<String, Double> valueByColumn) throws Exception {
-        if (valueByColumn == null || valueByColumn.isEmpty()) {
+    private static int insertRowsDynamicBatch(
+            Connection conn,
+            String tableName,
+            Timestamp measuredAt,
+            Map<Integer, Map<String, Double>> valuesByMeter) throws Exception {
+        if (valuesByMeter == null || valuesByMeter.isEmpty()) {
             return 0;
         }
-        List<String> cols = new ArrayList<>();
-        for (String col : valueByColumn.keySet()) {
-            if (col == null) {
+
+        Map<String, List<DynamicInsertRow>> rowsBySignature = new LinkedHashMap<>();
+        for (Map.Entry<Integer, Map<String, Double>> entry : valuesByMeter.entrySet()) {
+            Integer meterId = entry.getKey();
+            Map<String, Double> valueByColumn = entry.getValue();
+            if (meterId == null || valueByColumn == null || valueByColumn.isEmpty()) {
                 continue;
             }
-            String c = col.trim();
-            if (c.matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
-                cols.add(c);
+            List<String> cols = sanitizeDynamicColumns(valueByColumn);
+            if (cols.isEmpty()) {
+                continue;
             }
+            String signature = String.join("|", cols);
+            rowsBySignature.computeIfAbsent(signature, k -> new ArrayList<DynamicInsertRow>())
+                    .add(new DynamicInsertRow(meterId.intValue(), valueByColumn, cols));
         }
-        if (cols.isEmpty()) {
+
+        int inserted = 0;
+        for (List<DynamicInsertRow> rows : rowsBySignature.values()) {
+            if (rows == null || rows.isEmpty()) {
+                continue;
+            }
+            inserted += executeDynamicInsertBatch(conn, tableName, measuredAt, rows);
+        }
+        return inserted;
+    }
+
+    private static int executeDynamicInsertBatch(
+            Connection conn,
+            String tableName,
+            Timestamp measuredAt,
+            List<DynamicInsertRow> rows) throws Exception {
+        if (rows == null || rows.isEmpty()) {
             return 0;
         }
-        Collections.sort(cols);
+        List<String> cols = rows.get(0).columns;
+        if (cols == null || cols.isEmpty()) {
+            return 0;
+        }
 
         StringBuilder sql = new StringBuilder();
         sql.append("INSERT INTO dbo.").append(tableName).append(" (meter_id, measured_at");
@@ -151,18 +186,57 @@ public final class ModbusAiPersistService {
         sql.append(")");
 
         try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
-            int idx = 1;
-            ps.setInt(idx++, meterId);
-            ps.setTimestamp(idx++, measuredAt);
-            for (String c : cols) {
-                Double v = valueByColumn.get(c);
-                if (v == null) {
-                    ps.setNull(idx++, Types.DOUBLE);
+            for (DynamicInsertRow row : rows) {
+                int idx = 1;
+                ps.setInt(idx++, row.meterId);
+                ps.setTimestamp(idx++, measuredAt);
+                for (String c : cols) {
+                    Double v = row.valueByColumn.get(c);
+                    if (v == null) {
+                        ps.setNull(idx++, Types.DOUBLE);
+                    } else {
+                        ps.setDouble(idx++, v.doubleValue());
+                    }
+                }
+                ps.addBatch();
+            }
+            int[] result = ps.executeBatch();
+            int inserted = 0;
+            for (int affected : result) {
+                if (affected > 0) {
+                    inserted += affected;
                 } else {
-                    ps.setDouble(idx++, v.doubleValue());
+                    inserted += 1;
                 }
             }
-            return ps.executeUpdate();
+            return inserted;
+        }
+    }
+
+    private static List<String> sanitizeDynamicColumns(Map<String, Double> valueByColumn) {
+        List<String> cols = new ArrayList<>();
+        for (String col : valueByColumn.keySet()) {
+            if (col == null) {
+                continue;
+            }
+            String c = col.trim();
+            if (c.matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
+                cols.add(c);
+            }
+        }
+        Collections.sort(cols);
+        return cols;
+    }
+
+    private static final class DynamicInsertRow {
+        private final int meterId;
+        private final Map<String, Double> valueByColumn;
+        private final List<String> columns;
+
+        private DynamicInsertRow(int meterId, Map<String, Double> valueByColumn, List<String> columns) {
+            this.meterId = meterId;
+            this.valueByColumn = valueByColumn;
+            this.columns = columns;
         }
     }
 

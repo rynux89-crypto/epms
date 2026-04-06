@@ -255,15 +255,45 @@
     }
   }
 
+  function summarizeHtmlResponse(text) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) return "빈 응답";
+    const lowered = normalized.toLowerCase();
+    if (lowered.indexOf("<!doctype") >= 0 || lowered.indexOf("<html") >= 0) {
+      return "서버가 JSON 대신 HTML 페이지를 반환했습니다.";
+    }
+    return normalized.slice(0, 180);
+  }
+
+  async function parseJsonResponse(res) {
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    const raw = await res.text();
+
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status + " " + summarizeHtmlResponse(raw));
+    }
+
+    if (contentType.indexOf("application/json") < 0) {
+      throw new Error(summarizeHtmlResponse(raw));
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      throw new Error("JSON 파싱 실패: " + summarizeHtmlResponse(raw));
+    }
+  }
+
   async function send(msg) {
     appendMsg(msg, "user");
     try {
-      const res = await fetch("/epms/agent.jsp", {
+      const endpoint = window.EPMS_AGENT_ENDPOINT || "/epms/agent.jsp";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: msg }),
       });
-      const json = await res.json();
+      const json = await parseJsonResponse(res);
       if (json.error) {
         appendMsg("오류: " + json.error, "bot");
         return;

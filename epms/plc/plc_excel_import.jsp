@@ -8,6 +8,16 @@
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_html.jspf" %>
 <%!
+    private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+        DatabaseMetaData meta = conn.getMetaData();
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), null, tableName, new String[]{"TABLE"})) {
+            if (rs.next()) return true;
+        }
+        try (ResultSet rs = meta.getTables(conn.getCatalog(), "dbo", tableName, new String[]{"TABLE"})) {
+            return rs.next();
+        }
+    }
+
     private static void appendImportHistory(Path logPath, String line) {
         try {
             Path parent = logPath.getParent();
@@ -304,44 +314,92 @@
             }
         }
 
-        String currentMappingSql =
-            "SELECT pm.plc_id, pm.meter_id, m.name AS item_name, m.panel_name, pm.start_address, pm.float_count, pm.metric_order " +
-            "FROM dbo.plc_meter_map pm " +
-            "LEFT JOIN dbo.meters m ON m.meter_id = pm.meter_id " +
-            "WHERE pm.enabled = 1 " +
-            (plcId != null ? "AND pm.plc_id = ? " : "") +
-            "ORDER BY pm.plc_id, pm.meter_id";
-        try (PreparedStatement ps = conn.prepareStatement(currentMappingSql)) {
-            if (plcId != null) ps.setInt(1, plcId);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    Map<String, Object> r = new LinkedHashMap<>();
-                    int startAddress = rs.getInt("start_address");
-                    String metricOrder = rs.getString("metric_order");
-                    List<Map<String, Object>> tokenAddresses = new ArrayList<>();
-                    if (metricOrder != null && !metricOrder.trim().isEmpty()) {
-                        String[] tokens = metricOrder.split("\\s*,\\s*");
-                        int regAddress = startAddress;
-                        for (int i = 0; i < tokens.length; i++) {
-                            String token = tokens[i] == null ? "" : tokens[i].trim();
-                            if (token.isEmpty()) continue;
-                            Map<String, Object> t = new LinkedHashMap<>();
-                            t.put("float_index", i + 1);
-                            t.put("token", token);
-                            t.put("reg_address", regAddress);
-                            tokenAddresses.add(t);
-                            regAddress += 2;
+        if (tableExists(conn, "plc_ai_mapping_master")) {
+            String currentMappingSql =
+                "SELECT am.plc_id, am.meter_id, m.name AS item_name, m.panel_name, " +
+                "       MIN(am.reg_address) AS start_address, COUNT(1) AS float_count " +
+                "FROM dbo.plc_ai_mapping_master am " +
+                "LEFT JOIN dbo.meters m ON m.meter_id = am.meter_id " +
+                "WHERE am.enabled = 1 " +
+                (plcId != null ? "AND am.plc_id = ? " : "") +
+                "GROUP BY am.plc_id, am.meter_id, m.name, m.panel_name " +
+                "ORDER BY am.plc_id, am.meter_id";
+            try (PreparedStatement ps = conn.prepareStatement(currentMappingSql)) {
+                if (plcId != null) ps.setInt(1, plcId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> r = new LinkedHashMap<>();
+                        List<Map<String, Object>> tokenAddresses = new ArrayList<>();
+                        String tokenSql =
+                            "SELECT float_index, token, reg_address " +
+                            "FROM dbo.plc_ai_mapping_master " +
+                            "WHERE enabled = 1 AND plc_id = ? AND meter_id = ? " +
+                            "ORDER BY float_index";
+                        try (PreparedStatement tps = conn.prepareStatement(tokenSql)) {
+                            tps.setInt(1, rs.getInt("plc_id"));
+                            tps.setInt(2, rs.getInt("meter_id"));
+                            try (ResultSet trs = tps.executeQuery()) {
+                                while (trs.next()) {
+                                    Map<String, Object> t = new LinkedHashMap<>();
+                                    t.put("float_index", trs.getInt("float_index"));
+                                    t.put("token", trs.getString("token"));
+                                    t.put("reg_address", trs.getInt("reg_address"));
+                                    tokenAddresses.add(t);
+                                }
+                            }
                         }
+                        r.put("plc_id", rs.getInt("plc_id"));
+                        r.put("meter_id", rs.getInt("meter_id"));
+                        r.put("item_name", rs.getString("item_name"));
+                        r.put("panel_name", rs.getString("panel_name"));
+                        r.put("start_address", rs.getInt("start_address"));
+                        r.put("float_count", rs.getInt("float_count"));
+                        r.put("metric_order", null);
+                        r.put("token_addresses", tokenAddresses);
+                        currentAiMappings.add(r);
                     }
-                    r.put("plc_id", rs.getInt("plc_id"));
-                    r.put("meter_id", rs.getInt("meter_id"));
-                    r.put("item_name", rs.getString("item_name"));
-                    r.put("panel_name", rs.getString("panel_name"));
-                    r.put("start_address", startAddress);
-                    r.put("float_count", rs.getInt("float_count"));
-                    r.put("metric_order", metricOrder);
-                    r.put("token_addresses", tokenAddresses);
-                    currentAiMappings.add(r);
+                }
+            }
+        } else {
+            String currentMappingSql =
+                "SELECT pm.plc_id, pm.meter_id, m.name AS item_name, m.panel_name, pm.start_address, pm.float_count, pm.metric_order " +
+                "FROM dbo.plc_meter_map pm " +
+                "LEFT JOIN dbo.meters m ON m.meter_id = pm.meter_id " +
+                "WHERE pm.enabled = 1 " +
+                (plcId != null ? "AND pm.plc_id = ? " : "") +
+                "ORDER BY pm.plc_id, pm.meter_id";
+            try (PreparedStatement ps = conn.prepareStatement(currentMappingSql)) {
+                if (plcId != null) ps.setInt(1, plcId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> r = new LinkedHashMap<>();
+                        int startAddress = rs.getInt("start_address");
+                        String metricOrder = rs.getString("metric_order");
+                        List<Map<String, Object>> tokenAddresses = new ArrayList<>();
+                        if (metricOrder != null && !metricOrder.trim().isEmpty()) {
+                            String[] tokens = metricOrder.split("\\s*,\\s*");
+                            int regAddress = startAddress;
+                            for (int i = 0; i < tokens.length; i++) {
+                                String token = tokens[i] == null ? "" : tokens[i].trim();
+                                if (token.isEmpty()) continue;
+                                Map<String, Object> t = new LinkedHashMap<>();
+                                t.put("float_index", i + 1);
+                                t.put("token", token);
+                                t.put("reg_address", regAddress);
+                                tokenAddresses.add(t);
+                                regAddress += 2;
+                            }
+                        }
+                        r.put("plc_id", rs.getInt("plc_id"));
+                        r.put("meter_id", rs.getInt("meter_id"));
+                        r.put("item_name", rs.getString("item_name"));
+                        r.put("panel_name", rs.getString("panel_name"));
+                        r.put("start_address", startAddress);
+                        r.put("float_count", rs.getInt("float_count"));
+                        r.put("metric_order", metricOrder);
+                        r.put("token_addresses", tokenAddresses);
+                        currentAiMappings.add(r);
+                    }
                 }
             }
         }
@@ -439,6 +497,7 @@
     <div class="info-box">
         엑셀 파일을 선택한 뒤 실행하면 아래 테이블이 자동 반영됩니다.<br/>
         대상 테이블: <span class="mono">plc_meter_map</span>, <span class="mono">plc_di_map</span>, <span class="mono">plc_di_tag_map</span><br/>
+        기준 마스터: <span class="mono">plc_ai_mapping_master</span>, <span class="mono">plc_di_mapping_master</span><br/>
         PLC를 선택하지 않으면 엑셀의 PLC 컬럼(F2)에서 PLC를 자동 판별해 순차 적용합니다.<br/>
         미리보기: DB 변경 없이 결과 확인 / 적용: DB upsert 실행
     </div>
@@ -462,6 +521,15 @@
 
             <label for="excel_file">엑셀 파일</label>
             <input type="file" id="excel_file" accept=".xlsx,.xls">
+            <div class="row-full muted" id="fileSelectionStatus">
+                <% if (uploadNameUsed != null && !uploadNameUsed.trim().isEmpty()) { %>
+                마지막 업로드 파일: <span class="mono"><%= h(uploadNameUsed) %></span>
+                <% } else if (excelPath != null && !excelPath.trim().isEmpty()) { %>
+                현재 서버 경로: <span class="mono"><%= h(excelPath) %></span>
+                <% } else { %>
+                선택된 파일 없음
+                <% } %>
+            </div>
 
             <label for="excel_path">서버 경로(선택)</label>
             <input type="text" id="excel_path" name="excel_path" value="<%= h(excelPath) %>" class="mono" placeholder="필요할 때만 직접 입력">
@@ -542,6 +610,7 @@ function initializeScript() {
   const uploadB64 = document.getElementById('upload_b64');
   const overridesJson = document.getElementById('overrides_json');
   const modeHidden = document.getElementById('mode_hidden');
+  const fileSelectionStatus = document.getElementById('fileSelectionStatus');
   const resultSummary = document.getElementById('resultSummary');
   const postPreviewDecision = document.getElementById('postPreviewDecision');
   const currentMappingPreview = document.getElementById('currentMappingPreview');
@@ -549,6 +618,8 @@ function initializeScript() {
   const resultRaw = document.getElementById('resultRaw');
   const confirmDisable = document.getElementById('confirm_disable');
   const disableConfirmBox = document.getElementById('disableConfirmBox');
+  const lastUploadName = <%= toJsonValue(uploadNameUsed) %>;
+  const lastExcelPath = <%= toJsonValue(runExcelPathUsed != null ? runExcelPathUsed : excelPath) %>;
   const currentMappings = <%= toJsonValue(currentAiMappings) %>;
   const resultTextB64 = <%= toJsonValue(resultText == null ? null : Base64.getEncoder().encodeToString(resultText.getBytes(StandardCharsets.UTF_8))) %>;
   const selectedPlcId = <%= toJsonValue(plcId) %>;
@@ -609,6 +680,92 @@ function initializeScript() {
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
   }
+
+  function setFileSelectionStatus(message){
+    if (fileSelectionStatus) fileSelectionStatus.innerHTML = message;
+  }
+
+  function refreshFileSelectionStatus(){
+    const selectedFile = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+    const selectedPath = excelPathInput ? String(excelPathInput.value || '').trim() : '';
+    if (selectedFile) {
+      setFileSelectionStatus('선택한 파일: <span class="mono">' + esc(selectedFile.name || '-') + '</span>');
+      return;
+    }
+    if (selectedPath) {
+      setFileSelectionStatus('현재 서버 경로: <span class="mono">' + esc(selectedPath) + '</span>');
+      return;
+    }
+    if (lastUploadName) {
+      setFileSelectionStatus('마지막 업로드 파일: <span class="mono">' + esc(lastUploadName) + '</span>');
+      return;
+    }
+    if (lastExcelPath) {
+      setFileSelectionStatus('마지막 서버 경로: <span class="mono">' + esc(lastExcelPath) + '</span>');
+      return;
+    }
+    setFileSelectionStatus('선택된 파일 없음');
+  }
+
+  function loadSelectedFile(file, onReady){
+    if (!file) {
+      uploadName.value = '';
+      uploadB64.value = '';
+      refreshFileSelectionStatus();
+      if (onReady) onReady(false);
+      return;
+    }
+    const reader = new FileReader();
+    setFileSelectionStatus('파일 읽는 중: <span class="mono">' + esc(file.name || '-') + '</span>');
+    reader.onerror = function(){
+      uploadName.value = '';
+      uploadB64.value = '';
+      setFileSelectionStatus('파일 읽기 실패: <span class="mono">' + esc(file.name || '-') + '</span>');
+      alert('선택한 파일을 읽지 못했습니다. 다시 선택해 주세요.');
+      if (onReady) onReady(false);
+    };
+    reader.onload = function(ev){
+      const encoded = String(ev.target.result || '');
+      uploadName.value = file.name || '';
+      uploadB64.value = encoded;
+      if (!uploadB64.value) {
+        uploadName.value = '';
+        setFileSelectionStatus('업로드 데이터 생성 실패: <span class="mono">' + esc(file.name || '-') + '</span>');
+        alert('선택한 파일을 업로드 데이터로 변환하지 못했습니다. 다시 시도해 주세요.');
+        if (onReady) onReady(false);
+        return;
+      }
+      setFileSelectionStatus('업로드 준비 완료: <span class="mono">' + esc(file.name || '-') + '</span>');
+      if (onReady) onReady(true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', function(){
+      if (fileInput.files && fileInput.files[0]) {
+        if (excelPathInput) excelPathInput.value = '';
+        loadSelectedFile(fileInput.files[0]);
+        return;
+      }
+      uploadName.value = '';
+      uploadB64.value = '';
+      refreshFileSelectionStatus();
+    });
+  }
+
+  if (excelPathInput) {
+    excelPathInput.addEventListener('input', function(){
+      if (String(excelPathInput.value || '').trim()) {
+        if (fileInput) fileInput.value = '';
+        uploadName.value = '';
+        uploadB64.value = '';
+      }
+      refreshFileSelectionStatus();
+    });
+  }
+
+  refreshFileSelectionStatus();
 
   function renderSummary(obj){
     if (!resultSummary || !obj || !obj.ok) return;
@@ -987,7 +1144,7 @@ function initializeScript() {
       '<details class="fold-box" open>' +
       '<summary>기존 DB 매핑과 비교</summary>' +
       '<div class="fold-box-body">' +
-      '<div class="info-box">현재 <span class="mono">plc_meter_map.metric_order</span> 기준 token / register address 입니다.</div>' +
+      '<div class="info-box">현재 <span class="mono">plc_ai_mapping_master</span> 우선 기준 token / register address 입니다. 마스터가 없으면 기존 <span class="mono">plc_meter_map.metric_order</span> 로 fallback 합니다.</div>' +
       renderTableFilters('current') +
       '<div class="table-scroll">' +
       '<table class="preview-table">' +
@@ -1057,7 +1214,6 @@ function initializeScript() {
   });
 
   form.addEventListener('submit', function(e){
-    e.preventDefault();
     const loadingOverlay = document.getElementById('loadingOverlay');
     const submitter = e.submitter;
     const submittedMode = (submitter && submitter.name === 'mode') ? submitter.value : 'preview';
@@ -1069,6 +1225,7 @@ function initializeScript() {
       const disable = currentDisableSummary || {};
       const disableTotal = Number(disable.ai_disabled || 0) + Number(disable.di_map_disabled || 0) + Number(disable.di_tag_disabled || 0);
       if (disableTotal > 0 && (!confirmDisable || !confirmDisable.checked)) {
+        e.preventDefault();
         alert('이번 적용은 기존 활성 매핑을 비활성화합니다. preview 결과를 확인한 뒤 체크박스를 선택해야 적용할 수 있습니다.');
         return;
       }
@@ -1080,60 +1237,27 @@ function initializeScript() {
     const f = fileInput.files && fileInput.files[0];
     const excelPathValue = excelPathInput ? String(excelPathInput.value || '').trim() : '';
     if (!f && !excelPathValue) {
+      e.preventDefault();
       alert('파일 선택 없음');
       if (fileInput) fileInput.focus();
       return;
     }
-    const runAjaxSubmit = function() {
-        loadingOverlay.style.display = 'flex';
-        const formData = new FormData(form);
-        fetch(form.action, {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.text())
-        .then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const newPageWrap = doc.querySelector('.page-wrap');
-            if (newPageWrap) {
-                document.querySelector('.page-wrap').innerHTML = newPageWrap.innerHTML;
-                const newScript = doc.querySelector('script');
-                if (newScript) {
-                   // Re-run the script to initialize event handlers and render previews
-                   // A bit of a hack, but necessary in this architecture
-                   try {
-                       eval(newScript.innerText);
-                   } catch(e) {
-                       console.error("Error re-initializing script:", e);
-                   }
-                }
-            } else {
-                 document.getElementById('result-container').innerHTML = '<div class="err-box">응답 처리 중 오류가 발생했습니다. 페이지를 새로고침하세요.</div>';
-            }
-        })
-        .catch(err => {
-            console.error('Fetch error:', err);
-            document.getElementById('result-container').innerHTML = '<div class="err-box">요청 실패: ' + err.message + '</div>';
-        })
-        .finally(() => {
-            loadingOverlay.style.display = 'none';
-        });
-    };
-
     if (f) {
-        const reader = new FileReader();
-        reader.onload = function(ev){
-          uploadName.value = f.name || '';
-          uploadB64.value = String(ev.target.result || '');
-          runAjaxSubmit();
-        };
-        reader.readAsDataURL(f);
-    } else {
-        uploadName.value = '';
-        uploadB64.value = '';
-        runAjaxSubmit();
+      if (!uploadB64.value || uploadName.value !== (f.name || '')) {
+        e.preventDefault();
+        loadSelectedFile(f, function(ok){
+          if (!ok) return;
+          if (loadingOverlay) loadingOverlay.style.display = 'flex';
+          form.requestSubmit(submitter || undefined);
+        });
+        return;
+      }
     }
+    if (!f) {
+      uploadName.value = '';
+      uploadB64.value = '';
+    }
+    if (loadingOverlay) loadingOverlay.style.display = 'flex';
   });
 }
 

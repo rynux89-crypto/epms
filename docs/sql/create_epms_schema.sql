@@ -134,17 +134,14 @@ CREATE TABLE [dbo].[daily_measurements](
 	[day_id] [bigint] IDENTITY(1,1) NOT NULL,
 	[meter_id] [int] NULL,
 	[measured_date] [date] NOT NULL,
-	[avg_voltage] [float] NULL,
 	[avg_current] [float] NULL,
-	[avg_power_factor] [float] NULL,
-	[max_voltage] [float] NULL,
-	[min_voltage] [float] NULL,
+	[max_line_voltage] [float] NULL,
+	[min_line_voltage] [float] NULL,
+	[max_phase_voltage] [float] NULL,
+	[min_phase_voltage] [float] NULL,
 	[max_current] [float] NULL,
 	[min_current] [float] NULL,
 	[energy_consumed_kwh] [float] NULL,
-	[energy_generated_kwh] [float] NULL,
-	[voltage_unbalance_rate] [float] NULL,
-	[harmonic_distortion_rate] [float] NULL,
 PRIMARY KEY CLUSTERED 
 (
 	[day_id] ASC
@@ -656,15 +653,12 @@ CREATE TABLE [dbo].[monthly_measurements](
 	[month_id] [bigint] IDENTITY(1,1) NOT NULL,
 	[meter_id] [int] NULL,
 	[measured_month] [date] NOT NULL,
-	[avg_voltage] [float] NULL,
 	[avg_current] [float] NULL,
-	[avg_power_factor] [float] NULL,
-	[max_voltage] [float] NULL,
-	[min_voltage] [float] NULL,
+	[max_line_voltage] [float] NULL,
+	[min_line_voltage] [float] NULL,
+	[max_phase_voltage] [float] NULL,
+	[min_phase_voltage] [float] NULL,
 	[energy_consumed_kwh] [float] NULL,
-	[energy_generated_kwh] [float] NULL,
-	[voltage_unbalance_rate] [float] NULL,
-	[harmonic_distortion_rate] [float] NULL,
 PRIMARY KEY CLUSTERED 
 (
 	[month_id] ASC
@@ -984,15 +978,12 @@ CREATE TABLE [dbo].[yearly_measurements](
 	[year_id] [bigint] IDENTITY(1,1) NOT NULL,
 	[meter_id] [int] NULL,
 	[measured_year] [int] NOT NULL,
-	[avg_voltage] [float] NULL,
 	[avg_current] [float] NULL,
-	[avg_power_factor] [float] NULL,
-	[max_voltage] [float] NULL,
-	[min_voltage] [float] NULL,
+	[max_line_voltage] [float] NULL,
+	[min_line_voltage] [float] NULL,
+	[max_phase_voltage] [float] NULL,
+	[min_phase_voltage] [float] NULL,
 	[energy_consumed_kwh] [float] NULL,
-	[energy_generated_kwh] [float] NULL,
-	[voltage_unbalance_rate] [float] NULL,
-	[harmonic_distortion_rate] [float] NULL,
 PRIMARY KEY CLUSTERED 
 (
 	[year_id] ASC
@@ -1223,5 +1214,631 @@ SELECT
     ve.description
 FROM meters m
 INNER JOIN voltage_events ve ON m.meter_id = ve.meter_id;
+GO
+
+IF OBJECT_ID(N'[dbo].[vw_daily_measurements]', N'V') IS NOT NULL
+    DROP VIEW [dbo].[vw_daily_measurements];
+GO
+CREATE VIEW [dbo].[vw_daily_measurements]
+AS
+SELECT
+    m.meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
+    d.day_id,
+    d.measured_date,
+    d.avg_current,
+    d.max_voltage,
+    d.min_voltage,
+    d.max_current,
+    d.min_current,
+    d.energy_consumed_kwh,
+    d.voltage_unbalance_rate,
+    d.harmonic_distortion_rate
+FROM dbo.daily_measurements d
+INNER JOIN dbo.meters m ON m.meter_id = d.meter_id;
+GO
+
+IF OBJECT_ID(N'[dbo].[vw_monthly_measurements]', N'V') IS NOT NULL
+    DROP VIEW [dbo].[vw_monthly_measurements];
+GO
+CREATE VIEW [dbo].[vw_monthly_measurements]
+AS
+SELECT
+    m.meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
+    mm.month_id,
+    mm.measured_month,
+    mm.avg_current,
+    mm.max_voltage,
+    mm.min_voltage,
+    mm.energy_consumed_kwh,
+    mm.voltage_unbalance_rate,
+    mm.harmonic_distortion_rate
+FROM dbo.monthly_measurements mm
+INNER JOIN dbo.meters m ON m.meter_id = mm.meter_id;
+GO
+
+IF OBJECT_ID(N'[dbo].[vw_yearly_measurements]', N'V') IS NOT NULL
+    DROP VIEW [dbo].[vw_yearly_measurements];
+GO
+CREATE VIEW [dbo].[vw_yearly_measurements]
+AS
+SELECT
+    m.meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
+    y.year_id,
+    y.measured_year,
+    y.avg_current,
+    y.max_voltage,
+    y.min_voltage,
+    y.energy_consumed_kwh,
+    y.voltage_unbalance_rate,
+    y.harmonic_distortion_rate
+FROM dbo.yearly_measurements y
+INNER JOIN dbo.meters m ON m.meter_id = y.meter_id;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'[dbo].[harmonic_measurements]')
+      AND name = N'IX_harmonic_measurements_meter_time'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_harmonic_measurements_meter_time] ON [dbo].[harmonic_measurements]
+    (
+        [meter_id] ASC,
+        [measured_at] DESC
+    ) ON [PRIMARY];
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'[dbo].[plc_ai_samples]')
+      AND name = N'IX_plc_ai_samples_plc_meter_measured_reg'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_plc_ai_samples_plc_meter_measured_reg] ON [dbo].[plc_ai_samples]
+    (
+        [plc_id] ASC,
+        [meter_id] ASC,
+        [measured_at] DESC,
+        [reg_address] ASC
+    )
+    INCLUDE ([value_float], [byte_order], [quality]) ON [PRIMARY];
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'[dbo].[plc_ai_samples]')
+      AND name = N'IX_plc_ai_samples_meter_reg_measured_at'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_plc_ai_samples_meter_reg_measured_at] ON [dbo].[plc_ai_samples]
+    (
+        [meter_id] ASC,
+        [reg_address] ASC,
+        [measured_at] DESC
+    )
+    INCLUDE ([value_float]) ON [PRIMARY];
+END
+GO
+
+/****** Object:  Table [dbo].[plc_ai_mapping_master]    Script Date: 2026-04-03 오전 9:00:00 ******/
+SET ANSI_NULLS ON
+SET QUOTED_IDENTIFIER ON
+CREATE TABLE [dbo].[plc_ai_mapping_master](
+	[plc_id] [int] NOT NULL,
+	[meter_id] [int] NOT NULL,
+	[float_index] [int] NOT NULL,
+	[token] [nvarchar](100) COLLATE Korean_Wansung_CI_AS NOT NULL,
+	[reg_address] [int] NOT NULL,
+	[byte_order] [nvarchar](10) COLLATE Korean_Wansung_CI_AS NOT NULL,
+	[measurement_column] [nvarchar](128) COLLATE Korean_Wansung_CI_AS NULL,
+	[target_table] [nvarchar](64) COLLATE Korean_Wansung_CI_AS NOT NULL,
+	[db_insert_yn] [bit] NOT NULL,
+	[enabled] [bit] NOT NULL,
+	[note] [nvarchar](400) COLLATE Korean_Wansung_CI_AS NULL,
+	[updated_at] [datetime2](7) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[plc_id] ASC,
+	[meter_id] ASC,
+	[float_index] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[plc_ai_mapping_master] ADD  CONSTRAINT [DF_plc_ai_mapping_master_byte_order]  DEFAULT ('ABCD') FOR [byte_order]
+GO
+ALTER TABLE [dbo].[plc_ai_mapping_master] ADD  CONSTRAINT [DF_plc_ai_mapping_master_target_table]  DEFAULT ('measurements') FOR [target_table]
+GO
+ALTER TABLE [dbo].[plc_ai_mapping_master] ADD  CONSTRAINT [DF_plc_ai_mapping_master_db_insert]  DEFAULT ((1)) FOR [db_insert_yn]
+GO
+ALTER TABLE [dbo].[plc_ai_mapping_master] ADD  CONSTRAINT [DF_plc_ai_mapping_master_enabled]  DEFAULT ((1)) FOR [enabled]
+GO
+ALTER TABLE [dbo].[plc_ai_mapping_master] ADD  CONSTRAINT [DF_plc_ai_mapping_master_updated]  DEFAULT (sysutcdatetime()) FOR [updated_at]
+GO
+
+SET ANSI_PADDING ON
+GO
+
+/****** Object:  Index [IX_plc_ai_mapping_master_token_idx]    Script Date: 2026-04-03 오전 9:00:00 ******/
+CREATE NONCLUSTERED INDEX [IX_plc_ai_mapping_master_token_idx] ON [dbo].[plc_ai_mapping_master]
+(
+	[token] ASC,
+	[float_index] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+
+/****** Object:  Index [IX_plc_ai_mapping_master_meter_addr]    Script Date: 2026-04-03 오전 9:00:00 ******/
+CREATE NONCLUSTERED INDEX [IX_plc_ai_mapping_master_meter_addr] ON [dbo].[plc_ai_mapping_master]
+(
+	[plc_id] ASC,
+	[meter_id] ASC,
+	[reg_address] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[plc_di_mapping_master]    Script Date: 2026-04-03 오전 9:00:00 ******/
+SET ANSI_NULLS ON
+SET QUOTED_IDENTIFIER ON
+CREATE TABLE [dbo].[plc_di_mapping_master](
+	[plc_id] [int] NOT NULL,
+	[point_id] [int] NOT NULL,
+	[di_address] [int] NOT NULL,
+	[bit_no] [int] NOT NULL,
+	[tag_name] [nvarchar](255) COLLATE Korean_Wansung_CI_AS NULL,
+	[item_name] [nvarchar](255) COLLATE Korean_Wansung_CI_AS NULL,
+	[panel_name] [nvarchar](255) COLLATE Korean_Wansung_CI_AS NULL,
+	[enabled] [bit] NOT NULL,
+	[note] [nvarchar](400) COLLATE Korean_Wansung_CI_AS NULL,
+	[updated_at] [datetime2](7) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[plc_id] ASC,
+	[point_id] ASC,
+	[di_address] ASC,
+	[bit_no] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[plc_di_mapping_master] ADD  CONSTRAINT [DF_plc_di_mapping_master_enabled]  DEFAULT ((1)) FOR [enabled]
+GO
+ALTER TABLE [dbo].[plc_di_mapping_master] ADD  CONSTRAINT [DF_plc_di_mapping_master_updated]  DEFAULT (sysutcdatetime()) FOR [updated_at]
+GO
+
+SET ANSI_PADDING ON
+GO
+
+/****** Object:  Index [IX_plc_di_mapping_master_addr]    Script Date: 2026-04-03 오전 9:00:00 ******/
+CREATE NONCLUSTERED INDEX [IX_plc_di_mapping_master_addr] ON [dbo].[plc_di_mapping_master]
+(
+	[plc_id] ASC,
+	[di_address] ASC,
+	[bit_no] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+
+/****** Object:  Index [IX_plc_di_mapping_master_panel]    Script Date: 2026-04-03 오전 9:00:00 ******/
+CREATE NONCLUSTERED INDEX [IX_plc_di_mapping_master_panel] ON [dbo].[plc_di_mapping_master]
+(
+	[panel_name] ASC,
+	[item_name] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+
+/* Aggregate measurements schema sync with dbo.measurements */
+IF COL_LENGTH('dbo.daily_measurements', 'line_voltage_avg') IS NULL
+    ALTER TABLE dbo.daily_measurements ADD line_voltage_avg FLOAT NULL;
+IF COL_LENGTH('dbo.daily_measurements', 'phase_voltage_avg') IS NULL
+    ALTER TABLE dbo.daily_measurements ADD phase_voltage_avg FLOAT NULL;
+IF COL_LENGTH('dbo.daily_measurements', 'power_factor') IS NULL
+    ALTER TABLE dbo.daily_measurements ADD power_factor FLOAT NULL;
+IF COL_LENGTH('dbo.daily_measurements', 'max_power') IS NULL
+    ALTER TABLE dbo.daily_measurements ADD max_power FLOAT NULL;
+IF COL_LENGTH('dbo.daily_measurements', 'reactive_energy_kvarh') IS NULL
+    ALTER TABLE dbo.daily_measurements ADD reactive_energy_kvarh FLOAT NULL;
+IF COL_LENGTH('dbo.monthly_measurements', 'line_voltage_avg') IS NULL
+    ALTER TABLE dbo.monthly_measurements ADD line_voltage_avg FLOAT NULL;
+IF COL_LENGTH('dbo.monthly_measurements', 'phase_voltage_avg') IS NULL
+    ALTER TABLE dbo.monthly_measurements ADD phase_voltage_avg FLOAT NULL;
+IF COL_LENGTH('dbo.monthly_measurements', 'power_factor') IS NULL
+    ALTER TABLE dbo.monthly_measurements ADD power_factor FLOAT NULL;
+IF COL_LENGTH('dbo.monthly_measurements', 'max_power') IS NULL
+    ALTER TABLE dbo.monthly_measurements ADD max_power FLOAT NULL;
+IF COL_LENGTH('dbo.monthly_measurements', 'reactive_energy_kvarh') IS NULL
+    ALTER TABLE dbo.monthly_measurements ADD reactive_energy_kvarh FLOAT NULL;
+IF COL_LENGTH('dbo.yearly_measurements', 'line_voltage_avg') IS NULL
+    ALTER TABLE dbo.yearly_measurements ADD line_voltage_avg FLOAT NULL;
+IF COL_LENGTH('dbo.yearly_measurements', 'phase_voltage_avg') IS NULL
+    ALTER TABLE dbo.yearly_measurements ADD phase_voltage_avg FLOAT NULL;
+IF COL_LENGTH('dbo.yearly_measurements', 'power_factor') IS NULL
+    ALTER TABLE dbo.yearly_measurements ADD power_factor FLOAT NULL;
+IF COL_LENGTH('dbo.yearly_measurements', 'max_power') IS NULL
+    ALTER TABLE dbo.yearly_measurements ADD max_power FLOAT NULL;
+IF COL_LENGTH('dbo.yearly_measurements', 'reactive_energy_kvarh') IS NULL
+    ALTER TABLE dbo.yearly_measurements ADD reactive_energy_kvarh FLOAT NULL;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_aggregate_daily_measurements
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    MERGE dbo.daily_measurements AS t
+    USING (
+        SELECT
+            meter_id,
+            CAST(measured_at AS DATE) AS measured_date,
+            AVG(average_current) AS avg_current,
+            MAX(voltage_max) AS max_voltage,
+            MIN(voltage_min) AS min_voltage,
+            MAX(current_max) AS max_current,
+            MIN(current_min) AS min_current,
+            MAX(energy_consumed_total) - MIN(energy_consumed_total) AS energy_consumed_kwh,
+            AVG(line_voltage_avg) AS line_voltage_avg,
+            AVG(phase_voltage_avg) AS phase_voltage_avg,
+            AVG(power_factor) AS power_factor,
+            MAX(max_power) AS max_power,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh
+        FROM dbo.measurements
+        WHERE measured_at >= DATEADD(DAY, -1, CAST(GETDATE() AS DATE))
+        GROUP BY meter_id, CAST(measured_at AS DATE)
+    ) AS s
+    ON (t.meter_id = s.meter_id AND t.measured_date = s.measured_date)
+    WHEN MATCHED THEN
+        UPDATE SET
+            avg_current = s.avg_current,
+            max_voltage = s.max_voltage,
+            min_voltage = s.min_voltage,
+            max_current = s.max_current,
+            min_current = s.min_current,
+            energy_consumed_kwh = s.energy_consumed_kwh,
+            line_voltage_avg = s.line_voltage_avg,
+            phase_voltage_avg = s.phase_voltage_avg,
+            power_factor = s.power_factor,
+            max_power = s.max_power,
+            reactive_energy_kvarh = s.reactive_energy_kvarh
+    WHEN NOT MATCHED THEN
+        INSERT (
+            meter_id, measured_date,
+            avg_current,
+            max_voltage, min_voltage, max_current, min_current,
+            energy_consumed_kwh,
+            line_voltage_avg, phase_voltage_avg, power_factor, max_power,
+            reactive_energy_kvarh
+        )
+        VALUES (
+            s.meter_id, s.measured_date,
+            s.avg_current,
+            s.max_voltage, s.min_voltage, s.max_current, s.min_current,
+            s.energy_consumed_kwh,
+            s.line_voltage_avg, s.phase_voltage_avg, s.power_factor, s.max_power,
+            s.reactive_energy_kvarh
+        );
+END;
+GO
+
+IF OBJECT_ID('dbo.hourly_measurements', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.hourly_measurements (
+        hour_id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        meter_id INT NULL,
+        measured_hour DATETIME NOT NULL,
+        avg_current FLOAT NULL,
+        max_voltage FLOAT NULL,
+        min_voltage FLOAT NULL,
+        max_current FLOAT NULL,
+        min_current FLOAT NULL,
+        energy_consumed_kwh FLOAT NULL,
+        line_voltage_avg FLOAT NULL,
+        phase_voltage_avg FLOAT NULL,
+        power_factor FLOAT NULL,
+        max_power FLOAT NULL,
+        reactive_energy_kvarh FLOAT NULL,
+        
+    );
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.hourly_measurements') AND name = 'idx_hourly_meter_hour')
+    CREATE UNIQUE NONCLUSTERED INDEX idx_hourly_meter_hour ON dbo.hourly_measurements (meter_id, measured_hour);
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = 'FK_hourly_measurements_meter'
+      AND parent_object_id = OBJECT_ID('dbo.hourly_measurements')
+)
+BEGIN
+    ALTER TABLE dbo.hourly_measurements WITH CHECK
+        ADD CONSTRAINT FK_hourly_measurements_meter FOREIGN KEY (meter_id)
+        REFERENCES dbo.meters(meter_id);
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_aggregate_hourly_measurements
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    MERGE dbo.hourly_measurements AS t
+    USING (
+        SELECT
+            meter_id,
+            DATEADD(HOUR, DATEDIFF(HOUR, 0, measured_at), 0) AS measured_hour,
+            AVG(average_current) AS avg_current,
+            MAX(voltage_max) AS max_voltage,
+            MIN(voltage_min) AS min_voltage,
+            MAX(current_max) AS max_current,
+            MIN(current_min) AS min_current,
+            MAX(energy_consumed_total) - MIN(energy_consumed_total) AS energy_consumed_kwh,
+            AVG(line_voltage_avg) AS line_voltage_avg,
+            AVG(phase_voltage_avg) AS phase_voltage_avg,
+            AVG(power_factor) AS power_factor,
+            MAX(max_power) AS max_power,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh
+        FROM dbo.measurements
+        WHERE measured_at >= DATEADD(DAY, -2, GETDATE())
+        GROUP BY meter_id, DATEADD(HOUR, DATEDIFF(HOUR, 0, measured_at), 0)
+    ) AS s
+    ON (t.meter_id = s.meter_id AND t.measured_hour = s.measured_hour)
+    WHEN MATCHED THEN
+        UPDATE SET
+            avg_current = s.avg_current,
+            max_voltage = s.max_voltage,
+            min_voltage = s.min_voltage,
+            max_current = s.max_current,
+            min_current = s.min_current,
+            energy_consumed_kwh = s.energy_consumed_kwh,
+            line_voltage_avg = s.line_voltage_avg,
+            phase_voltage_avg = s.phase_voltage_avg,
+            power_factor = s.power_factor,
+            max_power = s.max_power,
+            reactive_energy_kvarh = s.reactive_energy_kvarh
+    WHEN NOT MATCHED THEN
+        INSERT (
+            meter_id, measured_hour,
+            avg_current,
+            max_voltage, min_voltage, max_current, min_current,
+            energy_consumed_kwh,
+            line_voltage_avg, phase_voltage_avg, power_factor, max_power,
+            reactive_energy_kvarh
+        )
+        VALUES (
+            s.meter_id, s.measured_hour,
+            s.avg_current,
+            s.max_voltage, s.min_voltage, s.max_current, s.min_current,
+            s.energy_consumed_kwh,
+            s.line_voltage_avg, s.phase_voltage_avg, s.power_factor, s.max_power,
+            s.reactive_energy_kvarh
+        );
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_aggregate_monthly_measurements
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    MERGE dbo.monthly_measurements AS t
+    USING (
+        SELECT
+            meter_id,
+            DATEFROMPARTS(YEAR(measured_at), MONTH(measured_at), 1) AS measured_month,
+            AVG(average_current) AS avg_current,
+            MAX(voltage_max) AS max_voltage,
+            MIN(voltage_min) AS min_voltage,
+            MAX(energy_consumed_total) - MIN(energy_consumed_total) AS energy_consumed_kwh,
+            AVG(line_voltage_avg) AS line_voltage_avg,
+            AVG(phase_voltage_avg) AS phase_voltage_avg,
+            AVG(power_factor) AS power_factor,
+            MAX(max_power) AS max_power,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh
+        FROM dbo.measurements
+        WHERE measured_at >= DATEADD(MONTH, -1, GETDATE())
+        GROUP BY meter_id, YEAR(measured_at), MONTH(measured_at)
+    ) AS s
+    ON (t.meter_id = s.meter_id AND t.measured_month = s.measured_month)
+    WHEN MATCHED THEN
+        UPDATE SET
+            avg_current = s.avg_current,
+            max_voltage = s.max_voltage,
+            min_voltage = s.min_voltage,
+            energy_consumed_kwh = s.energy_consumed_kwh,
+            line_voltage_avg = s.line_voltage_avg,
+            phase_voltage_avg = s.phase_voltage_avg,
+            power_factor = s.power_factor,
+            max_power = s.max_power,
+            reactive_energy_kvarh = s.reactive_energy_kvarh
+    WHEN NOT MATCHED THEN
+        INSERT (
+            meter_id, measured_month,
+            avg_current,
+            max_voltage, min_voltage,
+            energy_consumed_kwh,
+            line_voltage_avg, phase_voltage_avg, power_factor, max_power,
+            reactive_energy_kvarh
+        )
+        VALUES (
+            s.meter_id, s.measured_month,
+            s.avg_current,
+            s.max_voltage, s.min_voltage,
+            s.energy_consumed_kwh,
+            s.line_voltage_avg, s.phase_voltage_avg, s.power_factor, s.max_power,
+            s.reactive_energy_kvarh
+        );
+END;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_aggregate_yearly_measurements
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    MERGE dbo.yearly_measurements AS t
+    USING (
+        SELECT
+            meter_id,
+            YEAR(measured_at) AS measured_year,
+            AVG(average_current) AS avg_current,
+            MAX(voltage_max) AS max_voltage,
+            MIN(voltage_min) AS min_voltage,
+            MAX(energy_consumed_total) - MIN(energy_consumed_total) AS energy_consumed_kwh,
+            AVG(line_voltage_avg) AS line_voltage_avg,
+            AVG(phase_voltage_avg) AS phase_voltage_avg,
+            AVG(power_factor) AS power_factor,
+            MAX(max_power) AS max_power,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh,
+            MAX(reactive_energy_total) - MIN(reactive_energy_total) AS reactive_energy_kvarh
+        FROM dbo.measurements
+        WHERE measured_at >= DATEADD(YEAR, -1, GETDATE())
+        GROUP BY meter_id, YEAR(measured_at)
+    ) AS s
+    ON (t.meter_id = s.meter_id AND t.measured_year = s.measured_year)
+    WHEN MATCHED THEN
+        UPDATE SET
+            avg_current = s.avg_current,
+            max_voltage = s.max_voltage,
+            min_voltage = s.min_voltage,
+            energy_consumed_kwh = s.energy_consumed_kwh,
+            line_voltage_avg = s.line_voltage_avg,
+            phase_voltage_avg = s.phase_voltage_avg,
+            power_factor = s.power_factor,
+            max_power = s.max_power,
+            reactive_energy_kvarh = s.reactive_energy_kvarh
+    WHEN NOT MATCHED THEN
+        INSERT (
+            meter_id, measured_year,
+            avg_current,
+            max_voltage, min_voltage,
+            energy_consumed_kwh,
+            line_voltage_avg, phase_voltage_avg, power_factor, max_power,
+            reactive_energy_kvarh
+        )
+        VALUES (
+            s.meter_id, s.measured_year,
+            s.avg_current,
+            s.max_voltage, s.min_voltage,
+            s.energy_consumed_kwh,
+            s.line_voltage_avg, s.phase_voltage_avg, s.power_factor, s.max_power,
+            s.reactive_energy_kvarh
+        );
+END;
+GO
+
+CREATE OR ALTER VIEW dbo.vw_daily_measurements
+AS
+SELECT
+    m.meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
+    d.day_id,
+    d.measured_date,
+    d.avg_current,
+    d.max_voltage,
+    d.min_voltage,
+    d.max_current,
+    d.min_current,
+    d.energy_consumed_kwh,
+    d.reactive_energy_kvarh,
+    d.line_voltage_avg,
+    d.phase_voltage_avg,
+    d.power_factor,
+    d.max_power
+FROM dbo.daily_measurements d
+INNER JOIN dbo.meters m ON m.meter_id = d.meter_id;
+GO
+
+CREATE OR ALTER VIEW dbo.vw_hourly_measurements
+AS
+SELECT
+    m.meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
+    h.hour_id,
+    h.measured_hour,
+    h.avg_current,
+    h.max_voltage,
+    h.min_voltage,
+    h.max_current,
+    h.min_current,
+    h.energy_consumed_kwh,
+    h.reactive_energy_kvarh,
+    h.line_voltage_avg,
+    h.phase_voltage_avg,
+    h.power_factor,
+    h.max_power
+FROM dbo.hourly_measurements h
+INNER JOIN dbo.meters m ON m.meter_id = h.meter_id;
+GO
+
+CREATE OR ALTER VIEW dbo.vw_monthly_measurements
+AS
+SELECT
+    m.meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
+    mm.month_id,
+    mm.measured_month,
+    mm.avg_current,
+    mm.max_voltage,
+    mm.min_voltage,
+    mm.energy_consumed_kwh,
+    mm.reactive_energy_kvarh,
+    mm.line_voltage_avg,
+    mm.phase_voltage_avg,
+    mm.power_factor,
+    mm.max_power
+FROM dbo.monthly_measurements mm
+INNER JOIN dbo.meters m ON m.meter_id = mm.meter_id;
+GO
+
+CREATE OR ALTER VIEW dbo.vw_yearly_measurements
+AS
+SELECT
+    m.meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
+    y.year_id,
+    y.measured_year,
+    y.avg_current,
+    y.max_voltage,
+    y.min_voltage,
+    y.energy_consumed_kwh,
+    y.reactive_energy_kvarh,
+    y.line_voltage_avg,
+    y.phase_voltage_avg,
+    y.power_factor,
+    y.max_power
+FROM dbo.yearly_measurements y
+INNER JOIN dbo.meters m ON m.meter_id = y.meter_id;
 GO
 

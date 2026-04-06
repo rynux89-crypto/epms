@@ -3,6 +3,17 @@
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
+<%!
+private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+    DatabaseMetaData meta = conn.getMetaData();
+    try (ResultSet rs = meta.getTables(conn.getCatalog(), null, tableName, new String[]{"TABLE"})) {
+        if (rs.next()) return true;
+    }
+    try (ResultSet rs = meta.getTables(conn.getCatalog(), "dbo", tableName, new String[]{"TABLE"})) {
+        return rs.next();
+    }
+}
+%>
 <%
 try (Connection conn = openDbConnection()) {
     String plcParam = request.getParameter("plc_id");
@@ -58,43 +69,29 @@ try (Connection conn = openDbConnection()) {
         }
 
         String panelSql =
-            "SELECT DISTINCT LTRIM(RTRIM(panel_name)) AS panel_name " +
-            "FROM dbo.plc_di_tag_map " +
-            "WHERE panel_name IS NOT NULL AND LTRIM(RTRIM(panel_name)) <> '' " +
-            "ORDER BY LTRIM(RTRIM(panel_name))";
+            tableExists(conn, "plc_di_mapping_master")
+                ? "SELECT DISTINCT LTRIM(RTRIM(panel_name)) AS panel_name " +
+                  "FROM dbo.plc_di_mapping_master " +
+                  "WHERE panel_name IS NOT NULL AND LTRIM(RTRIM(panel_name)) <> '' " +
+                  "ORDER BY LTRIM(RTRIM(panel_name))"
+                : "SELECT DISTINCT LTRIM(RTRIM(panel_name)) AS panel_name " +
+                  "FROM dbo.plc_di_tag_map " +
+                  "WHERE panel_name IS NOT NULL AND LTRIM(RTRIM(panel_name)) <> '' " +
+                  "ORDER BY LTRIM(RTRIM(panel_name))";
         try (PreparedStatement ps = conn.prepareStatement(panelSql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) panelOptions.add(rs.getString(1));
         }
 
-        StringBuilder mapSql = new StringBuilder();
-        mapSql.append("SELECT di_map_id, plc_id, point_id, start_address, bit_count, enabled, updated_at ")
-              .append("FROM dbo.plc_di_map WHERE 1=1 ");
-        List<Integer> mapParams = new ArrayList<>();
-        if (plcId != null) { mapSql.append("AND plc_id = ? "); mapParams.add(plcId); }
-        if (pointId != null) { mapSql.append("AND point_id = ? "); mapParams.add(pointId); }
-        mapSql.append("ORDER BY plc_id, start_address, point_id");
-
-        try (PreparedStatement ps = conn.prepareStatement(mapSql.toString())) {
-            for (int i = 0; i < mapParams.size(); i++) ps.setInt(i + 1, mapParams.get(i).intValue());
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    Map<String, Object> r = new HashMap<>();
-                    r.put("di_map_id", rs.getInt("di_map_id"));
-                    r.put("plc_id", rs.getInt("plc_id"));
-                    r.put("point_id", rs.getInt("point_id"));
-                    r.put("start_address", rs.getInt("start_address"));
-                    r.put("bit_count", rs.getInt("bit_count"));
-                    r.put("enabled", rs.getBoolean("enabled"));
-                    r.put("updated_at", rs.getTimestamp("updated_at"));
-                    mapRows.add(r);
-                }
-            }
-        }
-
         StringBuilder tagSql = new StringBuilder();
-        tagSql.append("SELECT tag_id, plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled ")
-              .append("FROM dbo.plc_di_tag_map WHERE 1=1 ");
+        boolean useMaster = tableExists(conn, "plc_di_mapping_master");
+        if (useMaster) {
+            tagSql.append("SELECT CAST(NULL AS INT) AS tag_id, plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled, updated_at ")
+                  .append("FROM dbo.plc_di_mapping_master WHERE 1=1 ");
+        } else {
+            tagSql.append("SELECT tag_id, plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled, CAST(NULL AS DATETIME) AS updated_at ")
+                  .append("FROM dbo.plc_di_tag_map WHERE 1=1 ");
+        }
         List<Object> tagParams = new ArrayList<>();
         if (plcId != null) { tagSql.append("AND plc_id = ? "); tagParams.add(plcId); }
         if (pointId != null) { tagSql.append("AND point_id = ? "); tagParams.add(pointId); }
@@ -135,7 +132,62 @@ try (Connection conn = openDbConnection()) {
                     r.put("item_name", rs.getString("item_name"));
                     r.put("panel_name", rs.getString("panel_name"));
                     r.put("enabled", rs.getBoolean("enabled"));
+                    r.put("updated_at", rs.getTimestamp("updated_at"));
                     tagRows.add(r);
+                }
+            }
+        }
+
+        if (useMaster) {
+            Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
+            for (Map<String, Object> r : tagRows) {
+                String key = String.valueOf(r.get("plc_id")) + "|" + String.valueOf(r.get("point_id")) + "|" + String.valueOf(r.get("di_address"));
+                Map<String, Object> agg = grouped.get(key);
+                if (agg == null) {
+                    agg = new HashMap<>();
+                    agg.put("di_map_id", null);
+                    agg.put("plc_id", r.get("plc_id"));
+                    agg.put("point_id", r.get("point_id"));
+                    agg.put("start_address", r.get("di_address"));
+                    agg.put("bit_count", Integer.valueOf(0));
+                    agg.put("enabled", r.get("enabled"));
+                    agg.put("updated_at", r.get("updated_at"));
+                    grouped.put(key, agg);
+                }
+                agg.put("bit_count", Integer.valueOf(((Integer)agg.get("bit_count")).intValue() + 1));
+                if (Boolean.TRUE.equals(r.get("enabled"))) {
+                    agg.put("enabled", Boolean.TRUE);
+                }
+                Timestamp rowTs = (Timestamp) r.get("updated_at");
+                Timestamp curTs = (Timestamp) agg.get("updated_at");
+                if (rowTs != null && (curTs == null || rowTs.after(curTs))) {
+                    agg.put("updated_at", rowTs);
+                }
+            }
+            mapRows.addAll(grouped.values());
+        } else {
+            StringBuilder mapSql = new StringBuilder();
+            mapSql.append("SELECT di_map_id, plc_id, point_id, start_address, bit_count, enabled, updated_at ")
+                  .append("FROM dbo.plc_di_map WHERE 1=1 ");
+            List<Integer> mapParams = new ArrayList<>();
+            if (plcId != null) { mapSql.append("AND plc_id = ? "); mapParams.add(plcId); }
+            if (pointId != null) { mapSql.append("AND point_id = ? "); mapParams.add(pointId); }
+            mapSql.append("ORDER BY plc_id, start_address, point_id");
+
+            try (PreparedStatement ps = conn.prepareStatement(mapSql.toString())) {
+                for (int i = 0; i < mapParams.size(); i++) ps.setInt(i + 1, mapParams.get(i).intValue());
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Map<String, Object> r = new HashMap<>();
+                        r.put("di_map_id", rs.getInt("di_map_id"));
+                        r.put("plc_id", rs.getInt("plc_id"));
+                        r.put("point_id", rs.getInt("point_id"));
+                        r.put("start_address", rs.getInt("start_address"));
+                        r.put("bit_count", rs.getInt("bit_count"));
+                        r.put("enabled", rs.getBoolean("enabled"));
+                        r.put("updated_at", rs.getTimestamp("updated_at"));
+                        mapRows.add(r);
+                    }
                 }
             }
         }
@@ -241,7 +293,6 @@ try (Connection conn = openDbConnection()) {
         <h2>DI 매핑 조회</h2>
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/ai_mapping.jsp'">AI 매핑</button>
-            <button class="back-btn" onclick="location.href='/epms/plc/plc_excel_import.jsp'">PLC Excel Import</button>
             <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         </div>
     </div>

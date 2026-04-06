@@ -1,16 +1,13 @@
 ﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
-<%@ page import="java.text.DecimalFormat" %>
 <%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%@ include file="../includes/ai_measurements_match_support.jspf" %>
 <%!
-    private static final DecimalFormat DF_2 = new DecimalFormat("0.00");
-
     private static String fmtNum2(Object value) {
         if (value == null) return "-";
-        if (value instanceof Number) return DF_2.format(((Number)value).doubleValue());
+        if (value instanceof Number) return String.format(Locale.US, "%.2f", ((Number)value).doubleValue());
         return String.valueOf(value);
     }
 
@@ -44,6 +41,8 @@
         if (t.startsWith("H_V")) return "전압 고조파";
         if (t.startsWith("H_I")) return "전류 고조파";
         if (t.startsWith("PV") || t.startsWith("PI")) return "위상각";
+        if ("VA".equals(t) && floatIndex != null && floatIndex.intValue() == 8) return "전압";
+        if ("VA".equals(t) || "VAH".equals(t) || "VAR".equals(t) || "VARH".equals(t)) return "전력/에너지";
         if ("PF".equals(t) || "HZ".equals(t) || "KW".equals(t) || "KWH".equals(t) || "KVAR".equals(t) || "KVARH".equals(t) || "PEAK".equals(t) || "IR".equals(t)) return "전력/에너지";
         if (t.startsWith("A")) return "전류";
         if (t.startsWith("V")) return "전압";
@@ -53,7 +52,11 @@
     private static String describeTokenMeaning(String token, Integer floatIndex) {
         if (token == null) return "";
         String t = token.trim().toUpperCase(Locale.ROOT);
-        if ("VA".equals(t)) return "상평균 전압";
+        if ("VA".equals(t) && floatIndex != null && floatIndex.intValue() == 8) return "상평균 전압";
+        if ("VA".equals(t) && floatIndex != null && floatIndex.intValue() == 18) return "무효전력";
+        if ("VAH".equals(t) && floatIndex != null && floatIndex.intValue() == 19) return "무효전력량";
+        if ("VAR".equals(t)) return "무효전력";
+        if ("VARH".equals(t)) return "무효전력량";
         if ("PV1".equals(t)) return "A상 전압 위상각";
         if ("PV2".equals(t)) return "B상 전압 위상각";
         if ("PV3".equals(t)) return "C상 전압 위상각";
@@ -70,11 +73,72 @@
         if ("PEAK".equals(t)) return "전력 피크";
         return "";
     }
+
+    private static String humanizeMeasurementColumn(String column) {
+        if (column == null) return "";
+        String c = column.trim();
+        if (c.isEmpty()) return "";
+        return c.replace('_', ' ');
+    }
+
+    private static boolean isSafeSqlIdentifier(String identifier) {
+        return identifier != null && identifier.matches("[A-Za-z_][A-Za-z0-9_]*");
+    }
+
+    private static String buildSelectColumns(List<Map<String, Object>> tokenDefinitions, String targetTable) {
+        LinkedHashSet<String> columns = new LinkedHashSet<String>();
+        columns.add("measured_at");
+        if (tokenDefinitions != null) {
+            for (Map<String, Object> row : tokenDefinitions) {
+                if (row == null) continue;
+                String configuredTargetTable = (String) row.get("target_table");
+                String resolvedTargetTable = resolveAiMatchTargetTable(configuredTargetTable);
+                if (resolvedTargetTable == null || !resolvedTargetTable.equalsIgnoreCase(targetTable)) continue;
+                String column = (String) row.get("measurement_column");
+                if (isSafeSqlIdentifier(column)) {
+                    columns.add(column);
+                }
+            }
+        }
+        StringBuilder sql = new StringBuilder();
+        boolean first = true;
+        for (String column : columns) {
+            if (!first) sql.append(", ");
+            first = false;
+            sql.append(column);
+        }
+        return sql.toString();
+    }
+
+    private static void copyRow(ResultSet rs, Map<String, Object> out, List<String> columns) throws SQLException {
+        if (rs == null || out == null || columns == null) return;
+        for (String column : columns) {
+            if (column == null || column.trim().isEmpty()) continue;
+            out.put(column, rs.getObject(column));
+        }
+    }
+
+    private static List<String> parseSelectedColumns(String selectColumns) {
+        List<String> columns = new ArrayList<String>();
+        if (selectColumns == null) return columns;
+        String[] parts = selectColumns.split(",");
+        for (String part : parts) {
+            if (part == null) continue;
+            String column = part.trim();
+            if (!column.isEmpty()) columns.add(column);
+        }
+        return columns;
+    }
 %>
 <%
     try (Connection conn = openDbConnection()) {
+    response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    response.setHeader("Pragma", "no-cache");
+    response.setDateHeader("Expires", 0L);
     String plcParam = request.getParameter("plc_id");
     String meterParam = request.getParameter("meter_id");
+    boolean showMapping = "1".equals(request.getParameter("show_mapping"));
+    boolean autoRefresh = "1".equals(request.getParameter("auto_refresh"));
     Integer plcId = null;
     Integer meterId = null;
     try { if (plcParam != null && !plcParam.trim().isEmpty()) plcId = Integer.parseInt(plcParam.trim()); } catch (Exception ignore) {}
@@ -82,20 +146,40 @@
 
     List<Map<String, Object>> plcList = new ArrayList<>();
     List<Map<String, Object>> meterList = new ArrayList<>();
+    Map<Integer, List<Integer>> meterIdsByPlc = new LinkedHashMap<Integer, List<Integer>>();
     List<Map<String, Object>> mappingRows = new ArrayList<>();
     List<Map<String, Object>> latestTokenRows = new ArrayList<>();
     Map<String, Object> latestMeasurement = new HashMap<>();
     Map<String, Object> latestHarmonicMeasurement = new HashMap<>();
+    Timestamp latestHarmonicRecentAt = null;
     Map<String, List<Map<String, Object>>> latestTokenGroups = new LinkedHashMap<>();
-    Map<String, Map<String, Object>> mappingByToken = new HashMap<>();
+    Map<String, Map<String, Object>> mappingByTokenIndex = new HashMap<>();
     Timestamp latestPlcSampleAt = null;
+    Timestamp latestRawPlcSampleAt = null;
+    boolean hasHarmonicTargets = false;
     String emptyStateMessage = null;
     String timingNotice = null;
+    String perfNotice = null;
     String error = null;
     boolean hasActivePlcMeterMap = false;
+    boolean hasAiMaster = false;
+    long requestStartMs = System.currentTimeMillis();
+    long configLoadMs = 0L;
+    long mappingLoadMs = 0L;
+    long tokenResolveMs = 0L;
+    long latestFetchMs = 0L;
+
+    try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT CASE WHEN OBJECT_ID('dbo.plc_ai_mapping_master', 'U') IS NULL THEN 0 ELSE 1 END AS has_ai_master");
+         ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) {
+            hasAiMaster = rs.getInt("has_ai_master") == 1;
+        }
+    }
 
     try {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT plc_id, plc_ip, plc_port, unit_id, enabled FROM dbo.plc_config ORDER BY plc_id");
+        long sectionStartMs = System.currentTimeMillis();
+        try (PreparedStatement ps = conn.prepareStatement("SELECT plc_id, plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config ORDER BY plc_id");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Map<String, Object> r = new HashMap<>();
@@ -103,6 +187,7 @@
                 r.put("plc_ip", rs.getString("plc_ip"));
                 r.put("plc_port", rs.getInt("plc_port"));
                 r.put("unit_id", rs.getInt("unit_id"));
+                r.put("polling_ms", rs.getInt("polling_ms"));
                 r.put("enabled", rs.getBoolean("enabled"));
                 plcList.add(r);
             }
@@ -120,94 +205,248 @@
             }
         }
 
-        String mapSql =
-            "SELECT token, float_index, float_registers, measurement_column, target_table, is_supported, note " +
-            "FROM dbo.plc_ai_measurements_match ORDER BY float_index";
-        try (PreparedStatement ps = conn.prepareStatement(mapSql);
+        String plcMeterSql = hasAiMaster
+            ? "SELECT DISTINCT plc_id, meter_id FROM dbo.plc_ai_mapping_master WHERE enabled = 1 ORDER BY plc_id, meter_id"
+            : "SELECT DISTINCT plc_id, meter_id FROM dbo.plc_meter_map WHERE enabled = 1 ORDER BY plc_id, meter_id";
+        try (PreparedStatement ps = conn.prepareStatement(plcMeterSql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
-                Map<String, Object> r = new HashMap<>();
-                r.put("token", rs.getString("token"));
-                r.put("float_index", rs.getInt("float_index"));
-                r.put("float_registers", rs.getInt("float_registers"));
-                r.put("measurement_column", rs.getString("measurement_column"));
-                r.put("target_table", rs.getString("target_table"));
-                r.put("is_supported", rs.getBoolean("is_supported"));
-                r.put("note", rs.getString("note"));
-                mappingRows.add(r);
-                mappingByToken.put(String.valueOf(r.get("token")).toUpperCase(Locale.ROOT), r);
+                Integer key = Integer.valueOf(rs.getInt("plc_id"));
+                List<Integer> meterIds = meterIdsByPlc.get(key);
+                if (meterIds == null) {
+                    meterIds = new ArrayList<Integer>();
+                    meterIdsByPlc.put(key, meterIds);
+                }
+                meterIds.add(Integer.valueOf(rs.getInt("meter_id")));
             }
         }
+        configLoadMs = Math.max(0L, System.currentTimeMillis() - sectionStartMs);
+
+        sectionStartMs = System.currentTimeMillis();
+        if (hasAiMaster && showMapping) {
+            String mapSql =
+                "SELECT token, float_index, " +
+                "       CAST(2 AS INT) AS float_registers, " +
+                "       MIN(reg_address) AS reg_address, " +
+                "       MAX(measurement_column) AS measurement_column, " +
+                "       MAX(target_table) AS target_table, " +
+                "       MAX(CASE WHEN db_insert_yn = 1 THEN 1 ELSE 0 END) AS is_supported, " +
+                "       MAX(note) AS note " +
+                "FROM dbo.plc_ai_mapping_master " +
+                "WHERE enabled = 1 " +
+                (plcId != null && meterId != null ? "AND plc_id = ? AND meter_id = ? " : "") +
+                "GROUP BY token, float_index " +
+                "ORDER BY float_index, token";
+            try (PreparedStatement ps = conn.prepareStatement(mapSql)) {
+                if (plcId != null && meterId != null) {
+                    ps.setInt(1, plcId.intValue());
+                    ps.setInt(2, meterId.intValue());
+                }
+                try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> r = new HashMap<>();
+                    r.put("token", rs.getString("token"));
+                    r.put("float_index", rs.getInt("float_index"));
+                    r.put("float_registers", rs.getInt("float_registers"));
+                    r.put("reg_address", rs.getInt("reg_address"));
+                    r.put("measurement_column", rs.getString("measurement_column"));
+                    r.put("target_table", rs.getString("target_table"));
+                    r.put("is_supported", rs.getInt("is_supported") == 1);
+                    r.put("note", rs.getString("note"));
+                    mappingRows.add(r);
+                    mappingByTokenIndex.put(String.valueOf(r.get("token")).toUpperCase(Locale.ROOT) + "|" + rs.getInt("float_index"), r);
+                }
+                }
+            }
+        } else if (!hasAiMaster) {
+            String mapSql =
+                "SELECT token, float_index, float_registers, CAST(NULL AS INT) AS reg_address, measurement_column, target_table, is_supported, note " +
+                "FROM dbo.plc_ai_measurements_match ORDER BY float_index";
+            try (PreparedStatement ps = conn.prepareStatement(mapSql);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, Object> r = new HashMap<>();
+                    r.put("token", rs.getString("token"));
+                    r.put("float_index", rs.getInt("float_index"));
+                    r.put("float_registers", rs.getInt("float_registers"));
+                    r.put("reg_address", rs.getObject("reg_address"));
+                    r.put("measurement_column", rs.getString("measurement_column"));
+                    r.put("target_table", rs.getString("target_table"));
+                    r.put("is_supported", rs.getBoolean("is_supported"));
+                    r.put("note", rs.getString("note"));
+                    mappingRows.add(r);
+                    mappingByTokenIndex.put(String.valueOf(r.get("token")).toUpperCase(Locale.ROOT) + "|" + rs.getInt("float_index"), r);
+                }
+            }
+        }
+        mappingLoadMs = Math.max(0L, System.currentTimeMillis() - sectionStartMs);
 
         if (plcId != null && meterId != null) {
+            sectionStartMs = System.currentTimeMillis();
             Integer startAddress = null;
             String metricOrder = null;
-            String mapExistsSql =
-                "SELECT TOP 1 start_address, metric_order FROM dbo.plc_meter_map WHERE plc_id = ? AND meter_id = ? AND enabled = 1 ORDER BY map_id";
-            try (PreparedStatement ps = conn.prepareStatement(mapExistsSql)) {
-                ps.setInt(1, plcId);
-                ps.setInt(2, meterId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        hasActivePlcMeterMap = true;
-                        startAddress = rs.getInt("start_address");
-                        metricOrder = rs.getString("metric_order");
+            List<Map<String, Object>> tokenDefinitions = new ArrayList<Map<String, Object>>();
+            List<Integer> regAddresses = new ArrayList<Integer>();
+            boolean loadedFromMaster = false;
+
+            if (hasAiMaster) {
+                String masterSql =
+                    "SELECT float_index, token, reg_address, measurement_column, target_table, db_insert_yn, note " +
+                    "FROM dbo.plc_ai_mapping_master " +
+                    "WHERE plc_id = ? AND meter_id = ? AND enabled = 1 " +
+                    "ORDER BY float_index";
+                try (PreparedStatement ps = conn.prepareStatement(masterSql)) {
+                    ps.setInt(1, plcId);
+                    ps.setInt(2, meterId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            hasActivePlcMeterMap = true;
+                            loadedFromMaster = true;
+                            Map<String, Object> r = new HashMap<>();
+                            String token = rs.getString("token");
+                            int floatIndex = rs.getInt("float_index");
+                            int regAddress = rs.getInt("reg_address");
+                            r.put("token", token);
+                            r.put("float_index", Integer.valueOf(floatIndex));
+                            r.put("float_registers", Integer.valueOf(2));
+                            r.put("measurement_column", rs.getString("measurement_column"));
+                            r.put("target_table", rs.getString("target_table"));
+                            r.put("note", rs.getString("note"));
+                            r.put("reg_address", Integer.valueOf(regAddress));
+                            r.put("is_supported", Boolean.valueOf(rs.getBoolean("db_insert_yn")));
+                            if ("harmonic_measurements".equalsIgnoreCase(rs.getString("target_table"))) {
+                                hasHarmonicTargets = true;
+                            }
+                            tokenDefinitions.add(r);
+                            regAddresses.add(Integer.valueOf(regAddress));
+                            if (startAddress == null || regAddress < startAddress.intValue()) {
+                                startAddress = Integer.valueOf(regAddress);
+                            }
+                        }
                     }
                 }
             }
 
-            List<String> metricTokens = parseMetricOrder(metricOrder);
-            if (hasActivePlcMeterMap && startAddress != null && !metricTokens.isEmpty()) {
-                List<Map<String, Object>> tokenDefinitions = new ArrayList<Map<String, Object>>();
-                List<Integer> regAddresses = new ArrayList<Integer>();
-                int currentRegAddress = startAddress.intValue();
-                for (int i = 0; i < metricTokens.size(); i++) {
-                    String token = metricTokens.get(i);
-                    Map<String, Object> mapping = mappingByToken.get(token);
-                    int floatRegisters = 2;
-                    String measurementColumn = null;
-                    String targetTable = null;
-                    boolean supported = isAiMatchPlcOnlyToken(token);
-                    if (mapping != null) {
-                        Object regsObj = mapping.get("float_registers");
-                        if (regsObj instanceof Number) floatRegisters = ((Number)regsObj).intValue();
-                        measurementColumn = (String)mapping.get("measurement_column");
-                        targetTable = (String)mapping.get("target_table");
-                        Object supportedObj = mapping.get("is_supported");
-                        if (supportedObj instanceof Boolean) supported = ((Boolean)supportedObj).booleanValue();
+            if (!loadedFromMaster) {
+                String mapExistsSql =
+                    "SELECT TOP 1 start_address, metric_order FROM dbo.plc_meter_map WHERE plc_id = ? AND meter_id = ? AND enabled = 1 ORDER BY map_id";
+                try (PreparedStatement ps = conn.prepareStatement(mapExistsSql)) {
+                    ps.setInt(1, plcId);
+                    ps.setInt(2, meterId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            hasActivePlcMeterMap = true;
+                            startAddress = rs.getInt("start_address");
+                            metricOrder = rs.getString("metric_order");
+                        }
                     }
-                    if (floatRegisters <= 0) floatRegisters = 2;
-                    Map<String, Object> r = new HashMap<>();
-                    r.put("token", token);
-                    r.put("float_index", Integer.valueOf(i + 1));
-                    r.put("float_registers", Integer.valueOf(floatRegisters));
-                    r.put("measurement_column", measurementColumn);
-                    r.put("target_table", targetTable);
-                    r.put("reg_address", Integer.valueOf(currentRegAddress));
-                    r.put("is_supported", Boolean.valueOf(supported));
-                    tokenDefinitions.add(r);
-                    regAddresses.add(Integer.valueOf(currentRegAddress));
-                    currentRegAddress += floatRegisters;
                 }
 
-                if (!regAddresses.isEmpty()) {
+                List<String> metricTokens = parseMetricOrder(metricOrder);
+                if (hasActivePlcMeterMap && startAddress != null && !metricTokens.isEmpty()) {
+                    int currentRegAddress = startAddress.intValue();
+                    for (int i = 0; i < metricTokens.size(); i++) {
+                        String token = metricTokens.get(i);
+                        Map<String, Object> mapping = mappingByTokenIndex.get(token + "|" + (i + 1));
+                        int floatRegisters = 2;
+                        String measurementColumn = null;
+                        String targetTable = null;
+                        String note = null;
+                        boolean supported = isAiMatchPlcOnlyToken(token);
+                        if (mapping != null) {
+                            Object regsObj = mapping.get("float_registers");
+                            if (regsObj instanceof Number) floatRegisters = ((Number)regsObj).intValue();
+                            measurementColumn = (String)mapping.get("measurement_column");
+                            targetTable = (String)mapping.get("target_table");
+                            note = (String)mapping.get("note");
+                            Object supportedObj = mapping.get("is_supported");
+                            if (supportedObj instanceof Boolean) supported = ((Boolean)supportedObj).booleanValue();
+                        }
+                        if (floatRegisters <= 0) floatRegisters = 2;
+                        Map<String, Object> r = new HashMap<>();
+                        r.put("token", token);
+                        r.put("float_index", Integer.valueOf(i + 1));
+                        r.put("float_registers", Integer.valueOf(floatRegisters));
+                        r.put("measurement_column", measurementColumn);
+                        r.put("target_table", targetTable);
+                        r.put("note", note);
+                        r.put("reg_address", Integer.valueOf(currentRegAddress));
+                        r.put("is_supported", Boolean.valueOf(supported));
+                        if ("harmonic_measurements".equalsIgnoreCase(targetTable)) {
+                            hasHarmonicTargets = true;
+                        }
+                        tokenDefinitions.add(r);
+                        regAddresses.add(Integer.valueOf(currentRegAddress));
+                        currentRegAddress += floatRegisters;
+                    }
+                }
+            }
+
+            if (!tokenDefinitions.isEmpty()) {
+                String latestSampleAtSql =
+                    "SELECT TOP 1 measured_at FROM dbo.plc_ai_samples " +
+                    "WHERE plc_id = ? AND meter_id = ? ORDER BY measured_at DESC";
+                try (PreparedStatement ps = conn.prepareStatement(latestSampleAtSql)) {
+                    ps.setInt(1, plcId);
+                    ps.setInt(2, meterId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            latestRawPlcSampleAt = rs.getTimestamp("measured_at");
+                        }
+                    }
+                }
+
+                String comparableSampleSql =
+                    "SELECT TOP 1 s.measured_at " +
+                    "FROM (SELECT DISTINCT TOP 12 measured_at FROM dbo.plc_ai_samples WHERE plc_id = ? AND meter_id = ? ORDER BY measured_at DESC) s " +
+                    "WHERE EXISTS ( " +
+                    "    SELECT 1 FROM dbo.measurements m " +
+                    "    WHERE m.meter_id = ? " +
+                    "      AND m.measured_at BETWEEN DATEADD(SECOND, -2, s.measured_at) AND DATEADD(SECOND, 2, s.measured_at) " +
+                    ") " +
+                    (hasHarmonicTargets
+                        ? "AND EXISTS ( " +
+                          "    SELECT 1 FROM dbo.harmonic_measurements h " +
+                          "    WHERE h.meter_id = ? " +
+                          "      AND h.measured_at BETWEEN DATEADD(SECOND, -2, s.measured_at) AND DATEADD(SECOND, 2, s.measured_at) " +
+                          ") "
+                        : "") +
+                    "ORDER BY s.measured_at DESC";
+                try (PreparedStatement ps = conn.prepareStatement(comparableSampleSql)) {
+                    int idx = 1;
+                    ps.setInt(idx++, plcId);
+                    ps.setInt(idx++, meterId);
+                    ps.setInt(idx++, meterId);
+                    if (hasHarmonicTargets) {
+                        ps.setInt(idx++, meterId);
+                    }
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            latestPlcSampleAt = rs.getTimestamp("measured_at");
+                        }
+                    }
+                }
+                if (latestPlcSampleAt == null) {
+                    latestPlcSampleAt = latestRawPlcSampleAt;
+                }
+
+                if (!regAddresses.isEmpty() && latestPlcSampleAt != null) {
                     StringBuilder sampleSql = new StringBuilder();
-                    sampleSql.append("WITH s AS ( ");
-                    sampleSql.append("SELECT reg_address, value_float, measured_at, ");
-                    sampleSql.append("ROW_NUMBER() OVER (PARTITION BY reg_address ORDER BY measured_at DESC) AS rn ");
-                    sampleSql.append("FROM dbo.plc_ai_samples WHERE plc_id = ? AND meter_id = ? AND reg_address IN (");
+                    sampleSql.append("SELECT reg_address, value_float, measured_at ");
+                    sampleSql.append("FROM dbo.plc_ai_samples WHERE plc_id = ? AND meter_id = ? AND measured_at = ? AND reg_address IN (");
                     for (int i = 0; i < regAddresses.size(); i++) {
                         if (i > 0) sampleSql.append(",");
                         sampleSql.append("?");
                     }
-                    sampleSql.append(")) SELECT reg_address, value_float, measured_at FROM s WHERE rn = 1");
+                    sampleSql.append(")");
 
                     Map<Integer, Map<String, Object>> latestSamplesByReg = new HashMap<Integer, Map<String, Object>>();
                     try (PreparedStatement ps = conn.prepareStatement(sampleSql.toString())) {
                         ps.setInt(1, plcId);
                         ps.setInt(2, meterId);
+                        ps.setTimestamp(3, latestPlcSampleAt);
                         for (int i = 0; i < regAddresses.size(); i++) {
-                            ps.setInt(i + 3, regAddresses.get(i).intValue());
+                            ps.setInt(i + 4, regAddresses.get(i).intValue());
                         }
                         try (ResultSet rs = ps.executeQuery()) {
                             while (rs.next()) {
@@ -225,47 +464,70 @@
                         r.put("value_float", sample == null ? null : sample.get("value_float"));
                         r.put("measured_at", sample == null ? null : sample.get("measured_at"));
                         latestTokenRows.add(r);
-                        Timestamp sampleAt = sample == null ? null : (Timestamp)sample.get("measured_at");
-                        if (sampleAt != null && (latestPlcSampleAt == null || sampleAt.after(latestPlcSampleAt))) {
-                            latestPlcSampleAt = sampleAt;
-                        }
                     }
                 }
             }
+            tokenResolveMs = Math.max(0L, System.currentTimeMillis() - sectionStartMs);
 
+            sectionStartMs = System.currentTimeMillis();
+            String measurementSelectColumns = buildSelectColumns(tokenDefinitions, "measurements");
+            List<String> measurementColumnList = parseSelectedColumns(measurementSelectColumns);
             String latestSql =
-                "SELECT TOP 1 * FROM dbo.measurements WHERE meter_id = ? " +
-                (latestPlcSampleAt != null ? "AND measured_at <= ? " : "") +
-                "ORDER BY measured_at DESC";
+                "SELECT TOP 1 " + measurementSelectColumns + " FROM dbo.measurements WHERE meter_id = ? " +
+                (latestPlcSampleAt != null
+                    ? "AND measured_at BETWEEN DATEADD(SECOND, -2, ?) AND DATEADD(SECOND, 2, ?) " +
+                      "ORDER BY ABS(DATEDIFF(MILLISECOND, measured_at, ?)), measured_at DESC"
+                    : "ORDER BY measured_at DESC");
             try (PreparedStatement ps = conn.prepareStatement(latestSql)) {
                 ps.setInt(1, meterId);
-                if (latestPlcSampleAt != null) ps.setTimestamp(2, latestPlcSampleAt);
+                if (latestPlcSampleAt != null) {
+                    ps.setTimestamp(2, latestPlcSampleAt);
+                    ps.setTimestamp(3, latestPlcSampleAt);
+                    ps.setTimestamp(4, latestPlcSampleAt);
+                }
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
-                        ResultSetMetaData md = rs.getMetaData();
-                        for (int i = 1; i <= md.getColumnCount(); i++) {
-                            latestMeasurement.put(md.getColumnName(i), rs.getObject(i));
-                        }
+                        copyRow(rs, latestMeasurement, measurementColumnList);
                     }
                 }
             }
 
-            String latestHarmonicSql =
-                "SELECT TOP 1 * FROM dbo.harmonic_measurements WHERE meter_id = ? " +
-                (latestPlcSampleAt != null ? "AND measured_at <= ? " : "") +
-                "ORDER BY measured_at DESC";
-            try (PreparedStatement ps = conn.prepareStatement(latestHarmonicSql)) {
-                ps.setInt(1, meterId);
-                if (latestPlcSampleAt != null) ps.setTimestamp(2, latestPlcSampleAt);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        ResultSetMetaData md = rs.getMetaData();
-                        for (int i = 1; i <= md.getColumnCount(); i++) {
-                            latestHarmonicMeasurement.put(md.getColumnName(i), rs.getObject(i));
+            if (hasHarmonicTargets) {
+                String harmonicSelectColumns = buildSelectColumns(tokenDefinitions, "harmonic_measurements");
+                List<String> harmonicColumnList = parseSelectedColumns(harmonicSelectColumns);
+                String latestHarmonicSql =
+                    "SELECT TOP 1 " + harmonicSelectColumns + " FROM dbo.harmonic_measurements WHERE meter_id = ? " +
+                    (latestPlcSampleAt != null
+                        ? "AND measured_at BETWEEN DATEADD(SECOND, -2, ?) " +
+                          "AND DATEADD(SECOND, 2, ?) " +
+                          "ORDER BY ABS(DATEDIFF(MILLISECOND, measured_at, ?)), measured_at DESC"
+                        : "ORDER BY measured_at DESC");
+                try (PreparedStatement ps = conn.prepareStatement(latestHarmonicSql)) {
+                    ps.setInt(1, meterId);
+                    if (latestPlcSampleAt != null) {
+                        ps.setTimestamp(2, latestPlcSampleAt);
+                        ps.setTimestamp(3, latestPlcSampleAt);
+                        ps.setTimestamp(4, latestPlcSampleAt);
+                    }
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            copyRow(rs, latestHarmonicMeasurement, harmonicColumnList);
+                        }
+                    }
+                }
+
+                String latestHarmonicRecentSql =
+                    "SELECT TOP 1 measured_at FROM dbo.harmonic_measurements WHERE meter_id = ? ORDER BY measured_at DESC";
+                try (PreparedStatement ps = conn.prepareStatement(latestHarmonicRecentSql)) {
+                    ps.setInt(1, meterId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            latestHarmonicRecentAt = rs.getTimestamp("measured_at");
                         }
                     }
                 }
             }
+            latestFetchMs = Math.max(0L, System.currentTimeMillis() - sectionStartMs);
         }
     } catch (Exception e) {
         error = e.getMessage();
@@ -286,11 +548,22 @@
         Timestamp measurementAt = asTimestamp(latestMeasurement.get("measured_at"));
         Timestamp harmonicAt = asTimestamp(latestHarmonicMeasurement.get("measured_at"));
         List<String> timingParts = new ArrayList<String>();
-        timingParts.add("PLC 기준 시각: " + latestPlcSampleAt);
-        timingParts.add("measurements 기준 행: " + (measurementAt == null ? "없음" : String.valueOf(measurementAt)));
-        timingParts.add("harmonic_measurements 기준 행: " + (harmonicAt == null ? "없음" : String.valueOf(harmonicAt)));
+        timingParts.add("검증 기준 PLC 샘플 시각: " + latestPlcSampleAt);
+        if (latestRawPlcSampleAt != null && !latestRawPlcSampleAt.equals(latestPlcSampleAt)) {
+            timingParts.add("최신 PLC 샘플 시각: " + latestRawPlcSampleAt);
+        }
+        timingParts.add("measurements 비교 행: " + (measurementAt == null ? "없음" : String.valueOf(measurementAt)));
+        timingParts.add("harmonic_measurements 비교 행: " + (harmonicAt == null ? "없음" : String.valueOf(harmonicAt)));
+        if (latestHarmonicRecentAt != null) {
+            timingParts.add("harmonic_measurements 최근 행: " + latestHarmonicRecentAt);
+        }
         timingNotice = String.join(" | ", timingParts);
     }
+    perfNotice = "server_ms total=" + Math.max(0L, System.currentTimeMillis() - requestStartMs)
+            + " config=" + configLoadMs
+            + " mapping=" + mappingLoadMs
+            + " token_resolve=" + tokenResolveMs
+            + " latest_fetch=" + latestFetchMs;
 %>
 <html>
 <head>
@@ -301,8 +574,16 @@
         .info-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #eef6ff; border: 1px solid #cfe2ff; color: #1d4f91; font-size: 13px; }
         .warn-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #fff8e8; border: 1px solid #f5d48f; color: #9a6700; font-size: 13px; }
         .err-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #fff1f1; border: 1px solid #ffc9c9; color: #b42318; font-size: 13px; font-weight: 700; }
+        .refresh-box { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #f5f9ff; border: 1px solid #d7e6ff; color: #35557a; font-size: 13px; }
         .section-title { margin: 14px 0 6px; font-size: 15px; font-weight: 700; color: #1f3347; }
         .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .toolbar label { font-size: 13px; color: #31506f; font-weight: 600; }
+        .toolbar select { min-height: 36px; padding: 6px 10px; border-radius: 10px; border: 1px solid #c9d8e8; background: #fff; color: #1f3347; }
+        .toolbar button[type="submit"] { min-height: 38px; padding: 0 18px; border: 0; border-radius: 999px; background: linear-gradient(135deg, #2f6fe4, #1956c8); color: #fff; font-weight: 700; letter-spacing: -0.01em; box-shadow: 0 10px 22px rgba(31, 86, 200, 0.22); }
+        .toolbar button[type="submit"]:disabled { opacity: 0.7; box-shadow: none; }
+        .auto-refresh-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; border: 1px solid #cfe0fb; background: linear-gradient(180deg, #f7fbff, #edf4ff); color: #1f5cc4; font-size: 13px; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,0.8); }
+        .auto-refresh-toggle input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: #1f6ae0; }
+        .auto-refresh-status { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; border-radius: 999px; background: #eef4ff; border: 1px solid #d3e2ff; color: #3c5f8d; font-size: 12px; font-weight: 700; letter-spacing: -0.01em; }
         .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
         .b-ok { background: #e8f7ec; color: #1b7f3b; border: 1px solid #b9e6c6; }
         .b-no { background: #fff3e0; color: #b45309; border: 1px solid #ffd8a8; }
@@ -341,13 +622,13 @@
         <h2>🔎 AI 측정값 적재 검증</h2>
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/ai_mapping.jsp'">AI 매핑</button>
-            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
             <button class="back-btn" onclick="location.href='/epms/ai_measurements_mapping_manage.jsp'">매핑 정의 관리</button>
+            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         </div>
     </div>
 
     <div class="info-box">
-        기준: <span class="mono">dbo.plc_ai_measurements_match</span>와 현재 <span class="mono">plc_meter_map</span> 기준으로 PLC 샘플값과 DB 적재값을 비교하는 검증 화면입니다.<br/>
+        기준: <span class="mono">dbo.plc_ai_mapping_master</span> 우선 기준으로 PLC 샘플값과 DB 적재값을 비교하는 검증 화면입니다. 마스터가 없을 때만 기존 <span class="mono">plc_ai_measurements_match</span> / <span class="mono">plc_meter_map</span> 으로 fallback 합니다.<br/>
         참고: <span class="mono">PV1/PV2/PV3</span>, <span class="mono">PI1/PI2/PI3</span>는 현재 화면에서 위상각 의미로 표시되며, 적재값은 PLC 최신 샘플 시각 이하의 최근 행을 기준으로 비교합니다.
     </div>
 
@@ -357,14 +638,20 @@
     <% if (timingNotice != null) { %>
     <div class="warn-box"><%= h(timingNotice) %></div>
     <% } %>
+    <% if (perfNotice != null) { %>
+    <div class="info-box mono"><%= h(perfNotice) %></div>
+    <% } %>
+    <div class="refresh-box" id="refreshNotice">
+        자동 갱신은 선택한 PLC의 polling 주기(ms)를 기준으로 동작합니다. 자동 갱신을 켜면 해당 주기마다 현재 조건으로 다시 조회합니다.
+    </div>
 
-    <form method="GET" class="toolbar">
+    <form method="GET" action="<%= request.getRequestURI() %>" class="toolbar" id="verifyForm" autocomplete="off">
         <label for="plc_id">PLC:</label>
         <select id="plc_id" name="plc_id">
             <option value="">선택</option>
             <% for (Map<String, Object> p : plcList) { %>
             <% String v = String.valueOf(p.get("plc_id")); %>
-            <option value="<%= v %>" <%= (plcId != null && plcId.toString().equals(v)) ? "selected" : "" %>>
+            <option value="<%= v %>" data-polling-ms="<%= p.get("polling_ms") %>" <%= (plcId != null && plcId.toString().equals(v)) ? "selected" : "" %>>
                 PLC <%= p.get("plc_id") %> - <%= h(p.get("plc_ip")) %>:<%= p.get("plc_port") %>
             </option>
             <% } %>
@@ -375,12 +662,18 @@
             <option value="">선택</option>
             <% for (Map<String, Object> m : meterList) { %>
             <% String v = String.valueOf(m.get("meter_id")); %>
-            <option value="<%= v %>" <%= (meterId != null && meterId.toString().equals(v)) ? "selected" : "" %>>
+            <option value="<%= v %>" data-panel-name="<%= h(m.get("panel_name")) %>" data-meter-name="<%= h(m.get("name")) %>" <%= (meterId != null && meterId.toString().equals(v)) ? "selected" : "" %>>
                 #<%= m.get("meter_id") %> - <%= h(m.get("name")) %> (<%= h(m.get("panel_name")) %>)
             </option>
             <% } %>
         </select>
-        <button type="submit">검증 조회</button>
+        <label class="auto-refresh-toggle">
+            <input type="checkbox" id="auto_refresh" name="auto_refresh" value="1" <%= autoRefresh ? "checked" : "" %>>
+            자동 갱신
+        </label>
+        <% if (showMapping) { %><input type="hidden" name="show_mapping" value="1"><% } %>
+        <span id="autoRefreshStatus" class="auto-refresh-status mono"></span>
+        <button type="submit" id="verifySubmitBtn">검증 조회</button>
     </form>
 
     <div class="section-title">1) 실측 비교 결과</div>
@@ -400,7 +693,15 @@
                         <%
                             String col = (String)r.get("measurement_column");
                             Integer floatIndex = (Integer)r.get("float_index");
-                            String tokenMeaning = describeTokenMeaning((String)r.get("token"), floatIndex);
+                            Object noteObj = r.get("note");
+                            String note = noteObj == null ? "" : String.valueOf(noteObj).trim();
+                            String tokenMeaning = note;
+                            if (tokenMeaning == null || tokenMeaning.trim().isEmpty()) {
+                                tokenMeaning = describeTokenMeaning((String)r.get("token"), floatIndex);
+                            }
+                            if (tokenMeaning == null || tokenMeaning.trim().isEmpty()) {
+                                tokenMeaning = humanizeMeasurementColumn(col);
+                            }
                             boolean plcOnly = isAiMatchPlcOnlyToken((String)r.get("token"));
                             String configuredTargetTable = (String)r.get("target_table");
                             String resolvedTargetTable = resolveAiMatchTargetTable(configuredTargetTable);
@@ -418,6 +719,12 @@
                             } else if (!plcOnly && "measurements".equalsIgnoreCase(resolvedTargetTable)) {
                                 targetMeasuredAt = latestMeasurement.get("measured_at");
                             }
+                            String targetMeasuredAtLabel = plcOnly
+                                ? "-"
+                                : (targetMeasuredAt == null ? "동일 cycle 비교 행 없음" : String.valueOf(targetMeasuredAt));
+                            String targetValueLabel = plcOnly
+                                ? "DB 적재 대상 아님"
+                                : (targetMeasuredAt == null ? "동일 cycle DB값 없음" : "DB 비교값");
                         %>
                         <div class="match-card">
                             <div class="match-card-top">
@@ -433,7 +740,7 @@
                                     <div class="match-value-num mono"><%= h(fmtNum2(r.get("value_float"))) %></div>
                                 </div>
                                 <div class="match-value-box target">
-                                    <div class="match-value-label"><%= plcOnly ? "DB 적재 대상 아님" : "최신 적재값" %></div>
+                                    <div class="match-value-label"><%= h(targetValueLabel) %></div>
                                     <div class="match-value-num mono"><%= plcOnly ? "-" : h(fmtNum2(mv)) %></div>
                                 </div>
                             </div>
@@ -444,7 +751,7 @@
                                 <dt>float_regs</dt><dd class="mono"><%= r.get("float_registers") %></dd>
                                 <dt>레지스터</dt><dd class="mono"><%= r.get("reg_address") %></dd>
                                 <dt>PLC 샘플시각</dt><dd><%= r.get("measured_at") == null ? "-" : h(r.get("measured_at")) %></dd>
-                                <dt>적재 기준시각</dt><dd><%= plcOnly ? "-" : (targetMeasuredAt == null ? "-" : h(targetMeasuredAt)) %></dd>
+                                <dt>DB 비교 시각</dt><dd><%= h(targetMeasuredAtLabel) %></dd>
                             </dl>
                         </div>
                     <% } %>
@@ -455,12 +762,22 @@
     <% } %>
 
     <div class="section-title">2) 매핑 정의</div>
+    <% if (!showMapping) { %>
+    <div class="info-box">
+        이 구간은 초기 로딩 속도를 위해 기본 숨김입니다.
+        <a href="?plc_id=<%= plcId == null ? "" : plcId %>&meter_id=<%= meterId == null ? "" : meterId %>&show_mapping=1<%= autoRefresh ? "&auto_refresh=1" : "" %>">매핑 정의 펼치기</a>
+    </div>
+    <% } else { %>
+    <div class="info-box">
+        <a href="?plc_id=<%= plcId == null ? "" : plcId %>&meter_id=<%= meterId == null ? "" : meterId %><%= autoRefresh ? "&auto_refresh=1" : "" %>">매핑 정의 숨기기</a>
+    </div>
     <table>
         <thead>
         <tr>
             <th>float_index</th>
             <th>tag token</th>
             <th>float_regs</th>
+            <th>reg_address</th>
             <th>measurement_column</th>
             <th>supported</th>
             <th>target_table</th>
@@ -473,6 +790,7 @@
             <td class="mono"><%= r.get("float_index") %></td>
             <td class="mono"><%= h(r.get("token")) %></td>
             <td class="mono"><%= r.get("float_registers") %></td>
+            <td class="mono"><%= r.get("reg_address") == null ? "-" : h(r.get("reg_address")) %></td>
             <td class="mono"><%= r.get("measurement_column") == null ? "-" : h(r.get("measurement_column")) %></td>
             <td>
                 <% if ((Boolean)r.get("is_supported")) { %><span class="badge b-ok">YES</span><% } else { %><span class="badge b-no">NO</span><% } %>
@@ -483,8 +801,141 @@
         <% } %>
         </tbody>
     </table>
+    <% } %>
 </div>
 <footer>© EPMS Dashboard | SNUT CNT</footer>
+<script>
+(function() {
+  var verifyForm = document.getElementById('verifyForm');
+  var verifySubmitBtn = document.getElementById('verifySubmitBtn');
+  var plcSelect = document.getElementById('plc_id');
+  var meterSelect = document.getElementById('meter_id');
+  var autoRefreshCheckbox = document.getElementById('auto_refresh');
+  var autoRefreshStatus = document.getElementById('autoRefreshStatus');
+  var refreshNotice = document.getElementById('refreshNotice');
+  var autoRefreshTimer = null;
+  var allMeterOptions = meterSelect ? Array.prototype.slice.call(meterSelect.querySelectorAll('option')).map(function(option) {
+    return {
+      value: option.value,
+      text: option.textContent,
+      selected: option.selected,
+      meterName: option.getAttribute('data-meter-name') || '',
+      panelName: option.getAttribute('data-panel-name') || ''
+    };
+  }) : [];
+  var meterIdsByPlc = {
+    <% boolean firstPlcMeterMap = true; for (Map.Entry<Integer, List<Integer>> entry : meterIdsByPlc.entrySet()) { %>
+    <% if (!firstPlcMeterMap) { %>,<% } %>
+    "<%= entry.getKey() %>":[<% for (int i = 0; i < entry.getValue().size(); i++) { %><%= i > 0 ? "," : "" %>"<%= entry.getValue().get(i) %>"<% } %>]
+    <% firstPlcMeterMap = false; } %>
+  };
+
+  function resetSubmitButton() {
+    if (verifySubmitBtn) {
+      verifySubmitBtn.disabled = false;
+      verifySubmitBtn.textContent = '검증 조회';
+    }
+  }
+
+  function selectedPollingMs() {
+    if (!plcSelect) return 0;
+    var option = plcSelect.options[plcSelect.selectedIndex];
+    if (!option) return 0;
+    var pollingMs = parseInt(option.getAttribute('data-polling-ms') || '0', 10);
+    return Number.isFinite(pollingMs) && pollingMs > 0 ? pollingMs : 0;
+  }
+
+  function stopAutoRefresh() {
+    if (autoRefreshTimer) {
+      clearTimeout(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+  }
+
+  function rebuildMeterOptions() {
+    if (!meterSelect) return;
+    var selectedPlcId = plcSelect ? plcSelect.value : '';
+    var allowedMeters = selectedPlcId ? (meterIdsByPlc[selectedPlcId] || []) : null;
+    var currentMeterValue = meterSelect.value;
+    meterSelect.innerHTML = '';
+
+    function appendOption(data) {
+      var option = document.createElement('option');
+      option.value = data.value;
+      option.textContent = data.text;
+      if (data.meterName) option.setAttribute('data-meter-name', data.meterName);
+      if (data.panelName) option.setAttribute('data-panel-name', data.panelName);
+      meterSelect.appendChild(option);
+    }
+
+    allMeterOptions.forEach(function(data) {
+      if (!selectedPlcId || data.value === '') {
+        appendOption(data);
+        return;
+      }
+      if (allowedMeters.indexOf(data.value) >= 0) {
+        appendOption(data);
+      }
+    });
+
+    if (currentMeterValue) {
+      var hasCurrent = Array.prototype.some.call(meterSelect.options, function(option) {
+        return option.value === currentMeterValue;
+      });
+      meterSelect.value = hasCurrent ? currentMeterValue : '';
+    }
+  }
+
+  function submitForAutoRefresh() {
+    if (!verifyForm) return;
+    if (!autoRefreshCheckbox || !autoRefreshCheckbox.checked) return;
+    if (!plcSelect || !plcSelect.value || !meterSelect || !meterSelect.value) return;
+    verifyForm.requestSubmit ? verifyForm.requestSubmit() : verifyForm.submit();
+  }
+
+  function scheduleAutoRefresh() {
+    stopAutoRefresh();
+    var pollingMs = selectedPollingMs();
+    var enabled = !!(autoRefreshCheckbox && autoRefreshCheckbox.checked);
+    var ready = !!(plcSelect && plcSelect.value && meterSelect && meterSelect.value);
+    if (autoRefreshStatus) {
+      if (!enabled) autoRefreshStatus.textContent = '자동 갱신 꺼짐';
+      else if (!ready) autoRefreshStatus.textContent = 'PLC와 Meter를 선택하면 자동 갱신됩니다.';
+      else if (pollingMs > 0) autoRefreshStatus.textContent = '자동 갱신 주기: ' + pollingMs + 'ms';
+      else autoRefreshStatus.textContent = '선택한 PLC의 polling 주기를 확인할 수 없습니다.';
+    }
+    if (refreshNotice) {
+      if (enabled && ready && pollingMs > 0) {
+        refreshNotice.innerHTML = '자동 갱신이 켜져 있습니다. 선택한 PLC의 polling 주기 <strong>' + pollingMs + 'ms</strong>마다 현재 조건으로 다시 조회합니다.';
+      } else {
+        refreshNotice.innerHTML = '자동 갱신은 선택한 PLC의 polling 주기(ms)를 기준으로 동작합니다. 자동 갱신을 켜면 해당 주기마다 현재 조건으로 다시 조회합니다.';
+      }
+    }
+    if (!enabled || !ready || pollingMs <= 0) return;
+    autoRefreshTimer = setTimeout(submitForAutoRefresh, pollingMs);
+  }
+
+  resetSubmitButton();
+  window.addEventListener('pageshow', resetSubmitButton);
+  window.addEventListener('pageshow', scheduleAutoRefresh);
+  if (!verifyForm) return;
+  if (plcSelect) plcSelect.addEventListener('change', function() {
+    rebuildMeterOptions();
+    scheduleAutoRefresh();
+  });
+  if (meterSelect) meterSelect.addEventListener('change', scheduleAutoRefresh);
+  if (autoRefreshCheckbox) autoRefreshCheckbox.addEventListener('change', scheduleAutoRefresh);
+  verifyForm.addEventListener('submit', function() {
+    stopAutoRefresh();
+    if (verifySubmitBtn) {
+      verifySubmitBtn.disabled = true;
+      verifySubmitBtn.textContent = '조회 중...';
+    }
+  });
+  rebuildMeterOptions();
+  scheduleAutoRefresh();
+})();
+</script>
 </body>
 </html>
 <%

@@ -3,6 +3,17 @@
 <%@ include file="../includes/dbconfig.jspf" %>
 <%@ include file="../includes/epms_html.jspf" %>
 <%!
+    private static boolean tableExists(Connection conn, String schema, String table) throws SQLException {
+        String sql = "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, schema);
+            ps.setString(2, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
     private static final java.time.format.DateTimeFormatter TS_FMT =
         java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -167,6 +178,7 @@
     List<Map<String, String>> ruleOptions = new ArrayList<>();
     List<Map<String, Object>> alarms = new ArrayList<>();
     String error = null;
+    boolean hasDiMaster = tableExists(conn, "dbo", "plc_di_mapping_master");
 
     try {
         try (PreparedStatement ps = conn.prepareStatement(
@@ -185,16 +197,17 @@
             while (rs.next()) usageOptions.add(rs.getString(1));
         }
 
-        try (PreparedStatement ps = conn.prepareStatement(
+        String panelOptionsSql =
                 "SELECT panel_name FROM ( " +
                 "  SELECT DISTINCT m.panel_name AS panel_name " +
                 "  FROM dbo.alarm_log a LEFT JOIN dbo.meters m ON m.meter_id = a.meter_id " +
                 "  WHERE m.panel_name IS NOT NULL AND LTRIM(RTRIM(m.panel_name)) <> '' " +
                 "  UNION " +
                 "  SELECT DISTINCT panel_name " +
-                "  FROM dbo.plc_di_tag_map " +
+                "  FROM dbo." + (hasDiMaster ? "plc_di_mapping_master" : "plc_di_tag_map") + " " +
                 "  WHERE panel_name IS NOT NULL AND LTRIM(RTRIM(panel_name)) <> '' " +
-                ") x ORDER BY panel_name");
+                ") x ORDER BY panel_name";
+        try (PreparedStatement ps = conn.prepareStatement(panelOptionsSql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) panelOptions.add(rs.getString(1));
         }

@@ -26,6 +26,16 @@ private static final int WRITE_MAX_COILS_PER_REQ = 120;
 private static final long PLC_CONFIG_CACHE_TTL_MS = 30_000L;
 private static final long TAG_MAP_CACHE_TTL_MS = 60_000L;
 
+private static boolean tableExists(Connection conn, String tableName) throws SQLException {
+    DatabaseMetaData meta = conn.getMetaData();
+    try (ResultSet rs = meta.getTables(conn.getCatalog(), null, tableName, new String[]{"TABLE"})) {
+        if (rs.next()) return true;
+    }
+    try (ResultSet rs = meta.getTables(conn.getCatalog(), "dbo", tableName, new String[]{"TABLE"})) {
+        return rs.next();
+    }
+}
+
 private static class CacheEntry<T> {
     final T data;
     final long loadedAtMs;
@@ -222,6 +232,58 @@ private static PlcConfig getCachedPlcConfig(int plcId) throws Exception {
 
 private static List<Map<String,Object>> loadAiMap(Connection conn, int plcId) throws Exception {
     List<Map<String,Object>> out = new ArrayList<>();
+    if (tableExists(conn, "plc_ai_mapping_master")) {
+        Map<Integer, List<Map<String,Object>>> byMeter = new LinkedHashMap<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT meter_id, float_index, token, reg_address, byte_order " +
+                "FROM dbo.plc_ai_mapping_master WHERE plc_id = ? AND enabled = 1 ORDER BY meter_id, float_index")) {
+            ps.setInt(1, plcId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Integer meterId = Integer.valueOf(rs.getInt("meter_id"));
+                    List<Map<String,Object>> rows = byMeter.get(meterId);
+                    if (rows == null) {
+                        rows = new ArrayList<>();
+                        byMeter.put(meterId, rows);
+                    }
+                    Map<String,Object> r = new HashMap<>();
+                    r.put("float_index", rs.getInt("float_index"));
+                    r.put("token", rs.getString("token"));
+                    r.put("reg_address", rs.getInt("reg_address"));
+                    r.put("byte_order", rs.getString("byte_order"));
+                    rows.add(r);
+                }
+            }
+        }
+        for (Map.Entry<Integer, List<Map<String,Object>>> e : byMeter.entrySet()) {
+            List<Map<String,Object>> rows = e.getValue();
+            if (rows == null || rows.isEmpty()) continue;
+            rows.sort(new Comparator<Map<String,Object>>() {
+                @Override public int compare(Map<String,Object> a, Map<String,Object> b) {
+                    return Integer.compare(((Number)a.get("float_index")).intValue(), ((Number)b.get("float_index")).intValue());
+                }
+            });
+            Map<String,Object> m = new HashMap<>();
+            String[] tokens = new String[rows.size()];
+            int startAddress = Integer.MAX_VALUE;
+            String byteOrder = null;
+            for (int i = 0; i < rows.size(); i++) {
+                Map<String,Object> r = rows.get(i);
+                tokens[i] = String.valueOf(r.get("token"));
+                int regAddress = ((Number)r.get("reg_address")).intValue();
+                if (regAddress < startAddress) startAddress = regAddress;
+                if (byteOrder == null || byteOrder.trim().isEmpty()) byteOrder = (String)r.get("byte_order");
+            }
+            m.put("meter_id", e.getKey().intValue());
+            m.put("start_address", startAddress == Integer.MAX_VALUE ? 0 : startAddress);
+            m.put("float_count", rows.size());
+            m.put("byte_order", byteOrder == null ? "ABCD" : byteOrder);
+            m.put("tokens", tokens);
+            m.put("effective_float_count", rows.size());
+            out.add(m);
+        }
+        if (!out.isEmpty()) return out;
+    }
     try (PreparedStatement ps = conn.prepareStatement("SELECT meter_id, start_address, float_count, byte_order, metric_order FROM dbo.plc_meter_map WHERE plc_id = ? AND enabled = 1 ORDER BY meter_id, start_address")) {
         ps.setInt(1, plcId);
         try (ResultSet rs = ps.executeQuery()) {
@@ -234,8 +296,6 @@ private static List<Map<String,Object>> loadAiMap(Connection conn, int plcId) th
                 String metricOrder = rs.getString("metric_order");
                 String[] tokens = metricOrder == null ? new String[0] : metricOrder.split("\\s*,\\s*");
                 m.put("tokens", tokens);
-                // Excel import now treats metric_order as the canonical token order.
-                // Prefer token length over stale float_count when they diverge.
                 if (tokens.length > 0) m.put("effective_float_count", tokens.length);
                 else m.put("effective_float_count", rs.getInt("float_count"));
                 out.add(m);
@@ -257,7 +317,10 @@ private static List<Map<String,Object>> getCachedAiMap(int plcId) throws Excepti
 
 private static List<Map<String,Object>> loadDiTagMap(Connection conn, int plcId) throws Exception {
     List<Map<String,Object>> out = new ArrayList<>();
-    try (PreparedStatement ps = conn.prepareStatement("SELECT point_id, di_address, bit_no, tag_name, item_name, panel_name FROM dbo.plc_di_tag_map WHERE plc_id = ? AND enabled = 1 ORDER BY di_address, bit_no")) {
+    String sql = tableExists(conn, "plc_di_mapping_master")
+            ? "SELECT point_id, di_address, bit_no, tag_name, item_name, panel_name FROM dbo.plc_di_mapping_master WHERE plc_id = ? AND enabled = 1 ORDER BY di_address, bit_no"
+            : "SELECT point_id, di_address, bit_no, tag_name, item_name, panel_name FROM dbo.plc_di_tag_map WHERE plc_id = ? AND enabled = 1 ORDER BY di_address, bit_no";
+    try (PreparedStatement ps = conn.prepareStatement(sql)) {
         ps.setInt(1, plcId);
         try (ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -1038,21 +1101,37 @@ try (Connection conn = createConn()) {
             meterPanelMap.put(meterId, rs.getString("panel_name"));
         }
     }
-    try (PreparedStatement ps = conn.prepareStatement("SELECT start_address, metric_order FROM dbo.plc_meter_map WHERE enabled = 1 ORDER BY plc_id, meter_id, start_address");
-         ResultSet rs = ps.executeQuery()) {
-        while (rs.next()) {
-            int startAddress = rs.getInt("start_address");
-            String metricOrder = rs.getString("metric_order");
-            if (metricOrder == null || metricOrder.trim().isEmpty()) continue;
-            String[] toks = metricOrder.split("\\s*,\\s*");
-            for (int i = 0; i < toks.length; i++) {
-                String t = toks[i];
-                if (t == null || t.trim().isEmpty()) continue;
-                String token = t.trim();
+    if (tableExists(conn, "plc_ai_mapping_master")) {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT token, reg_address FROM dbo.plc_ai_mapping_master WHERE enabled = 1 ORDER BY plc_id, meter_id, float_index");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String token = rs.getString("token");
+                if (token == null || token.trim().isEmpty()) continue;
+                token = token.trim();
                 knownTags.add(token);
                 String key = token.toUpperCase(Locale.ROOT);
                 if (!knownTagAddressMap.containsKey(key)) {
-                    knownTagAddressMap.put(key, Integer.valueOf(startAddress + (i * 2)));
+                    knownTagAddressMap.put(key, Integer.valueOf(rs.getInt("reg_address")));
+                }
+            }
+        }
+    } else {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT start_address, metric_order FROM dbo.plc_meter_map WHERE enabled = 1 ORDER BY plc_id, meter_id, start_address");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                int startAddress = rs.getInt("start_address");
+                String metricOrder = rs.getString("metric_order");
+                if (metricOrder == null || metricOrder.trim().isEmpty()) continue;
+                String[] toks = metricOrder.split("\\s*,\\s*");
+                for (int i = 0; i < toks.length; i++) {
+                    String t = toks[i];
+                    if (t == null || t.trim().isEmpty()) continue;
+                    String token = t.trim();
+                    knownTags.add(token);
+                    String key = token.toUpperCase(Locale.ROOT);
+                    if (!knownTagAddressMap.containsKey(key)) {
+                        knownTagAddressMap.put(key, Integer.valueOf(startAddress + (i * 2)));
+                    }
                 }
             }
         }

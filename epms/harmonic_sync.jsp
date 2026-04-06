@@ -2,6 +2,18 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconfig.jspf" %>
+<%!
+    private static boolean tableExists(Connection conn, String schema, String table) throws SQLException {
+        String sql = "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, schema);
+            ps.setString(2, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+%>
 <%
     try (Connection conn = openDbConnection()) {
     String message = null;
@@ -10,7 +22,74 @@
     int insertedCount = 0;
     List<Map<String, Object>> latestRows = new ArrayList<>();
 
-    String baseCte =
+    boolean hasAiMaster = tableExists(conn, "dbo", "plc_ai_mapping_master");
+    String baseCte;
+    if (hasAiMaster) {
+        baseCte =
+            "WITH a AS ( " +
+            "    SELECT plc_id, meter_id, token, float_index AS metric_index, measurement_column, reg_address " +
+            "    FROM dbo.plc_ai_mapping_master " +
+            "    WHERE enabled = 1 " +
+            "      AND db_insert_yn = 1 " +
+            "      AND target_table = 'harmonic_measurements' " +
+            "      AND measurement_column IS NOT NULL " +
+            "), s AS ( " +
+            "    SELECT a.plc_id, a.meter_id, a.measurement_column, x.value_float, x.measured_at, " +
+            "           ROW_NUMBER() OVER (PARTITION BY a.plc_id, a.meter_id, a.measurement_column ORDER BY x.measured_at DESC) AS rn " +
+            "    FROM a " +
+            "    JOIN dbo.plc_ai_samples x " +
+            "      ON x.plc_id = a.plc_id AND x.meter_id = a.meter_id AND x.reg_address = a.reg_address " +
+            "), l AS ( " +
+            "    SELECT plc_id, meter_id, measurement_column, value_float, measured_at " +
+            "    FROM s WHERE rn = 1 " +
+            "), p AS ( " +
+            "    SELECT meter_id, " +
+            "           MAX(measured_at) AS measured_at, " +
+            "           MAX(CASE WHEN measurement_column='thd_voltage_a' THEN value_float END) AS thd_voltage_a, " +
+            "           MAX(CASE WHEN measurement_column='thd_voltage_b' THEN value_float END) AS thd_voltage_b, " +
+            "           MAX(CASE WHEN measurement_column='thd_voltage_c' THEN value_float END) AS thd_voltage_c, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h3_a' THEN value_float END) AS voltage_h3_a, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h5_a' THEN value_float END) AS voltage_h5_a, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h7_a' THEN value_float END) AS voltage_h7_a, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h9_a' THEN value_float END) AS voltage_h9_a, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h11_a' THEN value_float END) AS voltage_h11_a, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h3_b' THEN value_float END) AS voltage_h3_b, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h5_b' THEN value_float END) AS voltage_h5_b, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h7_b' THEN value_float END) AS voltage_h7_b, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h9_b' THEN value_float END) AS voltage_h9_b, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h11_b' THEN value_float END) AS voltage_h11_b, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h3_c' THEN value_float END) AS voltage_h3_c, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h5_c' THEN value_float END) AS voltage_h5_c, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h7_c' THEN value_float END) AS voltage_h7_c, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h9_c' THEN value_float END) AS voltage_h9_c, " +
+            "           MAX(CASE WHEN measurement_column='voltage_h11_c' THEN value_float END) AS voltage_h11_c, " +
+            "           MAX(CASE WHEN measurement_column='thd_current_a' THEN value_float END) AS thd_current_a, " +
+            "           MAX(CASE WHEN measurement_column='thd_current_b' THEN value_float END) AS thd_current_b, " +
+            "           MAX(CASE WHEN measurement_column='thd_current_c' THEN value_float END) AS thd_current_c, " +
+            "           MAX(CASE WHEN measurement_column='current_h3_a' THEN value_float END) AS current_h3_a, " +
+            "           MAX(CASE WHEN measurement_column='current_h5_a' THEN value_float END) AS current_h5_a, " +
+            "           MAX(CASE WHEN measurement_column='current_h7_a' THEN value_float END) AS current_h7_a, " +
+            "           MAX(CASE WHEN measurement_column='current_h9_a' THEN value_float END) AS current_h9_a, " +
+            "           MAX(CASE WHEN measurement_column='current_h11_a' THEN value_float END) AS current_h11_a, " +
+            "           MAX(CASE WHEN measurement_column='current_h3_b' THEN value_float END) AS current_h3_b, " +
+            "           MAX(CASE WHEN measurement_column='current_h5_b' THEN value_float END) AS current_h5_b, " +
+            "           MAX(CASE WHEN measurement_column='current_h7_b' THEN value_float END) AS current_h7_b, " +
+            "           MAX(CASE WHEN measurement_column='current_h9_b' THEN value_float END) AS current_h9_b, " +
+            "           MAX(CASE WHEN measurement_column='current_h11_b' THEN value_float END) AS current_h11_b, " +
+            "           MAX(CASE WHEN measurement_column='current_h3_c' THEN value_float END) AS current_h3_c, " +
+            "           MAX(CASE WHEN measurement_column='current_h5_c' THEN value_float END) AS current_h5_c, " +
+            "           MAX(CASE WHEN measurement_column='current_h7_c' THEN value_float END) AS current_h7_c, " +
+            "           MAX(CASE WHEN measurement_column='current_h9_c' THEN value_float END) AS current_h9_c, " +
+            "           MAX(CASE WHEN measurement_column='current_h11_c' THEN value_float END) AS current_h11_c " +
+            "    FROM l " +
+            "    GROUP BY meter_id " +
+            "), n AS ( " +
+            "    SELECT p.* " +
+            "    FROM p " +
+            "    WHERE p.measured_at > ISNULL((SELECT MAX(h.measured_at) FROM dbo.harmonic_measurements h WHERE h.meter_id = p.meter_id), '1900-01-01') " +
+            ") ";
+    } else {
+        baseCte =
         "WITH m AS ( " +
         "    SELECT plc_id, meter_id, start_address, metric_order " +
         "    FROM dbo.plc_meter_map " +
@@ -96,6 +175,7 @@
         "    FROM p " +
         "    WHERE p.measured_at > ISNULL((SELECT MAX(h.measured_at) FROM dbo.harmonic_measurements h WHERE h.meter_id = p.meter_id), '1900-01-01') " +
         ") ";
+    }
 
     try {
         String pendingSql = baseCte + "SELECT COUNT(*) AS pending_count FROM n;";
@@ -185,7 +265,7 @@
     </div>
 
     <div class="info-box">
-        소스: <span class="mono">plc_ai_samples</span> + <span class="mono">plc_meter_map</span> + <span class="mono">plc_ai_measurements_match</span><br/>
+        소스: <span class="mono">plc_ai_samples</span> + <span class="mono"><%= hasAiMaster ? "plc_ai_mapping_master" : "plc_meter_map + plc_ai_measurements_match" %></span><br/>
         타겟: <span class="mono">harmonic_measurements</span><br/>
         정책: meter별 최신 시각보다 <b>새로운 시각</b> 데이터만 INSERT (중복 방지)
     </div>

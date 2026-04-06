@@ -40,12 +40,25 @@ public final class ModbusCycleSupport {
         public final int[] aiPersist;
         public final int[] aiAlarmPersist;
         public final long elapsedMs;
+        public final long samplePersistMs;
+        public final long targetPersistMs;
+        public final long alarmPersistMs;
 
-        public AiCycleResult(PlcAiReadData aiData, int[] aiPersist, int[] aiAlarmPersist, long elapsedMs) {
+        public AiCycleResult(
+                PlcAiReadData aiData,
+                int[] aiPersist,
+                int[] aiAlarmPersist,
+                long elapsedMs,
+                long samplePersistMs,
+                long targetPersistMs,
+                long alarmPersistMs) {
             this.aiData = aiData;
             this.aiPersist = aiPersist;
             this.aiAlarmPersist = aiAlarmPersist;
             this.elapsedMs = elapsedMs;
+            this.samplePersistMs = samplePersistMs;
+            this.targetPersistMs = targetPersistMs;
+            this.alarmPersistMs = alarmPersistMs;
         }
     }
 
@@ -83,14 +96,21 @@ public final class ModbusCycleSupport {
             String alarmApiUrl) throws Exception {
         long aiStart = System.currentTimeMillis();
         PlcAiReadData aiData = ModbusRawReadService.readAiRows(client, cfg, aiMapList);
+        long samplePersistStart = System.currentTimeMillis();
         ModbusAiPersistService.persistAiRowsToSamples(plcId, cfg, aiData.rows, measuredAt);
+        long samplePersistMs = Math.max(0L, System.currentTimeMillis() - samplePersistStart);
+        long targetPersistStart = System.currentTimeMillis();
         int[] aiPersist = ModbusAiPersistService.persistAiRowsToTargetTables(aiMatchMap, aiData.rows, measuredAt);
+        long targetPersistMs = Math.max(0L, System.currentTimeMillis() - targetPersistStart);
         int[] aiAlarmPersist = new int[]{0, 0};
+        long alarmPersistMs = 0L;
         try {
+            long alarmPersistStart = System.currentTimeMillis();
             aiAlarmPersist = ModbusAlarmBridgeService.persistAiRowsViaAlarmApi(alarmApiUrl, plcId, aiData.rows, measuredAt);
+            alarmPersistMs = Math.max(0L, System.currentTimeMillis() - alarmPersistStart);
         } catch (Exception ignore) {
         }
         long aiElapsed = aiData.durationMs > 0L ? aiData.durationMs : Math.max(0L, System.currentTimeMillis() - aiStart);
-        return new AiCycleResult(aiData, aiPersist, aiAlarmPersist, aiElapsed);
+        return new AiCycleResult(aiData, aiPersist, aiAlarmPersist, aiElapsed, samplePersistMs, targetPersistMs, alarmPersistMs);
     }
 }
