@@ -938,14 +938,6 @@ private String fmtTs(Timestamp ts) {
     return new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(ts);
 }
 
-private String escapeJsonString(String s) {
-    if (s == null) return "";
-    return s.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r");
-}
-
 private String normalizeForIntent(String text) {
     if (text == null) return "";
     return text.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
@@ -1776,16 +1768,6 @@ private Object invokeAgentResponseFlowHelper(String methodName, Class<?>[] argTy
     }
 }
 
-private Object invokeAgentOutputHelper(String methodName, Class<?>[] argTypes, Object[] args) {
-    try {
-        Class<?> cls = Class.forName("epms.util.AgentOutputHelper");
-        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
-        return m.invoke(null, args);
-    } catch (Throwable ignore) {
-        return null;
-    }
-}
-
 private boolean shouldBypassDirect(boolean forceLlmOnly, boolean preferNarrativeLlm) {
     Object delegated = invokeAgentResponseFlowHelper(
         "shouldBypassDirect",
@@ -1827,29 +1809,6 @@ private String getRuleOnlyFallbackMessage() {
     return delegated instanceof String
         ? (String) delegated
         : "RULE 모드: 직접 규칙에 매칭된 결과가 없습니다. 같은 질문을 /llm 으로 시도해 주세요.";
-}
-
-private String buildFinalPrompt(boolean needsDb, String userMessage, String dbContext) {
-    return epms.util.AgentRuntimeFlowSupport.buildFinalPrompt(needsDb, userMessage, dbContext);
-}
-
-private String buildSuccessJsonPayload(String finalAnswer, String rawDbContext, String userDbContext, boolean isAdmin) {
-    Object delegated = invokeAgentOutputHelper(
-        "buildSuccessJson",
-        new Class<?>[] { String.class, String.class, String.class, boolean.class },
-        new Object[] { finalAnswer, rawDbContext, userDbContext, Boolean.valueOf(isAdmin) }
-    );
-    return delegated instanceof String ? (String) delegated : null;
-}
-
-private String buildErrorJsonPayload(String errorMessage) {
-    Object delegated = invokeAgentOutputHelper(
-        "buildErrorJson",
-        new Class<?>[] { String.class },
-        new Object[] { errorMessage }
-    );
-    if (delegated instanceof String) return (String) delegated;
-    return "{\"error\":" + epms.util.AgentOutputHelper.quoteJson(errorMessage) + "}";
 }
 
 private String invokeAgentAnswerFormatter(String methodName, Class<?>[] argTypes, Object[] args) {
@@ -4649,27 +4608,11 @@ private String buildUserDbContext(String dbContext) {
 private void writeSuccessJson(javax.servlet.jsp.JspWriter out, javax.servlet.http.HttpServletResponse response, String finalAnswer, String dbContext, boolean isAdmin) throws java.io.IOException {
     String userDbContext = buildUserDbContext(dbContext);
     String rawDbContext = isAdmin ? dbContext : "";
-    response.setStatus(200);
-    String builtPayload = buildSuccessJsonPayload(finalAnswer, rawDbContext, userDbContext, isAdmin);
-    if (builtPayload != null) {
-        out.print(builtPayload);
-        return;
-    }
-    String line = "{\"response\":\"" + escapeJsonString(finalAnswer) + "\",\"done\":true}\n";
-    out.print("{\"provider_response\":");
-    out.print(epms.util.AgentOutputHelper.quoteJson(line));
-    out.print(",\"db_context\":");
-    out.print(epms.util.AgentOutputHelper.quoteJson(rawDbContext));
-    out.print(",\"db_context_user\":");
-    out.print(epms.util.AgentOutputHelper.quoteJson(userDbContext));
-    out.print(",\"is_admin\":");
-    out.print(isAdmin ? "true" : "false");
-    out.print("}");
+    epms.util.AgentOutputHelper.writeSuccessJson(out, response, finalAnswer, rawDbContext, userDbContext, isAdmin);
 }
 
 private void writeErrorJson(javax.servlet.jsp.JspWriter out, javax.servlet.http.HttpServletResponse response, int statusCode, String errorMessage) throws java.io.IOException {
-    response.setStatus(statusCode);
-    out.print(buildErrorJsonPayload(errorMessage));
+    epms.util.AgentOutputHelper.writeErrorJson(out, response, statusCode, errorMessage);
 }
 
 private List<String> panelTokensFromRaw(String panel) {
@@ -4693,28 +4636,14 @@ private Boolean extractJsonBoolField(String json, String field) {
 }
 
 private String callOllamaOnce(String ollamaUrl, String model, String prompt, int connectTimeoutMs, int readTimeoutMs, double temperature) throws Exception {
-    String payload = "{\"model\":\"" + model + "\",\"prompt\":" + epms.util.AgentOutputHelper.quoteJson(prompt) + ",\"stream\":false,\"temperature\":" + temperature + "}";
-    epms.util.AgentSupport.HttpResponse resp = callOllamaEndpoint(
-        ollamaUrl + "/api/generate",
-        "POST",
-        payload,
+    return epms.util.AgentRuntimeFlowSupport.callOllamaOnce(
+        ollamaUrl,
+        model,
+        prompt,
         connectTimeoutMs,
-        readTimeoutMs
+        readTimeoutMs,
+        temperature
     );
-    String body = resp.body == null ? "" : resp.body;
-    if (resp.statusCode < 200 || resp.statusCode >= 400) {
-        throw new RuntimeException("Ollama error " + resp.statusCode + ": " + clip(body, 300));
-    }
-
-    String responseText = extractJsonStringField(body, "response");
-    if (responseText == null || responseText.trim().isEmpty()) {
-        return clip(body, 2000);
-    }
-    return responseText.trim();
-}
-
-private String sanitizeUngroundedJudgement(String answer, String dbContext) {
-    return epms.util.AgentAnswerGuardSupport.sanitizeUngroundedJudgement(answer, dbContext);
 }
 
 %>
@@ -4840,7 +4769,7 @@ try {
     }
 
     // Stage 3: qwen2.5:14b creates final user-facing answer.
-    String finalPrompt = buildFinalPrompt(execCtx.needsDb, userMessage, dbContext);
+    String finalPrompt = epms.util.AgentRuntimeFlowSupport.buildFinalPrompt(execCtx.needsDb, userMessage, dbContext);
     String finalModel = routeFinalModel(
         userMessage,
         runtimeModels.model,
@@ -4856,7 +4785,7 @@ try {
         runtimeModels.ollamaReadTimeoutMs,
         0.4d
     );
-    finalAnswer = sanitizeUngroundedJudgement(finalAnswer, dbContext);
+    finalAnswer = epms.util.AgentAnswerGuardSupport.sanitizeUngroundedJudgement(finalAnswer, dbContext);
     writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
 
 } catch (Exception e) {

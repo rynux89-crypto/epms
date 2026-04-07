@@ -1,5 +1,9 @@
 package epms.util;
 
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.Writer;
+
 public final class AgentOutputHelper {
     private AgentOutputHelper() {
     }
@@ -23,6 +27,28 @@ public final class AgentOutputHelper {
 
     public static String quoteJson(String value) {
         return quote(value);
+    }
+
+    public static void writeSuccessJson(
+        Writer out,
+        HttpServletResponse response,
+        String finalAnswer,
+        String rawDbContext,
+        String userDbContext,
+        boolean isAdmin
+    ) throws IOException {
+        response.setStatus(200);
+        out.write(buildSuccessJson(finalAnswer, rawDbContext, userDbContext, isAdmin));
+    }
+
+    public static void writeErrorJson(
+        Writer out,
+        HttpServletResponse response,
+        int statusCode,
+        String errorMessage
+    ) throws IOException {
+        response.setStatus(statusCode);
+        out.write(buildErrorJson(errorMessage));
     }
 
     private static String quote(String value) {

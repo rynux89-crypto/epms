@@ -119,6 +119,34 @@ public final class AgentRuntimeFlowSupport {
         return isCoderTask ? coderModel : defaultModel;
     }
 
+    public static String callOllamaOnce(
+        String ollamaUrl,
+        String model,
+        String prompt,
+        int connectTimeoutMs,
+        int readTimeoutMs,
+        double temperature
+    ) throws Exception {
+        String payload = "{\"model\":\"" + model + "\",\"prompt\":" + AgentOutputHelper.quoteJson(prompt) + ",\"stream\":false,\"temperature\":" + temperature + "}";
+        AgentSupport.HttpResponse resp = AgentSupport.callOllamaEndpoint(
+            ollamaUrl + "/api/generate",
+            "POST",
+            payload,
+            connectTimeoutMs,
+            readTimeoutMs
+        );
+        String body = resp.body == null ? "" : resp.body;
+        if (resp.statusCode < 200 || resp.statusCode >= 400) {
+            throw new RuntimeException("Ollama error " + resp.statusCode + ": " + clip(body, 300));
+        }
+
+        String responseText = AgentSupport.extractJsonStringField(body, "response");
+        if (responseText == null || responseText.trim().isEmpty()) {
+            return clip(body, 2000);
+        }
+        return responseText.trim();
+    }
+
     private static void assertModelExists(String tagJson, String modelName) {
         if (modelName == null || modelName.isEmpty()) {
             return;
@@ -128,5 +156,10 @@ public final class AgentRuntimeFlowSupport {
         if (!exists) {
             throw new IllegalArgumentException("Model not found: " + modelName);
         }
+    }
+
+    private static String clip(String text, int max) {
+        if (text == null) return null;
+        return text.length() <= max ? text : text.substring(0, max);
     }
 }
