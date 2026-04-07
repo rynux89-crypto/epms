@@ -79,6 +79,20 @@ public final class AgentRuntimeFlowSupport {
             + userMessage;
     }
 
+    public static String classifyNeedsDb(
+        String userMessage,
+        AgentRuntimeModels.RuntimeModelSelection models
+    ) throws Exception {
+        return callOllamaOnce(
+            models.ollamaUrl,
+            models.model,
+            buildClassifierPrompt(userMessage),
+            models.ollamaConnectTimeoutMs,
+            models.ollamaReadTimeoutMs,
+            0.1d
+        );
+    }
+
     public static String buildFinalPrompt(boolean needsDb, String userMessage, String dbContext) {
         return AgentResponseFlowHelper.buildFinalPrompt(needsDb, userMessage, dbContext);
     }
@@ -145,6 +159,33 @@ public final class AgentRuntimeFlowSupport {
             return clip(body, 2000);
         }
         return responseText.trim();
+    }
+
+    public static String generateFinalAnswer(
+        String userMessage,
+        String dbContext,
+        boolean needsDb,
+        AgentRuntimeModels.RuntimeModelSelection models
+    ) throws Exception {
+        String finalPrompt = buildFinalPrompt(needsDb, userMessage, dbContext);
+        String finalModel = routeFinalModel(
+            userMessage,
+            models.model,
+            models.aiModel,
+            models.pqModel,
+            models.alarmModel
+        );
+        return AgentAnswerGuardSupport.sanitizeUngroundedJudgement(
+            callOllamaOnce(
+                models.ollamaUrl,
+                finalModel,
+                finalPrompt,
+                models.ollamaConnectTimeoutMs,
+                models.ollamaReadTimeoutMs,
+                0.4d
+            ),
+            dbContext
+        );
     }
 
     private static void assertModelExists(String tagJson, String modelName) {

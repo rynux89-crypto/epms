@@ -66,10 +66,6 @@ private epms.util.AgentSupport.HttpResponse callOllamaEndpoint(String url, Strin
     return epms.util.AgentSupport.callOllamaEndpoint(url, method, payload, connectTimeoutMs, readTimeoutMs);
 }
 
-private String routeFinalModel(String userMessage, String defaultModel, String aiModel, String pqModel, String alarmModel) {
-    return epms.util.AgentRuntimeFlowSupport.routeFinalModel(userMessage, defaultModel, aiModel, pqModel, alarmModel);
-}
-
 private boolean isAiDesignIntent(String userMessage) {
     if (userMessage == null) return false;
     String normalized = userMessage.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
@@ -4736,15 +4732,7 @@ try {
     // Stage 1: qwen2.5:14b classifies whether DB lookup is required.
     String classifierRaw = "{}";
     if (!forceAiNarrative) {
-        String classifierPrompt = epms.util.AgentRuntimeFlowSupport.buildClassifierPrompt(userMessage);
-        classifierRaw = callOllamaOnce(
-            runtimeModels.ollamaUrl,
-            runtimeModels.model,
-            classifierPrompt,
-            runtimeModels.ollamaConnectTimeoutMs,
-            runtimeModels.ollamaReadTimeoutMs,
-            0.1d
-        );
+        classifierRaw = epms.util.AgentRuntimeFlowSupport.classifyNeedsDb(userMessage, runtimeModels);
         applyClassifierHints(execCtx, userMessage, classifierRaw);
     }
 
@@ -4769,23 +4757,12 @@ try {
     }
 
     // Stage 3: qwen2.5:14b creates final user-facing answer.
-    String finalPrompt = epms.util.AgentRuntimeFlowSupport.buildFinalPrompt(execCtx.needsDb, userMessage, dbContext);
-    String finalModel = routeFinalModel(
+    String finalAnswer = epms.util.AgentRuntimeFlowSupport.generateFinalAnswer(
         userMessage,
-        runtimeModels.model,
-        runtimeModels.aiModel,
-        runtimeModels.pqModel,
-        runtimeModels.alarmModel
+        dbContext,
+        execCtx.needsDb,
+        runtimeModels
     );
-    String finalAnswer = callOllamaOnce(
-        runtimeModels.ollamaUrl,
-        finalModel,
-        finalPrompt,
-        runtimeModels.ollamaConnectTimeoutMs,
-        runtimeModels.ollamaReadTimeoutMs,
-        0.4d
-    );
-    finalAnswer = epms.util.AgentAnswerGuardSupport.sanitizeUngroundedJudgement(finalAnswer, dbContext);
     writeSuccessJson(out, response, finalAnswer, dbContext, isAdmin);
 
 } catch (Exception e) {
