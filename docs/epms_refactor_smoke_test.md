@@ -22,6 +22,8 @@ This checklist covers the JSP files refactored during the current EPMS cleanup w
   - JSON response shape is unchanged.
   - Direct-answer questions return without server error.
   - LLM-backed questions still return a normal response or a handled Ollama error.
+- Quick check:
+  - `powershell -ExecutionPolicy Bypass -File scripts/smoke_agent_api.ps1`
 
 ### `epms/agent_manage.jsp`
 
