@@ -4,6 +4,30 @@ public final class AgentUserContextHelper {
     private AgentUserContextHelper() {
     }
 
+    public static String buildUserContext(String dbContext) {
+        String ctx = dbContext == null ? "" : dbContext.trim();
+        if (ctx.isEmpty()) {
+            return "";
+        }
+        String delegatedContext = AgentAnswerFormatter.buildUserDbContext(dbContext);
+        int noSignalCount = ctx.contains("[Power factor outlier]") ? AgentDbTools.getPowerFactorNoSignalCount(null, null) : 0;
+        String delegatedPowerFactorAnswer = null;
+        String powerFactorNoSignalContext = null;
+        if (ctx.contains("[Power factor outlier]")) {
+            delegatedPowerFactorAnswer = AgentAnswerFormatter.buildPowerFactorOutlierDirectAnswer(ctx, noSignalCount);
+            if ((ctx.contains("none") || ctx.contains("no data")) && noSignalCount > 0) {
+                powerFactorNoSignalContext = AgentDbTools.getPowerFactorNoSignalListContext(10, null, null, null);
+            }
+        }
+        return buildUserContextWithPowerFactorHandling(
+            ctx,
+            delegatedContext,
+            noSignalCount,
+            delegatedPowerFactorAnswer,
+            powerFactorNoSignalContext
+        );
+    }
+
     public static String buildUserContext(
         String dbContext,
         String delegatedContext,
@@ -24,6 +48,28 @@ public final class AgentUserContextHelper {
         String routed = routeKnownContext(ctx);
         if (routed != null) return routed;
         return fallbackContextText(ctx, 600);
+    }
+
+    public static String buildUserContextWithPowerFactorHandling(
+        String dbContext,
+        String delegatedContext,
+        int noSignalCount,
+        String delegatedPowerFactorAnswer,
+        String powerFactorNoSignalContext
+    ) {
+        String ctx = dbContext == null ? "" : dbContext.trim();
+        if (ctx.isEmpty()) {
+            return "";
+        }
+        String powerFactorAnswer = delegatedPowerFactorAnswer;
+        if (ctx.contains("[Power factor outlier]") && powerFactorAnswer == null) {
+            powerFactorAnswer = AgentDirectOutlierHelper.powerFactorOutlier(ctx, noSignalCount).answer;
+        }
+        String powerFactorNoSignalSnippet = null;
+        if (ctx.contains("[Power factor outlier]") && (ctx.contains("none") || ctx.contains("no data")) && noSignalCount > 0) {
+            powerFactorNoSignalSnippet = AgentDirectResultHelper.buildPowerFactorNoSignalListSnippet(powerFactorNoSignalContext);
+        }
+        return buildUserContext(ctx, delegatedContext, powerFactorAnswer, powerFactorNoSignalSnippet);
     }
 
     public static String routeKnownContext(String dbContext) {

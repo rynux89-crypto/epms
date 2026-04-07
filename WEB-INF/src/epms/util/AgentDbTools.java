@@ -6,9 +6,11 @@ import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import javax.naming.InitialContext;
 import javax.sql.DataSource;
 
@@ -1228,6 +1230,551 @@ public final class AgentDbTools {
         }
     }
 
+    public static String getMonthlyPowerStatsContext(Integer meterId, Integer month) {
+        if (meterId == null) return "[Monthly power stats] meter_id required";
+        int mm = month != null ? month.intValue() : java.time.LocalDate.now().getMonthValue();
+        int yy = java.time.LocalDate.now().getYear();
+        String sql =
+            "SELECT AVG(CAST(active_power_total AS float)) AS avg_kw, MAX(CAST(active_power_total AS float)) AS max_kw, COUNT(1) AS sample_count " +
+            "FROM dbo.measurements WHERE meter_id=? AND YEAR(measured_at)=? AND MONTH(measured_at)=?";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, meterId.intValue());
+            ps.setInt(2, yy);
+            ps.setInt(3, mm);
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    long n = rs.getLong("sample_count");
+                    if (n <= 0) {
+                        return "[Monthly power stats] meter_id=" + meterId + ", period=" + yy + "-" + String.format(Locale.US, "%02d", mm) + ", no data";
+                    }
+                    return "[Monthly power stats] meter_id=" + meterId + ", period=" + yy + "-" + String.format(Locale.US, "%02d", mm) +
+                        ", avg_kw=" + fmtNum(rs.getDouble("avg_kw")) + ", max_kw=" + fmtNum(rs.getDouble("max_kw")) + ", samples=" + n;
+                }
+            }
+        } catch (Exception e) {
+            return "[Monthly power stats] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+        return "[Monthly power stats] no data";
+    }
+
+    public static String getUsageMeterTopNContext(Integer topN) {
+        int n = topN != null ? topN.intValue() : 5;
+        if (n < 1) n = 5;
+        if (n > 20) n = 20;
+        String sql =
+            "SELECT TOP " + n + " " +
+            "  ISNULL(NULLIF(LTRIM(RTRIM(usage_type)), ''), '미분류') AS usage_type, " +
+            "  COUNT(*) AS meter_count " +
+            "FROM dbo.meters " +
+            "GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(usage_type)), ''), '미분류') " +
+            "ORDER BY COUNT(*) DESC, ISNULL(NULLIF(LTRIM(RTRIM(usage_type)), ''), '미분류') ASC";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                StringBuilder sb = new StringBuilder("[Usage meter top];");
+                int i = 0;
+                while (rs.next()) {
+                    i++;
+                    String usageType = EpmsWebUtil.trimToNull(rs.getString("usage_type"));
+                    if (usageType == null) usageType = "미분류";
+                    sb.append(" ").append(i).append(")")
+                      .append(clip(usageType, 40))
+                      .append(": count=")
+                      .append(rs.getInt("meter_count"))
+                      .append(";");
+                }
+                if (i == 0) return "[Usage meter top] no data";
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            return "[Usage meter top] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    public static String getScopedMonthlyEnergyContext(String scopeToken, Integer month) {
+        List<String> tokens = splitScopeTokens(scopeToken);
+        if (tokens.isEmpty()) return "[Scoped monthly energy] scope required";
+        int mm = month != null ? month.intValue() : java.time.LocalDate.now().getMonthValue();
+        int yy = java.time.LocalDate.now().getYear();
+        StringBuilder scopeWhere = new StringBuilder("(");
+        for (int i = 0; i < tokens.size(); i++) {
+            if (i > 0) scopeWhere.append(" OR ");
+            scopeWhere.append("UPPER(ISNULL(m.building_name,'')) LIKE ? OR UPPER(ISNULL(m.usage_type,'')) LIKE ?");
+        }
+        scopeWhere.append(")");
+        String sql =
+            "WITH selected_leaf_meters AS ( " +
+            "  SELECT DISTINCT m.meter_id " +
+            "  FROM dbo.meters m " +
+            "  WHERE " + scopeWhere + " " +
+            "    AND NOT EXISTS ( " +
+            "      SELECT 1 FROM dbo.meter_tree t " +
+            "      WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+            "    ) " +
+            "), month_samples AS ( " +
+            "  SELECT ms.meter_id, ms.measurement_id, ms.measured_at, " +
+            "         CAST(ms.active_power_total AS float) AS active_kw, " +
+            "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+            "  FROM dbo.measurements ms " +
+            "  INNER JOIN selected_leaf_meters slm ON slm.meter_id = ms.meter_id " +
+            "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+            "), month_energy AS ( " +
+            "  SELECT meter_id, " +
+            "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+            "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+            "  FROM month_samples GROUP BY meter_id " +
+            ") " +
+            "SELECT " +
+            "  (SELECT COUNT(*) FROM selected_leaf_meters) AS leaf_meter_count, " +
+            "  (SELECT COUNT(*) FROM month_energy) AS measured_meter_count, " +
+            "  (SELECT COUNT(*) FROM month_energy WHERE start_kwh IS NOT NULL AND end_kwh IS NOT NULL AND end_kwh < start_kwh) AS negative_delta_count, " +
+            "  (SELECT AVG(active_kw) FROM month_samples) AS avg_kw, " +
+            "  (SELECT SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 WHEN end_kwh < start_kwh THEN 0 ELSE end_kwh - start_kwh END) FROM month_energy) AS sum_kwh";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            int pi = 1;
+            for (String token : tokens) {
+                String upper = token.toUpperCase(Locale.ROOT);
+                ps.setString(pi++, "%" + upper + "%");
+                ps.setString(pi++, "%" + upper + "%");
+            }
+            ps.setInt(pi++, yy);
+            ps.setInt(pi++, mm);
+            ps.setQueryTimeout(10);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    int leafMeterCount = rs.getInt("leaf_meter_count");
+                    int measuredMeterCount = rs.getInt("measured_meter_count");
+                    if (leafMeterCount <= 0) {
+                        return "[Scoped monthly energy] scope=" + String.join(",", tokens) + "; period=" + yy + "-" + String.format(Locale.US, "%02d", mm) + "; no data";
+                    }
+                    return "[Scoped monthly energy] scope=" + String.join(",", tokens)
+                        + "; period=" + yy + "-" + String.format(Locale.US, "%02d", mm)
+                        + "; leaf_meter_count=" + leafMeterCount
+                        + "; measured_meter_count=" + measuredMeterCount
+                        + "; negative_delta_count=" + rs.getInt("negative_delta_count")
+                        + "; avg_kw=" + fmtNum(rs.getDouble("avg_kw"))
+                        + "; sum_kwh=" + fmtNum(rs.getDouble("sum_kwh"));
+                }
+            }
+        } catch (Exception e) {
+            return "[Scoped monthly energy] scope=" + String.join(",", tokens) + "; unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+        return "[Scoped monthly energy] no data";
+    }
+
+    public static String getPanelMonthlyEnergyContext(String panelTokenCsv, Integer month) {
+        List<String> panelTokens = splitPanelTokens(panelTokenCsv);
+        if (panelTokens.isEmpty()) return "[Panel monthly energy] panel token required";
+        int mm = month != null ? month.intValue() : java.time.LocalDate.now().getMonthValue();
+        int yy = java.time.LocalDate.now().getYear();
+        StringBuilder panelWhere = new StringBuilder("(");
+        for (int i = 0; i < panelTokens.size(); i++) {
+            if (i > 0) panelWhere.append(" OR ");
+            panelWhere.append("UPPER(REPLACE(REPLACE(ISNULL(m.panel_name,''),'_',''),' ','')) LIKE ?");
+        }
+        panelWhere.append(")");
+        String sql =
+            "WITH selected_leaf_meters AS ( " +
+            "  SELECT DISTINCT m.meter_id " +
+            "  FROM dbo.meters m " +
+            "  WHERE " + panelWhere + " " +
+            "    AND NOT EXISTS ( " +
+            "      SELECT 1 FROM dbo.meter_tree t " +
+            "      WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+            "    ) " +
+            "), month_samples AS ( " +
+            "  SELECT ms.meter_id, ms.measurement_id, ms.measured_at, " +
+            "         CAST(ms.active_power_total AS float) AS active_kw, " +
+            "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+            "  FROM dbo.measurements ms " +
+            "  INNER JOIN selected_leaf_meters slm ON slm.meter_id = ms.meter_id " +
+            "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+            "), month_energy AS ( " +
+            "  SELECT meter_id, " +
+            "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+            "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+            "  FROM month_samples GROUP BY meter_id " +
+            ") " +
+            "SELECT " +
+            "  (SELECT COUNT(*) FROM selected_leaf_meters) AS leaf_meter_count, " +
+            "  (SELECT COUNT(*) FROM month_energy) AS measured_meter_count, " +
+            "  (SELECT COUNT(*) FROM month_energy WHERE start_kwh IS NOT NULL AND end_kwh IS NOT NULL AND end_kwh < start_kwh) AS negative_delta_count, " +
+            "  (SELECT AVG(active_kw) FROM month_samples) AS avg_kw, " +
+            "  (SELECT SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 WHEN end_kwh < start_kwh THEN 0 ELSE end_kwh - start_kwh END) FROM month_energy) AS sum_kwh";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            int pi = 1;
+            for (String token : panelTokens) {
+                String normalized = token.replaceAll("[\\s_\\-]+", "").toUpperCase(Locale.ROOT);
+                ps.setString(pi++, "%" + normalized + "%");
+            }
+            ps.setInt(pi++, yy);
+            ps.setInt(pi++, mm);
+            ps.setQueryTimeout(10);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    int leafMeterCount = rs.getInt("leaf_meter_count");
+                    int measuredMeterCount = rs.getInt("measured_meter_count");
+                    if (leafMeterCount <= 0) {
+                        return "[Panel monthly energy] panel=" + panelTokens + "; period=" + yy + "-" + String.format(Locale.US, "%02d", mm) + "; no data";
+                    }
+                    return "[Panel monthly energy] panel=" + panelTokens
+                        + "; period=" + yy + "-" + String.format(Locale.US, "%02d", mm)
+                        + "; leaf_meter_count=" + leafMeterCount
+                        + "; measured_meter_count=" + measuredMeterCount
+                        + "; negative_delta_count=" + rs.getInt("negative_delta_count")
+                        + "; avg_kw=" + fmtNum(rs.getDouble("avg_kw"))
+                        + "; sum_kwh=" + fmtNum(rs.getDouble("sum_kwh"));
+                }
+            }
+        } catch (Exception e) {
+            return "[Panel monthly energy] panel=" + panelTokens + "; unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+        return "[Panel monthly energy] no data";
+    }
+
+    public static String getUsageMonthlyEnergyContext(String usageToken, Integer month) {
+        String token = EpmsWebUtil.trimToNull(usageToken);
+        if (token == null) return "[Usage monthly energy] usage token required";
+        int mm = month != null ? month.intValue() : java.time.LocalDate.now().getMonthValue();
+        int yy = java.time.LocalDate.now().getYear();
+        String sql =
+            "WITH selected_leaf_meters AS ( " +
+            "  SELECT DISTINCT m.meter_id " +
+            "  FROM dbo.meters m " +
+            "  WHERE UPPER(ISNULL(m.usage_type,'')) LIKE ? " +
+            "    AND NOT EXISTS ( " +
+            "      SELECT 1 FROM dbo.meter_tree t " +
+            "      WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+            "    ) " +
+            "), month_samples AS ( " +
+            "  SELECT ms.meter_id, ms.measurement_id, ms.measured_at, " +
+            "         CAST(ms.active_power_total AS float) AS active_kw, " +
+            "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+            "  FROM dbo.measurements ms " +
+            "  INNER JOIN selected_leaf_meters slm ON slm.meter_id = ms.meter_id " +
+            "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+            "), month_energy AS ( " +
+            "  SELECT meter_id, " +
+            "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+            "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+            "  FROM month_samples GROUP BY meter_id " +
+            ") " +
+            "SELECT " +
+            "  (SELECT COUNT(*) FROM selected_leaf_meters) AS leaf_meter_count, " +
+            "  (SELECT COUNT(*) FROM month_energy) AS measured_meter_count, " +
+            "  (SELECT COUNT(*) FROM month_energy WHERE start_kwh IS NOT NULL AND end_kwh IS NOT NULL AND end_kwh < start_kwh) AS negative_delta_count, " +
+            "  (SELECT AVG(active_kw) FROM month_samples) AS avg_kw, " +
+            "  (SELECT SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 WHEN end_kwh < start_kwh THEN 0 ELSE end_kwh - start_kwh END) FROM month_energy) AS sum_kwh";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, "%" + token.toUpperCase(Locale.ROOT) + "%");
+            ps.setInt(2, yy);
+            ps.setInt(3, mm);
+            ps.setQueryTimeout(10);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    int leafMeterCount = rs.getInt("leaf_meter_count");
+                    int measuredMeterCount = rs.getInt("measured_meter_count");
+                    if (leafMeterCount <= 0) {
+                        return "[Usage monthly energy] usage=" + token + "; period=" + yy + "-" + String.format(Locale.US, "%02d", mm) + "; no data";
+                    }
+                    return "[Usage monthly energy] usage=" + token
+                        + "; period=" + yy + "-" + String.format(Locale.US, "%02d", mm)
+                        + "; leaf_meter_count=" + leafMeterCount
+                        + "; measured_meter_count=" + measuredMeterCount
+                        + "; negative_delta_count=" + rs.getInt("negative_delta_count")
+                        + "; avg_kw=" + fmtNum(rs.getDouble("avg_kw"))
+                        + "; sum_kwh=" + fmtNum(rs.getDouble("sum_kwh"));
+                }
+            }
+        } catch (Exception e) {
+            return "[Usage monthly energy] usage=" + token + "; unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+        return "[Usage monthly energy] no data";
+    }
+
+    public static String getUsagePowerTopNContext(Integer month, Integer topN) {
+        int mm = month != null ? month.intValue() : java.time.LocalDate.now().getMonthValue();
+        int yy = java.time.LocalDate.now().getYear();
+        int n = topN != null ? topN.intValue() : 5;
+        String sql =
+            "WITH leaf_meters AS ( " +
+            "  SELECT m.meter_id, ISNULL(NULLIF(LTRIM(RTRIM(m.usage_type)), ''), '미분류') AS usage_type " +
+            "  FROM dbo.meters m " +
+            "  WHERE NOT EXISTS ( " +
+            "    SELECT 1 FROM dbo.meter_tree t " +
+            "    WHERE t.parent_meter_id = m.meter_id AND ISNULL(t.is_active, 1) = 1 " +
+            "  ) " +
+            "), month_samples AS ( " +
+            "  SELECT lm.usage_type, ms.meter_id, ms.measurement_id, ms.measured_at, " +
+            "         CAST(ms.active_power_total AS float) AS active_kw, " +
+            "         CAST(ms.energy_consumed_total AS float) AS energy_kwh, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at ASC, ms.measurement_id ASC) AS rn_first, " +
+            "         ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn_last " +
+            "  FROM dbo.measurements ms " +
+            "  INNER JOIN leaf_meters lm ON lm.meter_id = ms.meter_id " +
+            "  WHERE YEAR(ms.measured_at)=? AND MONTH(ms.measured_at)=? " +
+            "), month_energy AS ( " +
+            "  SELECT usage_type, meter_id, " +
+            "         MAX(CASE WHEN rn_first = 1 THEN energy_kwh END) AS start_kwh, " +
+            "         MAX(CASE WHEN rn_last = 1 THEN energy_kwh END) AS end_kwh " +
+            "  FROM month_samples GROUP BY usage_type, meter_id " +
+            "), usage_avg AS ( " +
+            "  SELECT usage_type, AVG(active_kw) AS avg_kw " +
+            "  FROM month_samples GROUP BY usage_type " +
+            "), usage_sum AS ( " +
+            "  SELECT usage_type, SUM(CASE WHEN start_kwh IS NULL OR end_kwh IS NULL THEN 0 ELSE end_kwh - start_kwh END) AS sum_kwh " +
+            "  FROM month_energy GROUP BY usage_type " +
+            "), usage_agg AS ( " +
+            "  SELECT a.usage_type, a.avg_kw, ISNULL(s.sum_kwh, 0) AS sum_kwh " +
+            "  FROM usage_avg a LEFT JOIN usage_sum s ON s.usage_type = a.usage_type " +
+            ") " +
+            "SELECT TOP " + n + " usage_type, avg_kw, sum_kwh FROM usage_agg ORDER BY sum_kwh DESC, avg_kw DESC, usage_type ASC";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, yy);
+            ps.setInt(2, mm);
+            ps.setQueryTimeout(10);
+            try (ResultSet rs = ps.executeQuery()) {
+                StringBuilder sb = new StringBuilder("[Usage power TOP] period=" + yy + "-" + String.format(Locale.US, "%02d", mm) + ";");
+                int i = 0;
+                while (rs.next()) {
+                    i++;
+                    sb.append(" ").append(i).append(")")
+                      .append(clip(rs.getString("usage_type"), 30))
+                      .append(": avg_kw=").append(fmtNum(rs.getDouble("avg_kw")))
+                      .append(", sum_kwh=").append(fmtNum(rs.getDouble("sum_kwh"))).append(";");
+                }
+                if (i == 0) return "[Usage power TOP] no data";
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            return "[Usage power TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    public static String getUsageAlarmTopNContext(Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel, Integer topN) {
+        int d = days != null ? days.intValue() : 7;
+        int n = topN != null ? topN.intValue() : 10;
+        if (n < 1) n = 10;
+        if (n > 50) n = 50;
+        boolean byRange = (fromTs != null || toTs != null);
+        StringBuilder where = new StringBuilder("WHERE 1=1 ");
+        if (byRange) {
+            if (fromTs != null) where.append("AND al.triggered_at >= ? ");
+            if (toTs != null) where.append("AND al.triggered_at < ? ");
+        } else {
+            where.append("AND al.triggered_at >= DATEADD(DAY, -?, GETDATE()) ");
+        }
+        String sql =
+            "SELECT TOP " + n + " " +
+            "  ISNULL(NULLIF(LTRIM(RTRIM(m.usage_type)), ''), '미분류') AS usage_type, " +
+            "  COUNT(1) AS cnt " +
+            "FROM dbo.vw_alarm_log al " +
+            "LEFT JOIN dbo.meters m ON m.name = al.meter_name " +
+            where.toString() +
+            "GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(m.usage_type)), ''), '미분류') " +
+            "ORDER BY cnt DESC, usage_type ASC";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            int pi = 1;
+            if (byRange) {
+                if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+                if (toTs != null) ps.setTimestamp(pi++, toTs);
+            } else {
+                ps.setInt(pi++, d);
+            }
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                StringBuilder sb = new StringBuilder("[Usage alarm TOP] ");
+                if (byRange) sb.append("period=").append(periodLabel == null ? "-" : periodLabel).append(";");
+                else sb.append("days=").append(d).append(";");
+                int i = 0;
+                while (rs.next()) {
+                    i++;
+                    sb.append(" ").append(i).append(")")
+                      .append(clip(rs.getString("usage_type"), 40))
+                      .append("=")
+                      .append(rs.getLong("cnt"))
+                      .append(";");
+                }
+                if (i == 0) return "[Usage alarm TOP] no data";
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            return "[Usage alarm TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    public static String getUsageAlarmCountContext(String usageToken, Integer days, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+        String token = EpmsWebUtil.trimToNull(usageToken);
+        if (token == null) return "[Usage alarm count] usage token required";
+        int d = days != null ? days.intValue() : 7;
+        boolean byRange = (fromTs != null || toTs != null);
+        StringBuilder sql = new StringBuilder(
+            "SELECT COUNT(1) AS cnt " +
+            "FROM dbo.vw_alarm_log al " +
+            "LEFT JOIN dbo.meters m ON m.name = al.meter_name " +
+            "WHERE UPPER(ISNULL(m.usage_type,'')) LIKE ? "
+        );
+        if (byRange) {
+            if (fromTs != null) sql.append("AND al.triggered_at >= ? ");
+            if (toTs != null) sql.append("AND al.triggered_at < ? ");
+        } else {
+            sql.append("AND al.triggered_at >= DATEADD(DAY, -?, GETDATE()) ");
+        }
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            int pi = 1;
+            ps.setString(pi++, "%" + token.toUpperCase(Locale.ROOT) + "%");
+            if (byRange) {
+                if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+                if (toTs != null) ps.setTimestamp(pi++, toTs);
+            } else {
+                ps.setInt(pi++, d);
+            }
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    long cnt = rs.getLong("cnt");
+                    if (byRange) return "[Usage alarm count] usage=" + token + "; period=" + (periodLabel == null ? "-" : periodLabel) + "; count=" + cnt;
+                    return "[Usage alarm count] usage=" + token + "; days=" + d + "; count=" + cnt;
+                }
+            }
+            return "[Usage alarm count] no data";
+        } catch (Exception e) {
+            return "[Usage alarm count] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    public static String getCurrentUnbalanceCountContext(Double thresholdPct, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+        double th = thresholdPct != null ? thresholdPct.doubleValue() : 10.0d;
+        StringBuilder where = new StringBuilder("WHERE 1=1 ");
+        if (fromTs != null) where.append("AND ms.measured_at >= ? ");
+        if (toTs != null) where.append("AND ms.measured_at < ? ");
+        String sql =
+            "WITH latest AS ( " +
+            "  SELECT m.meter_id, m.name AS meter_name, ms.measured_at, " +
+            "         CAST(ms.current_phase_a AS float) AS ia, " +
+            "         CAST(ms.current_phase_b AS float) AS ib, " +
+            "         CAST(ms.current_phase_c AS float) AS ic, " +
+            "         ROW_NUMBER() OVER (PARTITION BY m.meter_id ORDER BY ms.measured_at DESC, ms.measurement_id DESC) AS rn " +
+            "  FROM dbo.measurements ms INNER JOIN dbo.meters m ON m.meter_id = ms.meter_id " +
+            where.toString() +
+            "), calc AS ( " +
+            "  SELECT meter_id, meter_name, measured_at, ia, ib, ic, " +
+            "         ((ISNULL(ia,0) + ISNULL(ib,0) + ISNULL(ic,0)) / 3.0) AS avg_i " +
+            "  FROM latest WHERE rn = 1 " +
+            "), filtered AS ( " +
+            "  SELECT meter_id, meter_name, measured_at, " +
+            "         CASE WHEN avg_i <= 0 THEN NULL ELSE " +
+            "           (100.0 * (" +
+            "             CASE " +
+            "               WHEN ABS(ISNULL(ia,0) - avg_i) >= ABS(ISNULL(ib,0) - avg_i) AND ABS(ISNULL(ia,0) - avg_i) >= ABS(ISNULL(ic,0) - avg_i) THEN ABS(ISNULL(ia,0) - avg_i) " +
+            "               WHEN ABS(ISNULL(ib,0) - avg_i) >= ABS(ISNULL(ic,0) - avg_i) THEN ABS(ISNULL(ib,0) - avg_i) " +
+            "               ELSE ABS(ISNULL(ic,0) - avg_i) " +
+            "             END" +
+            "           ) / avg_i) END AS current_unbalance_pct " +
+            "  FROM calc " +
+            ") " +
+            "SELECT COUNT(*) AS meter_count " +
+            "FROM filtered WHERE current_unbalance_pct > ?";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            int pi = 1;
+            if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+            if (toTs != null) ps.setTimestamp(pi++, toTs);
+            ps.setDouble(pi++, th);
+            ps.setQueryTimeout(10);
+            try (ResultSet rs = ps.executeQuery()) {
+                int count = rs.next() ? rs.getInt("meter_count") : 0;
+                StringBuilder sb = new StringBuilder("[Current unbalance count] threshold=").append(fmtNum(th));
+                if (periodLabel != null && !periodLabel.isEmpty()) sb.append("; period=").append(periodLabel);
+                sb.append("; count=").append(count);
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            return "[Current unbalance count] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    public static int getPowerFactorNoSignalCount(Timestamp fromTs, Timestamp toTs) {
+        StringBuilder srcWhere = new StringBuilder("WHERE 1=1 ");
+        if (fromTs != null) srcWhere.append("AND ms.measured_at >= ? ");
+        if (toTs != null) srcWhere.append("AND ms.measured_at < ? ");
+        String sql =
+            "WITH latest AS (" +
+            " SELECT ms.*, ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC) AS rn " +
+            " FROM dbo.measurements ms " + srcWhere +
+            ") " +
+            "SELECT COUNT(*) AS cnt " +
+            "FROM latest ms " +
+            "WHERE ms.rn=1 " +
+            "AND (" +
+            " COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c)/3.0) IS NULL " +
+            " OR COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c)/3.0) = 0" +
+            ")";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            int pi = 1;
+            if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+            if (toTs != null) ps.setTimestamp(pi++, toTs);
+            ps.setQueryTimeout(10);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt("cnt");
+                return 0;
+            }
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    public static String getPowerFactorNoSignalListContext(int topN, Timestamp fromTs, Timestamp toTs, String periodLabel) {
+        int n = topN > 0 ? topN : 10;
+        StringBuilder srcWhere = new StringBuilder("WHERE 1=1 ");
+        if (fromTs != null) srcWhere.append("AND ms.measured_at >= ? ");
+        if (toTs != null) srcWhere.append("AND ms.measured_at < ? ");
+        String sql =
+            "WITH latest AS (" +
+            " SELECT ms.*, ROW_NUMBER() OVER (PARTITION BY ms.meter_id ORDER BY ms.measured_at DESC) AS rn " +
+            " FROM dbo.measurements ms " + srcWhere +
+            ") " +
+            "SELECT TOP " + n + " m.meter_id, m.name AS meter_name, m.panel_name, ms.measured_at " +
+            "FROM latest ms INNER JOIN dbo.meters m ON m.meter_id=ms.meter_id " +
+            "WHERE ms.rn=1 " +
+            "AND (" +
+            " COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c)/3.0) IS NULL " +
+            " OR COALESCE(ms.power_factor, ms.power_factor_avg, (ms.power_factor_a + ms.power_factor_b + ms.power_factor_c)/3.0) = 0" +
+            ") " +
+            "ORDER BY ms.measured_at DESC";
+        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            int pi = 1;
+            if (fromTs != null) ps.setTimestamp(pi++, fromTs);
+            if (toTs != null) ps.setTimestamp(pi++, toTs);
+            ps.setQueryTimeout(10);
+            try (ResultSet rs = ps.executeQuery()) {
+                StringBuilder sb = new StringBuilder("[Power factor no signal]");
+                if (periodLabel != null && !periodLabel.isEmpty()) sb.append(" period=").append(periodLabel);
+                sb.append(";");
+                int i = 0;
+                while (rs.next()) {
+                    i++;
+                    sb.append(" ").append(i).append(")")
+                      .append("meter_id=").append(rs.getInt("meter_id"))
+                      .append(", ").append(clip(rs.getString("meter_name"), 24))
+                      .append(", panel=").append(clip(rs.getString("panel_name"), 24))
+                      .append(", t=").append(fmtTs(rs.getTimestamp("measured_at")))
+                      .append(";");
+                }
+                if (i == 0) return "[Power factor no signal] none";
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            return "[Power factor no signal] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
     public static String getPanelLatestStatusContext(String panelTokenCsv, Integer topN) {
         List<String> panelTokens = splitPanelTokens(panelTokenCsv);
         if (panelTokens.isEmpty()) return "[Panel latest status] panel token required";
@@ -1470,6 +2017,117 @@ public final class AgentDbTools {
         } catch (Exception e) {
             return "[Power factor outlier] unavailable: " + clip(e.getClass().getSimpleName(), 24);
         }
+    }
+
+    public static Integer resolveMeterIdByName(String meterNameToken) {
+        String token = EpmsWebUtil.trimToNull(meterNameToken);
+        if (token == null) return null;
+        String normalized = token.replaceAll("[\\s_\\-]+", "").toUpperCase(Locale.ROOT);
+        if (normalized.length() < 3) return null;
+        String sql =
+            "SELECT TOP 1 meter_id " +
+            "FROM dbo.meters " +
+            "WHERE UPPER(REPLACE(REPLACE(REPLACE(name,'_',''),'-',''),' ','')) = ? " +
+            "   OR UPPER(REPLACE(REPLACE(REPLACE(name,'_',''),'-',''),' ','')) LIKE ? " +
+            "ORDER BY CASE WHEN UPPER(REPLACE(REPLACE(REPLACE(name,'_',''),'-',''),' ','')) = ? THEN 0 ELSE 1 END, meter_id ASC";
+        try (Connection conn = openDbConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, normalized);
+            ps.setString(2, "%" + normalized + "%");
+            ps.setString(3, normalized);
+            ps.setQueryTimeout(5);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return Integer.valueOf(rs.getInt("meter_id"));
+            }
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    public static String buildSchemaContextFromDb(int maxTables, int maxColumnsPerTable, int maxChars) {
+        String tableSql =
+            "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE " +
+            "FROM INFORMATION_SCHEMA.TABLES " +
+            "WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA','sys') " +
+            "ORDER BY TABLE_SCHEMA, TABLE_NAME";
+        String columnSql =
+            "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE " +
+            "FROM INFORMATION_SCHEMA.COLUMNS " +
+            "WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA','sys') " +
+            "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION";
+
+        LinkedHashMap<String, String> tableTypeMap = new LinkedHashMap<String, String>();
+        LinkedHashMap<String, ArrayList<String>> columnMap = new LinkedHashMap<String, ArrayList<String>>();
+
+        try (Connection conn = openDbConnection();
+             PreparedStatement ps = conn.prepareStatement(tableSql)) {
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String schema = rs.getString("TABLE_SCHEMA");
+                    String table = rs.getString("TABLE_NAME");
+                    if (schema == null || table == null) continue;
+                    String key = schema + "." + table;
+                    tableTypeMap.put(key, rs.getString("TABLE_TYPE"));
+                    columnMap.put(key, new ArrayList<String>());
+                }
+            }
+        } catch (Exception e) {
+            return "[Schema] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+
+        try (Connection conn = openDbConnection();
+             PreparedStatement ps = conn.prepareStatement(columnSql)) {
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String schema = rs.getString("TABLE_SCHEMA");
+                    String table = rs.getString("TABLE_NAME");
+                    String col = rs.getString("COLUMN_NAME");
+                    String dt = rs.getString("DATA_TYPE");
+                    if (schema == null || table == null || col == null) continue;
+                    String key = schema + "." + table;
+                    ArrayList<String> cols = columnMap.get(key);
+                    if (cols == null || cols.size() >= maxColumnsPerTable) continue;
+                    cols.add(col + "(" + (dt == null ? "?" : dt) + ")");
+                }
+            }
+        } catch (Exception e) {
+            return "[Schema] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+
+        if (tableTypeMap.isEmpty()) return "[Schema] no table metadata";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("[Schema snapshot]\n");
+        int tableCount = 0;
+        for (Map.Entry<String, String> e : tableTypeMap.entrySet()) {
+            if (tableCount >= maxTables) break;
+            String key = e.getKey();
+            ArrayList<String> cols = columnMap.get(key);
+            sb.append(key)
+              .append(" [")
+              .append(e.getValue() == null ? "TABLE" : e.getValue())
+              .append("]: ");
+            if (cols == null || cols.isEmpty()) {
+                sb.append("(no columns)");
+            } else {
+                for (int i = 0; i < cols.size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(cols.get(i));
+                }
+            }
+            sb.append('\n');
+            tableCount++;
+            if (sb.length() >= maxChars) break;
+        }
+        if (tableTypeMap.size() > tableCount) {
+            sb.append("... truncated tables: ").append(tableTypeMap.size() - tableCount).append('\n');
+        }
+        if (sb.length() > maxChars) {
+            return sb.substring(0, maxChars) + "\n... truncated by size";
+        }
+        return sb.toString();
     }
 
     private static void appendAreaConditions(StringBuilder sql, List<String> areaTokens, String alias) {

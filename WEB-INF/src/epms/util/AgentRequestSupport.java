@@ -132,6 +132,37 @@ public final class AgentRequestSupport {
         return req;
     }
 
+    public static AgentRuntimeModels.CriticalDirectAnswerRequest buildCriticalDirectAnswerRequest(
+            String criticalIntentText,
+            boolean criticalHasMeterHint,
+            Integer criticalMonth,
+            Integer criticalMeterId,
+            Integer criticalTopN,
+            String criticalScopedAreaToken,
+            String criticalUsageToken,
+            String criticalAlarmTypeToken,
+            String criticalAlarmAreaToken,
+            java.sql.Timestamp criticalFromTs,
+            java.sql.Timestamp criticalToTs,
+            String criticalPeriodLabel,
+            List<String> criticalPanelTokens) {
+        AgentRuntimeModels.CriticalDirectAnswerRequest req = new AgentRuntimeModels.CriticalDirectAnswerRequest();
+        req.criticalIntentText = trimToNull(criticalIntentText);
+        req.criticalHasMeterHint = criticalHasMeterHint;
+        req.criticalMonth = criticalMonth;
+        req.criticalMeterId = criticalMeterId;
+        req.criticalTopN = criticalTopN;
+        req.criticalScopedAreaToken = trimToNull(criticalScopedAreaToken);
+        req.criticalUsageToken = trimToNull(criticalUsageToken);
+        req.criticalAlarmTypeToken = trimToNull(criticalAlarmTypeToken);
+        req.criticalAlarmAreaToken = trimToNull(criticalAlarmAreaToken);
+        req.criticalFromTs = criticalFromTs;
+        req.criticalToTs = criticalToTs;
+        req.criticalPeriodLabel = trimToNull(criticalPeriodLabel);
+        req.criticalPanelTokens = copyList(criticalPanelTokens);
+        return req;
+    }
+
     private static String resolveScopeToken(String meterScopeToken, String alarmAreaToken, List<String> scopeHints) {
         String resolved = trimToNull(meterScopeToken);
         if (resolved == null) resolved = trimToNull(alarmAreaToken);

@@ -54,6 +54,22 @@ public final class AgentRuntimeModels {
         public String directLinePairLabel;
     }
 
+    public static final class CriticalDirectAnswerRequest {
+        public String criticalIntentText;
+        public boolean criticalHasMeterHint;
+        public Integer criticalMonth;
+        public Integer criticalMeterId;
+        public Integer criticalTopN;
+        public String criticalScopedAreaToken;
+        public String criticalUsageToken;
+        public String criticalAlarmTypeToken;
+        public String criticalAlarmAreaToken;
+        public java.sql.Timestamp criticalFromTs;
+        public java.sql.Timestamp criticalToTs;
+        public String criticalPeriodLabel;
+        public java.util.List<String> criticalPanelTokens = new java.util.ArrayList<String>();
+    }
+
     public static final class AgentExecutionContext {
         public Integer requestedMeterId;
         public String requestedMeterScope;
