@@ -5,6 +5,15 @@
 <%@ page import="java.io.*" %>
 <%@ page import="java.nio.charset.StandardCharsets" %>
 <%@ page import="epms.alarm.AlarmFacade" %>
+<%@ page import="epms.alarm.AlarmApiModels.AiRequestPayload" %>
+<%@ page import="epms.alarm.AlarmApiModels.AiRow" %>
+<%@ page import="epms.alarm.AlarmApiModels.CacheEntry" %>
+<%@ page import="epms.alarm.AlarmApiModels.DiRequestPayload" %>
+<%@ page import="epms.alarm.AlarmApiModels.DiRuleMeta" %>
+<%@ page import="epms.alarm.AlarmApiModels.DiRuntimeContext" %>
+<%@ page import="epms.alarm.AlarmApiModels.OpenCloseCount" %>
+<%@ page import="epms.alarm.AlarmAiProcessingSupport" %>
+<%@ page import="epms.alarm.AlarmAiMetricsSupport" %>
 <%@ page import="epms.alarm.AlarmRuleDef" %>
 <%@ page import="epms.alarm.AlarmProcessingResult" %>
 <%@ include file="/includes/dbconfig.jspf" %>
@@ -14,12 +23,8 @@
 <%@ include file="/includes/alarm_api_utils.jspf" %>
 <%-- Shared DB helpers: schema, open/close lookup, insert/update --%>
 <%@ include file="/includes/alarm_api_common_db.jspf" %>
-<%-- AI metric preparation and derived-metric calculators --%>
-<%@ include file="/includes/alarm_api_ai_metrics.jspf" %>
 <%-- DI runtime helpers: transition handling, rule lookup, description rendering --%>
 <%@ include file="/includes/alarm_api_di_helpers.jspf" %>
-<%-- Legacy compatibility helpers kept separate from the main runtime path --%>
-<%@ include file="/includes/alarm_api_legacy.jspf" %>
 <%!
     // ---------------------------------------------------------------------
     // Local runtime state and lightweight DTOs kept in the entrypoint file
@@ -29,56 +34,6 @@
     private static final ConcurrentHashMap<String, Long> DI_PENDING_ON_MS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CacheEntry<Map<String, DiRuleMeta>>> DI_RULE_CACHE = new ConcurrentHashMap<>();
     private static final long DI_RULE_CACHE_TTL_MS = 30_000L;
-
-    private static class AiRow {
-        int meterId;
-        String token;
-        double value;
-    }
-
-    private static class DiRequestPayload {
-        int plcId;
-        Timestamp measuredAt;
-        List<Map<String, Object>> rows = Collections.emptyList();
-    }
-
-    private static class AiRequestPayload {
-        int plcId;
-        Timestamp measuredAt;
-        List<AiRow> rows = Collections.emptyList();
-    }
-
-    private static class OpenCloseCount {
-        int opened;
-        int closed;
-    }
-
-    private static class CacheEntry<T> {
-        final T data;
-        final long loadedAtMs;
-        CacheEntry(T data) {
-            this.data = data;
-            this.loadedAtMs = System.currentTimeMillis();
-        }
-    }
-
-    private static class DiRuleMeta {
-        int ruleId;
-        String ruleCode;
-        String ruleName;
-        String metricKey;
-        String messageTemplate;
-    }
-
-    private static class AiPreparedMetrics {
-        Map<Integer, Map<String, Double>> valueByMeterMetric = Collections.emptyMap();
-        Map<String, Map<String, Double>> previousByMeter = Collections.emptyMap();
-    }
-
-    private static class DiRuntimeContext {
-        Map<String, Integer> meterIdByName = Collections.emptyMap();
-        Map<String, DiRuleMeta> diRuleMetaMap = Collections.emptyMap();
-    }
 
     // ---------------------------------------------------------------------
     // DI tag classification helpers
@@ -138,167 +93,6 @@
     }
 
     // ---------------------------------------------------------------------
-    // AI rule evaluation helpers
-    // ---------------------------------------------------------------------
-    private static String escapeLikeLiteral(String s) {
-        if (s == null || s.isEmpty()) return "";
-        return s.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-                .replace("[", "\\[");
-    }
-
-    private static int closeStaleAiAlarmStages(
-            PreparedStatement selAlarmOpenAnyRule,
-            PreparedStatement clearAlarm,
-            int meterId,
-            String rulePrefix,
-            String targetAlarmType,
-            Timestamp measuredAt) throws Exception {
-        int closed = 0;
-        selAlarmOpenAnyRule.setInt(1, meterId);
-        selAlarmOpenAnyRule.setString(2, escapeLikeLiteral(rulePrefix) + "\\_%");
-        List<Long> closeIds = new ArrayList<>();
-        List<String> closeTypes = new ArrayList<>();
-        try (ResultSet rs = selAlarmOpenAnyRule.executeQuery()) {
-            while (rs.next()) {
-                long alarmId = rs.getLong("alarm_id");
-                String alarmType = rs.getString("alarm_type");
-                if (targetAlarmType == null || alarmType == null || !targetAlarmType.equals(alarmType)) {
-                    closeIds.add(Long.valueOf(alarmId));
-                    closeTypes.add(alarmType);
-                }
-            }
-        }
-        for (int i = 0; i < closeIds.size(); i++) {
-            Long alarmId = closeIds.get(i);
-            String alarmType = closeTypes.get(i);
-            clearOpenAlarm(clearAlarm, measuredAt, alarmId);
-            if (alarmType != null && !alarmType.trim().isEmpty()) {
-                AlarmFacade.queueClearAiAlarm(meterId, alarmType, "non-target ai alarm cleared");
-            }
-            closed++;
-        }
-        return closed;
-    }
-
-    // ---------------------------------------------------------------------
-    // AI rule execution helpers
-    // ---------------------------------------------------------------------
-    // AI alarm processing is organized in three layers:
-    // 1) per-source evaluation, 2) per-meter rule scan, 3) request orchestration.
-    private static OpenCloseCount processSingleAiSource(
-            PreparedStatement selAlarmOpen,
-            PreparedStatement selAlarmOpenAnyRule,
-            PreparedStatement insAlarm,
-            PreparedStatement clearAlarm,
-            int plcId,
-            int meterId,
-            long measuredAtMs,
-            Timestamp measuredAt,
-            AlarmRuleDef rule,
-            String metricKey,
-            String sourceKey,
-            double value) throws Exception {
-        OpenCloseCount out = new OpenCloseCount();
-        String stage = AlarmFacade.evalStage(rule, value);
-        String rulePrefix = AlarmFacade.buildAiEventType(rule.getRuleCode(), metricKey, sourceKey, "").replaceAll("_+$", "");
-        String targetAlarmType = (stage == null) ? null : AlarmFacade.buildAiEventType(rule.getRuleCode(), metricKey, sourceKey, stage);
-
-        if (targetAlarmType != null) {
-            if (AlarmFacade.isAiAlarmOpen(meterId, targetAlarmType, measuredAtMs)) {
-                AI_PENDING_ON_MS.remove(plcId + ":" + meterId + ":" + rulePrefix);
-                return out;
-            }
-            Long openAlarmId = findOpenAlarmId(selAlarmOpen, meterId, targetAlarmType);
-            if (openAlarmId != null) {
-                AlarmFacade.rememberAiAlarmOpen(meterId, targetAlarmType, stage, Double.valueOf(value), measuredAtMs);
-                AI_PENDING_ON_MS.remove(plcId + ":" + meterId + ":" + rulePrefix);
-                return out;
-            }
-        }
-
-        out.closed += closeStaleAiAlarmStages(selAlarmOpenAnyRule, clearAlarm, meterId, rulePrefix + "_", targetAlarmType, measuredAt);
-
-        if (targetAlarmType == null) {
-            AI_PENDING_ON_MS.remove(plcId + ":" + meterId + ":" + rulePrefix);
-            return out;
-        }
-
-        String pendingKey = plcId + ":" + meterId + ":" + rulePrefix + ":" + stage;
-        long startMs;
-        Long prev = AI_PENDING_ON_MS.putIfAbsent(pendingKey, measuredAtMs);
-        if (prev == null) startMs = measuredAtMs;
-        else startMs = prev.longValue();
-
-        int holdSec = Math.max(0, rule.getDurationSec());
-        if (holdSec > 0) {
-            long holdMs = holdSec * 1000L;
-            if (measuredAtMs - startMs < holdMs) return out;
-        }
-
-        String resolvedSource = sourceKey.isEmpty() ? metricKey : sourceKey;
-        String desc = "PLC " + plcId + " AI alarm: meter=" + meterId +
-            ", rule=" + rule.getRuleCode() +
-            ", stage=" + stage +
-            ", metric=" + rule.getMetricKey() +
-            ", source=" + resolvedSource +
-            ", value=" + formatDecimal2(value) +
-            ", op=" + (rule.getOperator() == null ? "" : rule.getOperator()) +
-            ", t1=" + (rule.getThreshold1() == null ? "null" : formatDecimal2(rule.getThreshold1())) +
-            ", t2=" + (rule.getThreshold2() == null ? "null" : formatDecimal2(rule.getThreshold2()));
-        desc = AlarmFacade.renderAiMessage(rule, meterId, stage, resolvedSource, value, desc);
-        Long openAlarmId = findOpenAlarmId(selAlarmOpen, meterId, targetAlarmType);
-        if (openAlarmId == null) {
-            insertAiAlarm(insAlarm, meterId, targetAlarmType, stage, measuredAt, desc, rule, value, resolvedSource);
-            AlarmFacade.rememberAiAlarmOpen(meterId, targetAlarmType, stage, Double.valueOf(value), measuredAtMs);
-            out.opened++;
-        } else {
-            AlarmFacade.rememberAiAlarmOpen(meterId, targetAlarmType, stage, Double.valueOf(value), measuredAtMs);
-        }
-        AI_PENDING_ON_MS.remove(pendingKey);
-        return out;
-    }
-
-    private static OpenCloseCount processAiMeterRules(
-            PreparedStatement selAlarmOpen,
-            PreparedStatement selAlarmOpenAnyRule,
-            PreparedStatement insAlarm,
-            PreparedStatement clearAlarm,
-            int plcId,
-            int meterId,
-            long measuredAtMs,
-            Timestamp measuredAt,
-            Map<String, Double> metricValues,
-            List<AlarmRuleDef> rules,
-            Map<String, List<String>> metricCatalogTokens) throws Exception {
-        OpenCloseCount out = new OpenCloseCount();
-        for (AlarmRuleDef rule : rules) {
-            String metricKey = normKey(rule.getMetricKey());
-            LinkedHashMap<String, Double> sourceValues = resolveAiRuleSourceValues(rule, metricCatalogTokens, metricValues);
-            if (sourceValues.isEmpty()) continue;
-
-            for (Map.Entry<String, Double> sourceEntry : sourceValues.entrySet()) {
-                OpenCloseCount c = processSingleAiSource(
-                    selAlarmOpen,
-                    selAlarmOpenAnyRule,
-                    insAlarm,
-                    clearAlarm,
-                    plcId,
-                    meterId,
-                    measuredAtMs,
-                    measuredAt,
-                    rule,
-                    metricKey,
-                    sourceEntry.getKey(),
-                    sourceEntry.getValue().doubleValue());
-                out.opened += c.opened;
-                out.closed += c.closed;
-            }
-        }
-        return out;
-    }
-    // ---------------------------------------------------------------------
     // Request-level AI / DI processors
     // Main orchestration layer: load context, evaluate rows, persist results.
     // ---------------------------------------------------------------------
@@ -329,33 +123,34 @@
 
             ensureAlarmSchema(conn);
 
-            Map<String, String> tokenAlias = loadAiTokenColumnAlias(conn);
-            Map<String, List<String>> metricCatalogTokens = loadMetricCatalogSourceTokens(conn);
+            Map<String, String> tokenAlias = AlarmAiMetricsSupport.loadAiTokenColumnAlias(conn);
+            Map<String, List<String>> metricCatalogTokens = AlarmAiMetricsSupport.loadMetricCatalogSourceTokens(conn);
             List<AlarmRuleDef> rules = AlarmFacade.loadEnabledAiRuleDefs(conn);
             if (rules.isEmpty()) return AlarmFacade.processingResult(0, 0, aiRows.size());
 
-            AiPreparedMetrics prepared = prepareAiMetrics(conn, aiRows, measuredAt, tokenAlias);
+            epms.alarm.AlarmApiModels.AiPreparedMetrics prepared = AlarmAiMetricsSupport.prepareAiMetrics(conn, aiRows, measuredAt, tokenAlias);
 
             for (Map.Entry<Integer, Map<String, Double>> me : prepared.valueByMeterMetric.entrySet()) {
                 int meterId = me.getKey().intValue();
                 Map<String, Double> metricValues = me.getValue();
                 Map<String, Double> previousValues = prepared.previousByMeter.get(String.valueOf(meterId));
-                enrichAiDerivedMetrics(metricValues, previousValues);
-                OpenCloseCount c = processAiMeterRules(
-                    selAlarmOpen,
-                    selAlarmOpenAnyRule,
-                    insAlarm,
-                    clearAlarm,
-                    plcId,
-                    meterId,
-                    measuredAtMs,
-                    measuredAt,
-                    metricValues,
-                    rules,
-                    metricCatalogTokens);
-                opened += c.opened;
-                closed += c.closed;
+                AlarmAiMetricsSupport.enrichAiDerivedMetrics(metricValues, previousValues);
             }
+            AlarmProcessingResult delegated = AlarmAiProcessingSupport.processPreparedAiEvents(
+                selAlarmOpen,
+                selAlarmOpenAnyRule,
+                insAlarm,
+                clearAlarm,
+                plcId,
+                aiRows.size(),
+                measuredAtMs,
+                measuredAt,
+                prepared,
+                rules,
+                metricCatalogTokens,
+                AI_PENDING_ON_MS);
+            opened += delegated.getOpened();
+            closed += delegated.getClosed();
         }
 
         return AlarmFacade.processingResult(opened, closed, aiRows.size());
