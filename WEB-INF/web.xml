@@ -37,6 +37,11 @@
     <servlet-class>epms.plc.ModbusApiServlet</servlet-class>
   </servlet>
 
+  <servlet>
+    <servlet-name>AgentApiServlet</servlet-name>
+    <servlet-class>epms.agent.AgentApiServlet</servlet-class>
+  </servlet>
+
   <servlet-mapping>
     <servlet-name>AlarmApiServlet</servlet-name>
     <url-pattern>/api/alarm</url-pattern>
@@ -45,6 +50,11 @@
   <servlet-mapping>
     <servlet-name>ModbusApiServlet</servlet-name>
     <url-pattern>/api/modbus</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AgentApiServlet</servlet-name>
+    <url-pattern>/api/agent</url-pattern>
   </servlet-mapping>
 
 </web-app>

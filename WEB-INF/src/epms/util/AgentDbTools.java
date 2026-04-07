@@ -354,6 +354,160 @@ public final class AgentDbTools {
         }
     }
 
+    public static String getRecentAlarmContext() {
+        String unresolvedSql =
+            "SELECT COUNT(1) AS cnt FROM dbo.vw_alarm_log WHERE cleared_at IS NULL";
+        String latestSql =
+            "SELECT TOP 5 severity, alarm_type, meter_name, triggered_at, cleared_at, description " +
+            "FROM dbo.vw_alarm_log ORDER BY triggered_at DESC";
+        try (Connection conn = openDbConnection()) {
+            int unresolved = 0;
+            try (PreparedStatement ps = conn.prepareStatement(unresolvedSql)) {
+                ps.setQueryTimeout(5);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) unresolved = rs.getInt("cnt");
+                }
+            }
+
+            StringBuilder sb = new StringBuilder("[Latest alarms]");
+            sb.append(" unresolved=").append(unresolved).append(";");
+            try (PreparedStatement ps = conn.prepareStatement(latestSql)) {
+                ps.setQueryTimeout(5);
+                try (ResultSet rs = ps.executeQuery()) {
+                    int i = 0;
+                    while (rs.next()) {
+                        i++;
+                        String sev = clip(rs.getString("severity"), 20);
+                        String type = clip(rs.getString("alarm_type"), 40);
+                        String meter = clip(rs.getString("meter_name"), 40);
+                        Timestamp trig = rs.getTimestamp("triggered_at");
+                        Timestamp clr = rs.getTimestamp("cleared_at");
+                        String desc = clip(rs.getString("description"), 80);
+
+                        sb.append(" ")
+                            .append(i).append(")")
+                            .append("-".equals(sev) ? "-" : sev)
+                            .append("/")
+                            .append("-".equals(type) ? "-" : type)
+                            .append(" @ ").append("-".equals(meter) ? "-" : meter)
+                            .append(" t=").append(fmtTs(trig))
+                            .append(", cleared=").append(clr == null ? "N" : "Y");
+                        if (!"-".equals(desc)) sb.append(", desc=").append(desc);
+                        sb.append(";");
+                    }
+                    if (i == 0) sb.append(" no recent alarm;");
+                }
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "[Latest alarms] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    public static String getPerMeterPowerContext() {
+        String sql =
+            "SELECT m.meter_id, m.name AS meter_name, m.panel_name, " +
+            "x.measured_at, x.active_power_total, x.energy_consumed_total " +
+            "FROM dbo.meters m " +
+            "OUTER APPLY ( " +
+            "  SELECT TOP 1 measured_at, active_power_total, energy_consumed_total " +
+            "  FROM dbo.measurements ms WHERE ms.meter_id = m.meter_id ORDER BY ms.measured_at DESC " +
+            ") x " +
+            "ORDER BY m.meter_id";
+        try (Connection conn = openDbConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setQueryTimeout(20);
+            try (ResultSet rs = ps.executeQuery()) {
+                StringBuilder sb = new StringBuilder("[Per-meter latest power]");
+                int i = 0;
+                int maxLines = 30;
+                while (rs.next()) {
+                    i++;
+                    if (i <= maxLines) {
+                        int meterId = rs.getInt("meter_id");
+                        String meterName = clip(rs.getString("meter_name"), 40);
+                        String panel = clip(rs.getString("panel_name"), 40);
+                        Timestamp ts = rs.getTimestamp("measured_at");
+                        double kw = rs.getDouble("active_power_total");
+                        double kwh = rs.getDouble("energy_consumed_total");
+                        sb.append(" ")
+                            .append(i).append(")")
+                            .append("meter_id=").append(meterId)
+                            .append(", ").append("-".equals(meterName) ? "-" : meterName)
+                            .append(", panel=").append("-".equals(panel) ? "-" : panel)
+                            .append(", t=").append(fmtTs(ts))
+                            .append(", kW=").append(fmtNum(kw))
+                            .append(", kWh=").append(fmtNum(kwh))
+                            .append(";");
+                    }
+                }
+                if (i == 0) return "[Per-meter latest power] no data";
+                if (i > maxLines) sb.append(" ... total=").append(i).append(" meters");
+                return sb.toString();
+            }
+        } catch (Exception e) {
+            String msg = e.getMessage() == null ? "" : (" (" + clip(e.getMessage(), 80) + ")");
+            return "[Per-meter latest power] unavailable: " + clip(e.getClass().getSimpleName(), 24) + msg;
+        }
+    }
+
+    public static String getHarmonicContext(Integer meterId, String panelTokenCsv) {
+        List<String> panelTokens = splitPanelTokens(panelTokenCsv);
+        String base =
+            "SELECT TOP 1 meter_id, meter_name, panel_name, measured_at, " +
+            "thd_voltage_a, thd_voltage_b, thd_voltage_c, " +
+            "thd_current_a, thd_current_b, thd_current_c, " +
+            "voltage_h3_a, voltage_h5_a, voltage_h7_a, voltage_h9_a, voltage_h11_a, " +
+            "current_h3_a, current_h5_a, current_h7_a, current_h9_a, current_h11_a " +
+            "FROM dbo.vw_harmonic_measurements ";
+
+        boolean filtered = meterId != null;
+        boolean panelFiltered = !filtered && panelTokens != null && !panelTokens.isEmpty();
+        StringBuilder where = new StringBuilder();
+        if (filtered) {
+            where.append("WHERE meter_id = ? ");
+        } else if (panelFiltered) {
+            where.append("WHERE 1=1 ");
+            for (int i = 0; i < panelTokens.size(); i++) {
+                where.append("AND UPPER(REPLACE(REPLACE(panel_name,'_',''),' ','')) LIKE ? ");
+            }
+        }
+        String sql = base + where.toString() + "ORDER BY measured_at DESC";
+
+        try (Connection conn = openDbConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            if (filtered) {
+                ps.setInt(1, meterId.intValue());
+            } else if (panelFiltered) {
+                int pi = 1;
+                for (String token : panelTokens) {
+                    String t = token.replaceAll("[\\s_\\-]+", "").toUpperCase(Locale.ROOT);
+                    ps.setString(pi++, "%" + t + "%");
+                }
+            }
+            ps.setQueryTimeout(8);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return "[Harmonic summary] " + (meterId != null ? ("meter_id=" + meterId + ", ") : "") + "no data";
+                }
+                int rowMeterId = rs.getInt("meter_id");
+                String meterName = clip(rs.getString("meter_name"), 40);
+                String panel = clip(rs.getString("panel_name"), 40);
+                Timestamp ts = rs.getTimestamp("measured_at");
+                return "[Harmonic summary] meter_id=" + rowMeterId
+                    + ", meter=" + ("-".equals(meterName) ? "-" : meterName)
+                    + ", panel=" + ("-".equals(panel) ? "-" : panel)
+                    + ", t=" + fmtTs(ts)
+                    + ", THD_V(A/B/C)=" + fmtNum(rs.getDouble("thd_voltage_a")) + "/" + fmtNum(rs.getDouble("thd_voltage_b")) + "/" + fmtNum(rs.getDouble("thd_voltage_c"))
+                    + ", THD_I(A/B/C)=" + fmtNum(rs.getDouble("thd_current_a")) + "/" + fmtNum(rs.getDouble("thd_current_b")) + "/" + fmtNum(rs.getDouble("thd_current_c"))
+                    + ", Vh(3/5/7/9/11)_A=" + fmtNum(rs.getDouble("voltage_h3_a")) + "/" + fmtNum(rs.getDouble("voltage_h5_a")) + "/" + fmtNum(rs.getDouble("voltage_h7_a")) + "/" + fmtNum(rs.getDouble("voltage_h9_a")) + "/" + fmtNum(rs.getDouble("voltage_h11_a"))
+                    + ", Ih(3/5/7/9/11)_A=" + fmtNum(rs.getDouble("current_h3_a")) + "/" + fmtNum(rs.getDouble("current_h5_a")) + "/" + fmtNum(rs.getDouble("current_h7_a")) + "/" + fmtNum(rs.getDouble("current_h9_a")) + "/" + fmtNum(rs.getDouble("current_h11_a"));
+            }
+        } catch (Exception e) {
+            return "[Harmonic summary] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
     public static String getLatestEnergyContext(Integer meterId, String panelTokenCsv) {
         List<String> panelTokens = splitPanelTokens(panelTokenCsv);
         String baseSelect =

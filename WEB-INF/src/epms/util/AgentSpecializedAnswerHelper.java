@@ -58,6 +58,55 @@ public final class AgentSpecializedAnswerHelper {
         return null;
     }
 
+    public static String chooseAnswer(
+        boolean forceCoderFlow,
+        boolean needsHarmonic,
+        boolean needsFrequency,
+        boolean needsPerMeterPower,
+        boolean needsMeterList,
+        boolean needsPhaseCurrent,
+        boolean needsPhaseVoltage,
+        boolean needsLineVoltage,
+        String harmonicCtx,
+        String frequencyCtx,
+        String powerCtx,
+        String meterListCtx,
+        String phaseCurrentCtx,
+        String phaseVoltageCtx,
+        String lineVoltageCtx,
+        String harmonicAnswer,
+        String frequencyAnswer,
+        String powerAnswer,
+        String meterListUserContext,
+        String phaseCurrentUserContext,
+        String phaseVoltageUserContext,
+        String lineVoltageUserContext
+    ) {
+        if (forceCoderFlow) return null;
+        if (hasText(harmonicCtx) && needsHarmonic) {
+            return harmonicAnswer;
+        }
+        if (hasText(frequencyCtx) && needsFrequency) {
+            return frequencyAnswer;
+        }
+        if (hasText(powerCtx) && needsPerMeterPower) {
+            return powerAnswer;
+        }
+        if (hasText(meterListCtx) && needsMeterList) {
+            return AgentDirectAnswerHelper.chooseUserContextAnswer(meterListUserContext, "계측기 목록을 조회했습니다.");
+        }
+        if (hasText(phaseCurrentCtx) && needsPhaseCurrent) {
+            return AgentDirectAnswerHelper.chooseUserContextAnswer(phaseCurrentUserContext, "상전류를 조회했습니다.");
+        }
+        if (hasText(phaseVoltageCtx) && needsPhaseVoltage) {
+            return AgentDirectAnswerHelper.chooseUserContextAnswer(phaseVoltageUserContext, "상전압을 조회했습니다.");
+        }
+        if (hasText(lineVoltageCtx) && needsLineVoltage) {
+            return AgentDirectAnswerHelper.chooseUserContextAnswer(lineVoltageUserContext, "선간전압을 조회했습니다.");
+        }
+        return null;
+    }
+
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
     }

@@ -99,6 +99,91 @@ public final class AgentExecutionSupport {
         }
     }
 
+    public static AgentRuntimeModels.PlannerRunFlags applyPlannerDecision(
+            AgentRuntimeModels.AgentExecutionContext ctx,
+            String task,
+            Boolean planNeedsFrequency,
+            Boolean planNeedsPower,
+            Boolean planNeedsMeterList,
+            Boolean planNeedsPhaseCurrent,
+            Boolean planNeedsPhaseVoltage,
+            Boolean planNeedsLineVoltage,
+            Boolean planNeedsHarmonic,
+            Integer planMeterId,
+            Integer planMonth,
+            String planMeterScope,
+            String planPhase,
+            String planLinePair,
+            List<String> planPanelTokens,
+            boolean wantsMeterSummary,
+            boolean wantsAlarmSummary,
+            boolean wantsMonthlyFrequencySummary,
+            boolean wantsPerMeterPowerSummary,
+            List<String> fallbackScopeHints) {
+        AgentRuntimeModels.PlannerRunFlags flags = new AgentRuntimeModels.PlannerRunFlags();
+        if (ctx == null) return flags;
+
+        flags.runMeter = ctx.needsMeter;
+        flags.runAlarm = ctx.needsAlarm;
+        flags.runFrequency = ctx.needsFrequency;
+        flags.runPower = ctx.needsPerMeterPower;
+        flags.runMeterList = ctx.needsMeterList;
+        flags.runPhaseCurrent = ctx.needsPhaseCurrent;
+        flags.runPhaseVoltage = ctx.needsPhaseVoltage;
+        flags.runLineVoltage = ctx.needsLineVoltage;
+        flags.runHarmonic = ctx.needsHarmonic;
+
+        if (!isBlank(task)) {
+            String normalizedTask = task.trim().toLowerCase(java.util.Locale.ROOT);
+            if ("meter".equals(normalizedTask)) {
+                flags.runMeter = true;
+                flags.runAlarm = false;
+            } else if ("alarm".equals(normalizedTask)) {
+                flags.runMeter = false;
+                flags.runAlarm = true;
+            } else if ("both".equals(normalizedTask)) {
+                flags.runMeter = true;
+                flags.runAlarm = true;
+            } else if ("none".equals(normalizedTask)) {
+                flags.runMeter = false;
+                flags.runAlarm = false;
+            }
+        }
+
+        if (ctx.needsFrequency && !wantsMeterSummary) flags.runMeter = false;
+        if (ctx.needsFrequency && !wantsAlarmSummary) flags.runAlarm = false;
+        if (ctx.needsPerMeterPower && !wantsMeterSummary) flags.runMeter = false;
+        if (ctx.needsPerMeterPower && !wantsAlarmSummary) flags.runAlarm = false;
+        if (ctx.needsHarmonic && !wantsMeterSummary) flags.runMeter = false;
+        if (ctx.needsHarmonic && !wantsAlarmSummary) flags.runAlarm = false;
+        if (ctx.needsHarmonic && !wantsMonthlyFrequencySummary) flags.runFrequency = false;
+
+        if (planMeterId != null) ctx.requestedMeterId = planMeterId;
+        if (planMonth != null && planMonth.intValue() >= 1 && planMonth.intValue() <= 12) {
+            ctx.requestedMonth = planMonth;
+        }
+        if (planNeedsFrequency != null) flags.runFrequency = flags.runFrequency || planNeedsFrequency.booleanValue();
+        if (planNeedsPower != null) flags.runPower = flags.runPower || planNeedsPower.booleanValue();
+        if (planNeedsMeterList != null) flags.runMeterList = flags.runMeterList || planNeedsMeterList.booleanValue();
+        if (planNeedsPhaseCurrent != null) flags.runPhaseCurrent = flags.runPhaseCurrent || planNeedsPhaseCurrent.booleanValue();
+        if (planNeedsPhaseVoltage != null) flags.runPhaseVoltage = flags.runPhaseVoltage || planNeedsPhaseVoltage.booleanValue();
+        if (planNeedsLineVoltage != null) flags.runLineVoltage = flags.runLineVoltage || planNeedsLineVoltage.booleanValue();
+        if (planNeedsHarmonic != null) flags.runHarmonic = flags.runHarmonic || planNeedsHarmonic.booleanValue();
+        if (flags.runMeterList && !wantsPerMeterPowerSummary) flags.runPower = false;
+        if (ctx.needsHarmonic && !wantsMonthlyFrequencySummary) flags.runFrequency = false;
+
+        if ((ctx.panelTokens == null || ctx.panelTokens.isEmpty()) && planPanelTokens != null && !planPanelTokens.isEmpty()) {
+            ctx.panelTokens = new ArrayList<String>(planPanelTokens);
+        }
+        if (isBlank(ctx.requestedMeterScope) && !isBlank(planMeterScope)) ctx.requestedMeterScope = planMeterScope;
+        if (isBlank(ctx.requestedPhase) && !isBlank(planPhase)) ctx.requestedPhase = planPhase;
+        if (isBlank(ctx.requestedLinePair) && !isBlank(planLinePair)) ctx.requestedLinePair = planLinePair;
+        if (isBlank(ctx.requestedMeterScope) && fallbackScopeHints != null && !fallbackScopeHints.isEmpty()) {
+            ctx.requestedMeterScope = String.join(",", fallbackScopeHints);
+        }
+        return flags;
+    }
+
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
     }

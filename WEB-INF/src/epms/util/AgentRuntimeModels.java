@@ -88,6 +88,42 @@ public final class AgentRuntimeModels {
         public String coderDraft = "";
     }
 
+    public static final class PlannerRunFlags {
+        public boolean runMeter;
+        public boolean runAlarm;
+        public boolean runFrequency;
+        public boolean runPower;
+        public boolean runMeterList;
+        public boolean runPhaseCurrent;
+        public boolean runPhaseVoltage;
+        public boolean runLineVoltage;
+        public boolean runHarmonic;
+
+        public boolean anyEnabled() {
+            return runMeter
+                || runAlarm
+                || runFrequency
+                || runPower
+                || runMeterList
+                || runPhaseCurrent
+                || runPhaseVoltage
+                || runLineVoltage
+                || runHarmonic;
+        }
+    }
+
+    public static final class RuntimeModelSelection {
+        public String ollamaUrl;
+        public String model;
+        public String coderModel;
+        public String aiModel;
+        public String pqModel;
+        public String alarmModel;
+        public int ollamaConnectTimeoutMs;
+        public int ollamaReadTimeoutMs;
+        public long schemaCacheTtlMs;
+    }
+
     public static final class SpecializedAnswerResult {
         public String answer;
     }
