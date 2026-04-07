@@ -237,7 +237,7 @@ public final class ModbusSupport {
             return env;
         }
         if (req == null) {
-            return "http://127.0.0.1:8080/epms/alarm_api.jsp";
+            return "http://127.0.0.1:8080/api/alarm";
         }
         String scheme = EpmsWebUtil.trimToNull(req.getScheme());
         String host = EpmsWebUtil.trimToNull(req.getServerName());
@@ -255,7 +255,7 @@ public final class ModbusSupport {
         boolean defaultPort = ("http".equalsIgnoreCase(scheme) && port == 80)
                 || ("https".equalsIgnoreCase(scheme) && port == 443);
         String portPart = defaultPort ? "" : (":" + port);
-        return scheme + "://" + host + portPart + ctx + "/epms/alarm_api.jsp";
+        return scheme + "://" + host + portPart + ctx + "/api/alarm";
     }
 
     public static int[] invokeAlarmApiPersist(String alarmApiUrl, String actionName, String body) throws Exception {
