@@ -1,5 +1,6 @@
 ﻿﻿<%@ page import="java.io.*,java.net.*,java.util.*,java.sql.*,javax.naming.*,javax.sql.*" trimDirectiveWhitespaces="true" %>
 <%@ page contentType="application/json; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="epms.util.AgentRuntimeModels.AgentRequestContext,epms.util.AgentRuntimeModels.DirectAnswerRequest,epms.util.AgentRuntimeModels.DirectAnswerResult,epms.util.AgentRuntimeModels.AgentExecutionContext,epms.util.AgentRuntimeModels.PlannerExecutionResult,epms.util.AgentRuntimeModels.SpecializedAnswerResult" %>
 
 <%
 request.setCharacterEncoding("UTF-8");
@@ -36,64 +37,6 @@ private static volatile long usageTypeCacheAt = 0L;
 private static volatile long usageAliasCacheAt = 0L;
 private static volatile long buildingNameCacheAt = 0L;
 private static volatile long buildingAliasCacheAt = 0L;
-
-private static class AgentRequestContext {
-    Integer requestedMeterId;
-    String requestedMeterScope;
-    Integer requestedMonth;
-    boolean needsPerMeterPower;
-    boolean needsMeterList;
-    boolean needsPhaseCurrent;
-    boolean needsPhaseVoltage;
-    boolean needsLineVoltage;
-    boolean needsHarmonic;
-    List<String> panelTokens = new ArrayList<String>();
-    String requestedPhase;
-    String requestedLinePair;
-}
-
-private static class DirectAnswerResult {
-    String answer;
-    String dbContext;
-}
-
-private static class AgentExecutionContext {
-    Integer requestedMeterId;
-    String requestedMeterScope;
-    Integer requestedMonth;
-    Integer requestedTopN;
-    String requestedPhase;
-    String requestedLinePair;
-    List<String> panelTokens = new ArrayList<String>();
-    boolean needsMeter;
-    boolean needsAlarm;
-    boolean needsFrequency;
-    boolean needsPerMeterPower;
-    boolean needsMeterList;
-    boolean needsPhaseCurrent;
-    boolean needsPhaseVoltage;
-    boolean needsLineVoltage;
-    boolean needsHarmonic;
-    boolean needsDb;
-    boolean forceCoderFlow;
-}
-
-private static class PlannerExecutionResult {
-    String meterCtx = "";
-    String alarmCtx = "";
-    String frequencyCtx = "";
-    String powerCtx = "";
-    String meterListCtx = "";
-    String phaseCurrentCtx = "";
-    String phaseVoltageCtx = "";
-    String lineVoltageCtx = "";
-    String harmonicCtx = "";
-    String coderDraft = "";
-}
-
-private static class SpecializedAnswerResult {
-    String answer;
-}
 
 private boolean checkRateLimit(String clientIp) {
     long now = System.currentTimeMillis();
@@ -223,372 +166,308 @@ private String fetchOllamaTagList(String ollamaUrl, int connectTimeoutMs, int re
 }
 
 private AgentRequestContext buildAgentRequestContext(String userMessage) {
-    AgentRequestContext ctx = new AgentRequestContext();
-    ctx.requestedMeterId = extractMeterId(userMessage);
-    if (ctx.requestedMeterId == null) {
-        ctx.requestedMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
+    Integer requestedMeterId = extractMeterId(userMessage);
+    if (requestedMeterId == null) {
+        requestedMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
     }
-
-    ctx.requestedMeterScope = extractMeterScopeToken(userMessage);
-    if (ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) {
-        ctx.requestedMeterScope = extractAlarmAreaToken(userMessage);
-    }
-    if (ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) {
-        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-        if (scopeHints != null && !scopeHints.isEmpty()) {
-            ctx.requestedMeterScope = String.join(",", scopeHints);
-        }
-    }
-
-    ctx.requestedMonth = extractMonth(userMessage);
-    ctx.needsPerMeterPower = routedWantsPerMeterPowerSummary(userMessage);
-    ctx.needsMeterList = routedWantsMeterListSummary(userMessage);
-    ctx.needsPhaseCurrent = routedWantsPhaseCurrentValue(userMessage);
-    ctx.needsPhaseVoltage = routedWantsPhaseVoltageValue(userMessage);
-    ctx.needsLineVoltage = routedWantsLineVoltageValue(userMessage);
-    ctx.needsHarmonic = routedWantsHarmonicSummary(userMessage);
-    ctx.panelTokens = ctx.needsPerMeterPower ? new ArrayList<String>() : extractPanelTokens(userMessage);
-    ctx.requestedPhase = extractPhaseLabel(userMessage);
-    ctx.requestedLinePair = extractLinePairLabel(userMessage);
-    return ctx;
+    return epms.util.AgentRequestSupport.buildRequestContext(
+        requestedMeterId,
+        extractMeterScopeToken(userMessage),
+        extractAlarmAreaToken(userMessage),
+        findScopeTokensFromMeterMaster(userMessage, 4),
+        extractMonth(userMessage),
+        routedWantsPerMeterPowerSummary(userMessage),
+        routedWantsMeterListSummary(userMessage),
+        routedWantsPhaseCurrentValue(userMessage),
+        routedWantsPhaseVoltageValue(userMessage),
+        routedWantsLineVoltageValue(userMessage),
+        routedWantsHarmonicSummary(userMessage),
+        extractPanelTokens(userMessage),
+        extractPhaseLabel(userMessage),
+        extractLinePairLabel(userMessage)
+    );
 }
 
 private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forceLlmOnly) throws Exception {
     if (forceLlmOnly) return null;
 
     String directIntentText = normalizeForIntent(userMessage);
-    boolean directPfStandard =
-        (directIntentText.contains("\uC5ED\uB960") || directIntentText.contains("powerfactor") || directIntentText.contains("pf"))
-        && (directIntentText.contains("\uAE30\uC900") || directIntentText.contains("\uAE30\uC900\uCE58") || directIntentText.contains("\uD45C\uC900") || directIntentText.contains("standard"))
-        && directIntentText.contains("ieee");
-    boolean directTripOnly =
-        routedWantsTripAlarmOnly(userMessage)
-        || directIntentText.contains("\uD2B8\uB9BD")
-        || directIntentText.contains("trip")
-        || directIntentText.contains("\uD2B8\uB9BC");
-    boolean directAlarmCountIntent =
-        routedWantsAlarmCountSummary(userMessage)
-        || localWantsAlarmCountSummary(userMessage);
-    boolean directOpenAlarmsIntent =
-        routedWantsOpenAlarms(userMessage)
-        || localWantsOpenAlarms(userMessage);
-    boolean directOpenAlarmCountIntent =
-        routedWantsOpenAlarmCountSummary(userMessage)
-        || localWantsOpenAlarmCountSummary(userMessage)
-        || (directOpenAlarmsIntent && directAlarmCountIntent);
-    boolean directScopedMonthlyEnergyIntent = localWantsScopedMonthlyEnergySummary(userMessage);
-
     Integer directMeterId = extractMeterId(userMessage);
     if (directMeterId == null) {
         directMeterId = resolveMeterIdByName(extractMeterNameToken(userMessage));
     }
-    Integer directMonth = extractMonth(userMessage);
-    Integer directTopN = extractTopN(userMessage, 10, 50);
-    Integer directDays = extractDays(userMessage, 7, 90);
-    Integer directExplicitDays = extractExplicitDays(userMessage, 90);
     TimeWindow directWindow = extractTimeWindow(userMessage);
-    Double directHz = extractHzThreshold(userMessage);
-    Double directPf = extractPfThreshold(userMessage);
-    String directAlarmTypeToken = extractAlarmTypeToken(userMessage);
-    if (directTripOnly && (directAlarmTypeToken == null || directAlarmTypeToken.trim().isEmpty())) {
-        directAlarmTypeToken = "TRIP";
-    }
-    String directAlarmAreaToken = extractAlarmAreaToken(userMessage);
-    if (directAlarmAreaToken == null || directAlarmAreaToken.trim().isEmpty()) {
-        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-        if (scopeHints != null && !scopeHints.isEmpty()) {
-            directAlarmAreaToken = String.join(",", scopeHints);
-        }
-    }
-    String directMeterScopeToken = extractMeterScopeToken(userMessage);
-    if ((directMeterScopeToken == null || directMeterScopeToken.trim().isEmpty()) &&
-        directAlarmAreaToken != null && !directAlarmAreaToken.trim().isEmpty()) {
-        directMeterScopeToken = directAlarmAreaToken;
-    }
-    if ((directMeterScopeToken == null || directMeterScopeToken.trim().isEmpty()) && directScopedMonthlyEnergyIntent) {
-        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-        if (scopeHints != null && !scopeHints.isEmpty()) {
-            directMeterScopeToken = String.join(",", scopeHints);
-        } else {
-            directMeterScopeToken = extractScopedAreaTokenFallback(userMessage);
-        }
-    }
+    List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
     List<String> directPanelTokens = extractPanelTokens(userMessage);
-    if (directIntentText.contains("전체") || directIntentText.contains("전부") || directIntentText.contains("모두") || directIntentText.contains("all")) {
-        directTopN = Integer.valueOf(50);
-    }
     if (routedWantsPanelLatestStatus(userMessage) && (directPanelTokens == null || directPanelTokens.isEmpty())) {
         directPanelTokens = extractPanelTokensLoose(userMessage);
     }
+    DirectAnswerRequest directReq = epms.util.AgentRequestSupport.buildDirectAnswerRequest(
+        directIntentText,
+        routedWantsTripAlarmOnly(userMessage),
+        routedWantsAlarmCountSummary(userMessage),
+        localWantsAlarmCountSummary(userMessage),
+        routedWantsOpenAlarms(userMessage),
+        localWantsOpenAlarms(userMessage),
+        routedWantsOpenAlarmCountSummary(userMessage),
+        localWantsOpenAlarmCountSummary(userMessage),
+        localWantsScopedMonthlyEnergySummary(userMessage),
+        directMeterId,
+        extractMonth(userMessage),
+        extractTopN(userMessage, 10, 50),
+        extractDays(userMessage, 7, 90),
+        extractExplicitDays(userMessage, 90),
+        directWindow != null ? directWindow.fromTs : null,
+        directWindow != null ? directWindow.toTs : null,
+        directWindow != null ? directWindow.label : null,
+        extractHzThreshold(userMessage),
+        extractPfThreshold(userMessage),
+        extractAlarmTypeToken(userMessage),
+        extractAlarmAreaToken(userMessage),
+        extractMeterScopeToken(userMessage),
+        extractScopedAreaTokenFallback(userMessage),
+        scopeHints,
+        directPanelTokens,
+        extractPhaseLabel(userMessage),
+        extractLinePairLabel(userMessage),
+        routedWantsPanelLatestStatus(userMessage)
+    );
 
     DirectAnswerResult result = new DirectAnswerResult();
-    if (directPfStandard) {
+    if (directReq.directPfStandard) {
         result.dbContext = "[PF standard] IEEE";
         result.answer = buildPowerFactorStandardDirectAnswer(userMessage);
     } else if (isBareEnergyValueQuestion(userMessage)) {
         result.dbContext = "[Energy value] target required";
         result.answer = "전력량을 조회할 대상이 필요합니다. 예: 1번 계측기의 현재 전력량은?, EAST_VCB_MAIN의 현재 전력량은?";
-    } else if (directScopedMonthlyEnergyIntent) {
-        result.dbContext = getScopedMonthlyEnergyContext(directMeterScopeToken, directMonth);
+    } else if (directReq.directScopedMonthlyEnergyIntent) {
+        result.dbContext = getScopedMonthlyEnergyContext(directReq.directMeterScopeToken, directReq.directMonth);
         result.answer = buildScopedMonthlyEnergyDirectAnswer(result.dbContext);
     } else if (routedWantsVoltageAverageSummary(userMessage)) {
-        Timestamp fromTs = directWindow != null ? directWindow.fromTs : null;
-        Timestamp toTs = directWindow != null ? directWindow.toTs : null;
-        String periodLabel = directWindow != null ? directWindow.label : null;
-        Integer daysFallback = (directWindow == null ? directExplicitDays : null);
-        result.dbContext = getVoltageAverageContext(directMeterId, directPanelTokens, fromTs, toTs, periodLabel, daysFallback);
-        result.answer = buildVoltageAverageDirectAnswer(result.dbContext, directMeterId);
+        Integer daysFallback = (directReq.directFromTs == null ? directReq.directExplicitDays : null);
+        return epms.util.AgentDirectPowerHelper.voltageAverage(
+            getVoltageAverageContext(directReq.directMeterId, directReq.directPanelTokens, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel, daysFallback),
+            directReq.directMeterId
+        );
     } else if (routedWantsMonthlyFrequencySummary(userMessage)) {
-        result.dbContext = getMonthlyAvgFrequencyContext(directMeterId, directMonth);
-        result.answer = buildFrequencyDirectAnswer(result.dbContext, directMeterId, directMonth);
+        return epms.util.AgentDirectPowerHelper.frequency(
+            getMonthlyAvgFrequencyContext(directReq.directMeterId, directReq.directMonth),
+            directReq.directMeterId,
+            directReq.directMonth
+        );
     } else if (routedWantsMonthlyPeakPower(userMessage)) {
-        result.dbContext = getMonthlyPeakPowerContext(directMeterId, directMonth);
-        result.answer = buildMonthlyPeakPowerDirectAnswer(result.dbContext);
+        return epms.util.AgentDirectPowerHelper.monthlyPeak(
+            getMonthlyPeakPowerContext(directReq.directMeterId, directReq.directMonth)
+        );
     } else if (routedWantsMonthlyPowerStats(userMessage)) {
-        result.dbContext = getMonthlyPowerStatsContext(directMeterId, directMonth);
-        result.answer = buildMonthlyPowerStatsDirectAnswer(result.dbContext);
+        return epms.util.AgentDirectPowerHelper.monthlyPowerStats(
+            getMonthlyPowerStatsContext(directReq.directMeterId, directReq.directMonth)
+        );
     } else if (routedWantsBuildingPowerTopN(userMessage)) {
-        result.dbContext = getBuildingPowerTopNContext(directMonth, directTopN);
-        result.answer = buildBuildingPowerTopDirectAnswer(result.dbContext);
+        return epms.util.AgentDirectPowerHelper.buildingPowerTop(
+            getBuildingPowerTopNContext(directReq.directMonth, directReq.directTopN)
+        );
     } else if (routedWantsVoltagePhaseAngle(userMessage)) {
-        result.dbContext = getVoltagePhaseAngleContext(directMeterId);
-        String userCtx = buildUserDbContext(result.dbContext);
-        result.answer = (userCtx == null || userCtx.trim().isEmpty())
-            ? "전압 위상각을 조회했습니다."
-            : userCtx;
+        String ctx = getVoltagePhaseAngleContext(directReq.directMeterId);
+        return epms.util.AgentDirectResultHelper.simple(ctx, buildUserDbContext(ctx), "전압 위상각을 조회했습니다.");
     } else if (routedWantsReactiveEnergyValue(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getEnergyDeltaContext(directMeterId, directWindow.fromTs, directWindow.toTs, directWindow.label, true);
-            result.answer = buildEnergyDeltaDirectAnswer(result.dbContext, true);
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectPowerHelper.energyDelta(
+                getEnergyDeltaContext(directReq.directMeterId, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel, true),
+                true
+            );
         } else {
-            result.dbContext = getLatestEnergyContext(directMeterId, directPanelTokens);
-            result.answer = buildEnergyValueDirectAnswer(result.dbContext, true);
+            return epms.util.AgentDirectPowerHelper.energyValue(
+                getLatestEnergyContext(directReq.directMeterId, directReq.directPanelTokens),
+                true
+            );
         }
     } else if (routedWantsEnergyValue(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getEnergyDeltaContext(directMeterId, directWindow.fromTs, directWindow.toTs, directWindow.label, false);
-            result.answer = buildEnergyDeltaDirectAnswer(result.dbContext, false);
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectPowerHelper.energyDelta(
+                getEnergyDeltaContext(directReq.directMeterId, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel, false),
+                false
+            );
         } else {
-            result.dbContext = getLatestEnergyContext(directMeterId, directPanelTokens);
-            result.answer = buildEnergyValueDirectAnswer(result.dbContext, false);
+            return epms.util.AgentDirectPowerHelper.energyValue(
+                getLatestEnergyContext(directReq.directMeterId, directReq.directPanelTokens),
+                false
+            );
         }
     } else if (routedWantsActivePowerValue(userMessage)) {
-        result.dbContext = getRecentMeterContext(directMeterId, directPanelTokens);
-        result.answer = buildPowerValueDirectAnswer(result.dbContext, false);
+        return epms.util.AgentDirectPowerHelper.powerValue(
+            getRecentMeterContext(directReq.directMeterId, directReq.directPanelTokens),
+            false
+        );
     } else if (routedWantsReactivePowerValue(userMessage)) {
-        result.dbContext = getRecentMeterContext(directMeterId, directPanelTokens);
-        result.answer = buildPowerValueDirectAnswer(result.dbContext, true);
+        return epms.util.AgentDirectPowerHelper.powerValue(
+            getRecentMeterContext(directReq.directMeterId, directReq.directPanelTokens),
+            true
+        );
     } else if (routedWantsCurrentPhaseAngle(userMessage)) {
-        result.dbContext = getCurrentPhaseAngleContext(directMeterId);
-        String userCtx = buildUserDbContext(result.dbContext);
-        result.answer = (userCtx == null || userCtx.trim().isEmpty())
-            ? "전류 위상각을 조회했습니다."
-            : userCtx;
+        String ctx = getCurrentPhaseAngleContext(directReq.directMeterId);
+        return epms.util.AgentDirectResultHelper.simple(ctx, buildUserDbContext(ctx), "전류 위상각을 조회했습니다.");
     } else if (routedWantsPhaseCurrentValue(userMessage)) {
-        result.dbContext = getPhaseCurrentContext(directMeterId, extractPhaseLabel(userMessage));
-        String userCtx = buildUserDbContext(result.dbContext);
-        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전류를 조회했습니다." : userCtx;
+        String ctx = getPhaseCurrentContext(directReq.directMeterId, directReq.directPhaseLabel);
+        return epms.util.AgentDirectResultHelper.simple(ctx, buildUserDbContext(ctx), "상전류를 조회했습니다.");
     } else if (routedWantsPhaseVoltageValue(userMessage)) {
-        result.dbContext = getPhaseVoltageContext(directMeterId, extractPhaseLabel(userMessage));
-        String userCtx = buildUserDbContext(result.dbContext);
-        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "상전압을 조회했습니다." : userCtx;
+        String ctx = getPhaseVoltageContext(directReq.directMeterId, directReq.directPhaseLabel);
+        return epms.util.AgentDirectResultHelper.simple(ctx, buildUserDbContext(ctx), "상전압을 조회했습니다.");
     } else if (routedWantsLineVoltageValue(userMessage)) {
-        result.dbContext = getLineVoltageContext(directMeterId, extractLinePairLabel(userMessage));
-        String userCtx = buildUserDbContext(result.dbContext);
-        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "선간전압을 조회했습니다." : userCtx;
+        String ctx = getLineVoltageContext(directReq.directMeterId, directReq.directLinePairLabel);
+        return epms.util.AgentDirectResultHelper.simple(ctx, buildUserDbContext(ctx), "선간전압을 조회했습니다.");
     } else if (localWantsUsageMeterCountSummary(userMessage)) {
         String usageCountToken = extractUsageTokenFallback(userMessage);
         if (usageCountToken == null && normalizeForIntent(userMessage).contains("비상")) {
             usageCountToken = "비상";
         }
         result.dbContext = getMeterCountContext(usageCountToken);
-        if (result.dbContext.contains("unavailable")) {
-            result.answer = "현재 용도별 계측기 수를 조회할 수 없습니다.";
-        } else {
-            java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(result.dbContext);
-            int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
-            String usageLabel = usageCountToken == null ? "해당" : usageCountToken;
-            result.answer = usageLabel + " 용도 계측기는 총 " + count + "개입니다.";
-        }
-    } else if (routedWantsMeterCountSummary(userMessage) && !directAlarmCountIntent && !directOpenAlarmCountIntent) {
+        result.answer = epms.util.AgentDirectAnswerHelper.buildUsageMeterCountAnswer(result.dbContext, usageCountToken);
+    } else if (routedWantsMeterCountSummary(userMessage) && !directReq.directAlarmCountIntent && !directReq.directOpenAlarmCountIntent) {
         String meterCountIntent = normalizeForIntent(userMessage);
-        String meterCountScopeToken = shouldTreatAsGlobalMeterCount(userMessage, directMeterScopeToken) ? null : directMeterScopeToken;
+        String meterCountScopeToken = shouldTreatAsGlobalMeterCount(userMessage, directReq.directMeterScopeToken) ? null : directReq.directMeterScopeToken;
         if (meterCountIntent.contains("시스템의계측기수") || meterCountIntent.contains("이시스템의계측기수")) {
             meterCountScopeToken = null;
         }
         result.dbContext = getMeterCountContext(meterCountScopeToken);
-        if (result.dbContext.contains("unavailable")) {
-            result.answer = "현재 계측기 수를 조회할 수 없습니다.";
-        } else {
-            java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(result.dbContext);
-            int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
-            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(result.dbContext);
-            String scopeLabel = sm.find() ? trimToNull(sm.group(1)) : null;
-            result.answer = (scopeLabel == null || scopeLabel.isEmpty())
-                ? ("현재 등록된 계측기는 총 " + count + "개입니다.")
-                : (scopeLabel + " 관련 계측기는 총 " + count + "개입니다.");
-        }
+        result.answer = epms.util.AgentDirectAnswerHelper.buildMeterCountAnswer(result.dbContext);
     } else if (localWantsUsageMeterTopSummary(userMessage)) {
-        result.dbContext = getUsageMeterTopNContext(directTopN);
+        result.dbContext = getUsageMeterTopNContext(directReq.directTopN);
         result.answer = buildUsageMeterTopDirectAnswer(result.dbContext);
     } else if (routedWantsUsageTypeListSummary(userMessage) || localWantsUsageTypeListSummary(userMessage)) {
-        result.dbContext = getUsageTypeListContext(directTopN);
+        result.dbContext = getUsageTypeListContext(directReq.directTopN);
         result.answer = buildUsageTypeListDirectAnswer(result.dbContext);
-    } else if (routedWantsMeterListSummary(userMessage) && !directAlarmCountIntent && !directOpenAlarmCountIntent) {
-        result.dbContext = getMeterListContext(directMeterScopeToken, directTopN);
-        String userCtx = buildUserDbContext(result.dbContext);
-        result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "계측기 목록을 조회했습니다." : userCtx;
+    } else if (routedWantsMeterListSummary(userMessage) && !directReq.directAlarmCountIntent && !directReq.directOpenAlarmCountIntent) {
+        String ctx = getMeterListContext(directReq.directMeterScopeToken, directReq.directTopN);
+        return epms.util.AgentDirectResultHelper.simple(ctx, buildUserDbContext(ctx), "계측기 목록을 조회했습니다.");
     } else if (routedWantsBuildingCountSummary(userMessage)) {
         result.dbContext = getBuildingCountContext();
-        if (result.dbContext.contains("unavailable")) {
-            result.answer = "현재 건물 수를 조회할 수 없습니다.";
-        } else {
-            java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(result.dbContext);
-            int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
-            result.answer = "현재 등록된 건물은 총 " + count + "개입니다.";
-        }
+        result.answer = epms.util.AgentDirectAnswerHelper.buildBuildingCountAnswer(result.dbContext);
     } else if (routedWantsUsageTypeCountSummary(userMessage)) {
         result.dbContext = getUsageTypeCountContext();
-        if (result.dbContext.contains("unavailable")) {
-            result.answer = "현재 용도 수를 조회할 수 없습니다.";
-        } else {
-            java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(result.dbContext);
-            int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
-            result.answer = "현재 등록된 용도는 총 " + count + "개입니다.";
-        }
+        result.answer = epms.util.AgentDirectAnswerHelper.buildUsageTypeCountAnswer(result.dbContext);
     } else if (routedWantsPanelCountSummary(userMessage)) {
-        String panelCountScopeToken = shouldTreatAsGlobalPanelCount(userMessage, directMeterScopeToken) ? null : directMeterScopeToken;
+        String panelCountScopeToken = shouldTreatAsGlobalPanelCount(userMessage, directReq.directMeterScopeToken) ? null : directReq.directMeterScopeToken;
         result.dbContext = getPanelCountContext(panelCountScopeToken);
-        if (result.dbContext.contains("unavailable")) {
-            result.answer = "현재 패널 수를 조회할 수 없습니다.";
-        } else {
-            java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(result.dbContext);
-            int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
-            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(result.dbContext);
-            String scopeLabel = sm.find() ? trimToNull(sm.group(1)) : null;
-            result.answer = (scopeLabel == null || scopeLabel.isEmpty())
-                ? ("현재 등록된 패널은 총 " + count + "개입니다.")
-                : (scopeLabel + " 관련 패널은 총 " + count + "개입니다.");
-        }
+        result.answer = epms.util.AgentDirectAnswerHelper.buildPanelCountAnswer(result.dbContext);
     } else if (routedWantsPanelLatestStatus(userMessage)) {
-        result.dbContext = getPanelLatestStatusContext(directPanelTokens, directTopN);
-        if (result.dbContext.contains("no data")) {
-            result.answer = "패널 최신 상태 데이터가 없습니다.";
-        } else {
-            String userCtx = buildUserDbContext(result.dbContext);
-            result.answer = (userCtx == null || userCtx.trim().isEmpty())
-                ? "패널 최신 상태를 조회했습니다."
-                : userCtx;
-        }
+        result.dbContext = getPanelLatestStatusContext(directReq.directPanelTokens, directReq.directTopN);
+        String userCtx = buildUserDbContext(result.dbContext);
+        return epms.util.AgentDirectResultHelper.panelLatest(result.dbContext, userCtx);
     } else if (routedWantsAlarmMeterTopN(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getAlarmMeterTopNContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directTopN);
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectAlarmHelper.alarmMeterTop(
+                getAlarmMeterTopNContext(directReq.directDays, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel, directReq.directTopN)
+            );
         } else {
-            result.dbContext = getAlarmMeterTopNContext(directDays, null, null, null, directTopN);
+            return epms.util.AgentDirectAlarmHelper.alarmMeterTop(
+                getAlarmMeterTopNContext(directReq.directDays, null, null, null, directReq.directTopN)
+            );
         }
-        result.answer = buildAlarmMeterTopDirectAnswer(result.dbContext);
     } else if (localWantsUsageAlarmTopSummary(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getUsageAlarmTopNContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directTopN);
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectAlarmHelper.usageAlarmTop(
+                getUsageAlarmTopNContext(directReq.directDays, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel, directReq.directTopN)
+            );
         } else {
-            result.dbContext = getUsageAlarmTopNContext(directDays, null, null, null, directTopN);
+            return epms.util.AgentDirectAlarmHelper.usageAlarmTop(
+                getUsageAlarmTopNContext(directReq.directDays, null, null, null, directReq.directTopN)
+            );
         }
-        result.answer = buildUsageAlarmTopDirectAnswer(result.dbContext);
     } else if (routedWantsAlarmTypeSummary(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getAlarmTypeSummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directTripOnly, directTopN);
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectAlarmHelper.alarmType(
+                getAlarmTypeSummaryContext(directReq.directDays, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel, directReq.directMeterId, directReq.directTripOnly, directReq.directTopN)
+            );
         } else {
-            result.dbContext = getAlarmTypeSummaryContext(directDays, null, null, null, directMeterId, directTripOnly, directTopN);
+            return epms.util.AgentDirectAlarmHelper.alarmType(
+                getAlarmTypeSummaryContext(directReq.directDays, null, null, null, directReq.directMeterId, directReq.directTripOnly, directReq.directTopN)
+            );
         }
-        result.answer = buildAlarmTypeDirectAnswer(result.dbContext);
-    } else if (directOpenAlarmCountIntent) {
+    } else if (directReq.directOpenAlarmCountIntent) {
         result.dbContext = getOpenAlarmCountContext(
-            directWindow != null ? directWindow.fromTs : null,
-            directWindow != null ? directWindow.toTs : null,
-            directWindow != null ? directWindow.label : null,
-            directMeterId,
-            directAlarmTypeToken,
-            directAlarmAreaToken
+            directReq.directFromTs,
+            directReq.directToTs,
+            directReq.directPeriodLabel,
+            directReq.directMeterId,
+            directReq.directAlarmTypeToken,
+            directReq.directAlarmAreaToken
         );
-        if (result.dbContext.contains("unavailable")) {
-            result.answer = "현재 열린 알람 수를 조회할 수 없습니다.";
-        } else {
-            java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(result.dbContext);
-            int count = cm.find() ? Integer.parseInt(cm.group(1)) : 0;
-            java.util.regex.Matcher tm = java.util.regex.Pattern.compile("type=([^;]+)").matcher(result.dbContext);
-            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("scope=([^;]+)").matcher(result.dbContext);
-            String typeLabel = tm.find() ? trimToNull(tm.group(1)) : null;
-            String scopeLabel = sm.find() ? trimToNull(sm.group(1)) : null;
-            String subject = (typeLabel == null || typeLabel.isEmpty()) ? "열린 알람" : ("열린 " + typeLabel + " 알람");
-            result.answer = (scopeLabel == null || scopeLabel.isEmpty())
-                ? ("현재 " + subject + "은 총 " + count + "건입니다.")
-                : (scopeLabel + " " + subject + "은 총 " + count + "건입니다.");
-        }
+        result.answer = epms.util.AgentDirectAnswerHelper.buildOpenAlarmCountAnswer(result.dbContext);
     } else if (routedWantsAlarmSeveritySummary(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getAlarmSeveritySummaryContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectAlarmHelper.alarmSeverity(
+                getAlarmSeveritySummaryContext(directReq.directDays, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel)
+            );
         } else {
-            result.dbContext = getAlarmSeveritySummaryContext(directDays);
+            return epms.util.AgentDirectAlarmHelper.alarmSeverity(
+                getAlarmSeveritySummaryContext(directReq.directDays)
+            );
         }
-        result.answer = buildAlarmSeverityDirectAnswer(result.dbContext);
-    } else if (directAlarmCountIntent && extractUsageTokenFallback(userMessage) != null) {
+    } else if (directReq.directAlarmCountIntent && extractUsageTokenFallback(userMessage) != null) {
         String usageToken = extractUsageTokenFallback(userMessage);
-        if (directWindow != null) {
-            result.dbContext = getUsageAlarmCountContext(usageToken, directDays, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectAlarmHelper.usageAlarmCount(
+                getUsageAlarmCountContext(usageToken, directReq.directDays, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel)
+            );
         } else {
-            result.dbContext = getUsageAlarmCountContext(usageToken, directDays, null, null, null);
+            return epms.util.AgentDirectAlarmHelper.usageAlarmCount(
+                getUsageAlarmCountContext(usageToken, directReq.directDays, null, null, null)
+            );
         }
-        result.answer = buildUsageAlarmCountDirectAnswer(result.dbContext);
-    } else if (directAlarmCountIntent) {
-        if (directWindow != null) {
-            result.dbContext = getAlarmCountContext(directDays, directWindow.fromTs, directWindow.toTs, directWindow.label, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
+    } else if (directReq.directAlarmCountIntent) {
+        if (directReq.directFromTs != null) {
+            result.dbContext = getAlarmCountContext(directReq.directDays, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel, directReq.directMeterId, directReq.directAlarmTypeToken, directReq.directAlarmAreaToken);
         } else {
-            result.dbContext = getAlarmCountContext(directDays, null, null, null, directMeterId, directAlarmTypeToken, directAlarmAreaToken);
+            result.dbContext = getAlarmCountContext(directReq.directDays, null, null, null, directReq.directMeterId, directReq.directAlarmTypeToken, directReq.directAlarmAreaToken);
         }
         String userCtx = buildUserDbContext(result.dbContext);
         result.answer = (userCtx == null || userCtx.trim().isEmpty()) ? "알람 건수를 조회했습니다." : userCtx;
-    } else if (directOpenAlarmsIntent) {
-        if (directWindow != null) {
-            result.dbContext = getOpenAlarmsContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+    } else if (directReq.directOpenAlarmsIntent) {
+        if (directReq.directFromTs != null) {
+            return epms.util.AgentDirectAlarmHelper.openAlarms(
+                getOpenAlarmsContext(directReq.directTopN, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel)
+            );
         } else {
-            result.dbContext = getOpenAlarmsContext(directTopN);
+            return epms.util.AgentDirectAlarmHelper.openAlarms(
+                getOpenAlarmsContext(directReq.directTopN)
+            );
         }
-        result.answer = buildOpenAlarmsDirectAnswer(result.dbContext);
     } else if (routedWantsHarmonicExceed(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getHarmonicExceedListContext(null, null, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        if (directReq.directFromTs != null) {
+            result.dbContext = getHarmonicExceedListContext(null, null, directReq.directTopN, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel);
         } else {
-            result.dbContext = getHarmonicExceedListContext(null, null, directTopN);
+            result.dbContext = getHarmonicExceedListContext(null, null, directReq.directTopN);
         }
         result.answer = buildHarmonicExceedDirectAnswer(result.dbContext);
     } else if (routedWantsFrequencyOutlier(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getFrequencyOutlierListContext(directHz, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        if (directReq.directFromTs != null) {
+            result.dbContext = getFrequencyOutlierListContext(directReq.directHz, directReq.directTopN, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel);
         } else {
-            result.dbContext = getFrequencyOutlierListContext(directHz, directTopN);
+            result.dbContext = getFrequencyOutlierListContext(directReq.directHz, directReq.directTopN);
         }
         result.answer = buildFrequencyOutlierDirectAnswer(result.dbContext);
     } else if (routedWantsVoltageUnbalanceTopN(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getVoltageUnbalanceTopNContext(directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        if (directReq.directFromTs != null) {
+            result.dbContext = getVoltageUnbalanceTopNContext(directReq.directTopN, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel);
         } else {
-            result.dbContext = getVoltageUnbalanceTopNContext(directTopN);
+            result.dbContext = getVoltageUnbalanceTopNContext(directReq.directTopN);
         }
         result.answer = buildVoltageUnbalanceTopDirectAnswer(result.dbContext);
     } else if (routedWantsPowerFactorOutlier(userMessage)) {
-        if (directWindow != null) {
-            result.dbContext = getPowerFactorOutlierListContext(directPf, directTopN, directWindow.fromTs, directWindow.toTs, directWindow.label);
+        if (directReq.directFromTs != null) {
+            result.dbContext = getPowerFactorOutlierListContext(directReq.directPf, directReq.directTopN, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel);
         } else {
-            result.dbContext = getPowerFactorOutlierListContext(directPf, directTopN);
+            result.dbContext = getPowerFactorOutlierListContext(directReq.directPf, directReq.directTopN);
         }
-        int pfNoSignalCount = directWindow != null
-            ? getPowerFactorNoSignalCount(directWindow.fromTs, directWindow.toTs)
+        int pfNoSignalCount = directReq.directFromTs != null
+            ? getPowerFactorNoSignalCount(directReq.directFromTs, directReq.directToTs)
             : getPowerFactorNoSignalCount();
         result.answer = buildPowerFactorOutlierDirectAnswer(result.dbContext, pfNoSignalCount);
         if ((result.dbContext.contains("none") || result.dbContext.contains("no data")) && pfNoSignalCount > 0) {
-            int noSignalTopN = (directIntentText.contains("전체") || directIntentText.contains("전부") || directIntentText.contains("모두") || directIntentText.contains("all")) ? 50 : 10;
-            String noSignalCtx = directWindow != null
-                ? getPowerFactorNoSignalListContext(noSignalTopN, directWindow.fromTs, directWindow.toTs, directWindow.label)
+            int noSignalTopN = (directReq.directIntentText.contains("전체") || directReq.directIntentText.contains("전부") || directReq.directIntentText.contains("모두") || directReq.directIntentText.contains("all")) ? 50 : 10;
+            String noSignalCtx = directReq.directFromTs != null
+                ? getPowerFactorNoSignalListContext(noSignalTopN, directReq.directFromTs, directReq.directToTs, directReq.directPeriodLabel)
                 : getPowerFactorNoSignalListContext(noSignalTopN, null, null, null);
             String snippet = buildPowerFactorNoSignalListSnippet(noSignalCtx);
             if (snippet != null && !snippet.trim().isEmpty()) {
@@ -596,12 +475,14 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
             }
         }
     } else if (routedWantsHarmonicSummary(userMessage) && !routedWantsHarmonicExceed(userMessage)) {
-        result.dbContext = getHarmonicContext(directMeterId, directPanelTokens);
-        result.answer = buildHarmonicDirectAnswer(result.dbContext, directMeterId);
+        return epms.util.AgentDirectPowerHelper.harmonic(
+            getHarmonicContext(directReq.directMeterId, directReq.directPanelTokens),
+            directReq.directMeterId
+        );
     } else if (routedWantsMeterSummary(userMessage) || routedWantsAlarmSummary(userMessage)) {
         boolean needMeterSummary = routedWantsMeterSummary(userMessage);
         boolean needAlarmSummary = routedWantsAlarmSummary(userMessage);
-        String meterCtx = needMeterSummary ? getRecentMeterContext(directMeterId, directPanelTokens) : "";
+        String meterCtx = needMeterSummary ? getRecentMeterContext(directReq.directMeterId, directReq.directPanelTokens) : "";
         String alarmCtx = needAlarmSummary ? getRecentAlarmContext() : "";
         StringBuilder dbSb = new StringBuilder();
         if (meterCtx != null && !meterCtx.trim().isEmpty()) dbSb.append("Meter: ").append(meterCtx);
@@ -625,7 +506,7 @@ private DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forc
                     : userCtx;
             }
         } else if (!needMeterSummary && needAlarmSummary) {
-            result.answer = buildLatestAlarmsDirectAnswer(alarmCtx);
+            result.answer = epms.util.AgentDirectAlarmHelper.latestAlarms(alarmCtx).answer;
         } else {
             result.answer = buildDirectDbSummary(userMessage, meterCtx, alarmCtx);
             if (result.answer == null || result.answer.trim().isEmpty()) {
@@ -681,95 +562,30 @@ private DirectAnswerResult tryBuildCriticalDirectAnswer(String userMessage, bool
         return result;
     }
 
-    if (localWantsHarmonicExceedStandard(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Harmonic exceed standard] thdV>3.0, thdI>20.0";
-        result.answer = buildHarmonicExceedStandardDirectAnswer();
-        return result;
-    }
-
-    if (localWantsFrequencyOpsGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Frequency ops guide]";
-        result.answer = buildFrequencyOpsGuideDirectAnswer();
-        return result;
-    }
-
-    if (localWantsHarmonicOpsGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Harmonic ops guide]";
-        result.answer = buildHarmonicOpsGuideDirectAnswer();
-        return result;
-    }
-
-    if (localWantsUnbalanceOpsGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Unbalance ops guide]";
-        result.answer = buildUnbalanceOpsGuideDirectAnswer();
-        return result;
-    }
-
-    if (localWantsVoltageOpsGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Voltage ops guide]";
-        result.answer = buildVoltageOpsGuideDirectAnswer();
-        return result;
-    }
-
-    if (localWantsCurrentOpsGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Current ops guide]";
-        result.answer = buildCurrentOpsGuideDirectAnswer();
-        return result;
-    }
-
-    if (localWantsCommunicationOpsGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Communication ops guide]";
-        result.answer = buildCommunicationOpsGuideDirectAnswer();
-        return result;
-    }
-
-    if (localWantsAlarmTrendGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Alarm trend guide]";
-        result.answer = buildAlarmTrendGuideDirectAnswer(extractMonth(userMessage));
-        return result;
-    }
-
-    if (localWantsPeakCauseGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Peak cause guide]";
-        result.answer = buildPeakCauseGuideDirectAnswer(extractMonth(userMessage));
-        return result;
-    }
-
-    if (localWantsPowerFactorOpsGuide(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[PF ops guide]";
-        result.answer = buildPowerFactorOpsGuideDirectAnswer();
-        return result;
-    }
-
-    if (localWantsPowerFactorThreshold(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[PF threshold] 0.9/0.95";
-        result.answer = buildPowerFactorThresholdDirectAnswer();
-        return result;
-    }
-
-    if (localWantsEpmsKnowledge(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[EPMS knowledge]";
-        result.answer = buildEpmsKnowledgeDirectAnswer();
-        return result;
-    }
-
-    if (localWantsFrequencyOutlierStandard(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Frequency outlier standard] threshold<59.5 or >60.5";
-        result.answer = buildFrequencyOutlierStandardDirectAnswer();
-        return result;
+    Integer criticalMonth = extractMonth(userMessage);
+    DirectAnswerResult staticCriticalResult = epms.util.AgentCriticalDirectAnswerHelper.tryBuildStaticCriticalAnswer(
+        userMessage,
+        criticalMonth,
+        localWantsHarmonicExceedStandard(userMessage),
+        localWantsFrequencyOpsGuide(userMessage),
+        localWantsHarmonicOpsGuide(userMessage),
+        localWantsUnbalanceOpsGuide(userMessage),
+        localWantsVoltageOpsGuide(userMessage),
+        localWantsCurrentOpsGuide(userMessage),
+        localWantsCommunicationOpsGuide(userMessage),
+        localWantsAlarmTrendGuide(userMessage),
+        localWantsPeakCauseGuide(userMessage),
+        localWantsPowerFactorOpsGuide(userMessage),
+        localWantsPowerFactorThreshold(userMessage),
+        localWantsEpmsKnowledge(userMessage),
+        localWantsFrequencyOutlierStandard(userMessage),
+        localWantsMonthlyEnergyUsagePrompt(userMessage),
+        localWantsDisplayedVoltageMeaning(userMessage),
+        localWantsDisplayedMetricMeaning(userMessage),
+        localWantsPowerFactorStandard(userMessage)
+    );
+    if (staticCriticalResult != null) {
+        return staticCriticalResult;
     }
 
     if (localWantsCurrentUnbalanceCount(userMessage)) {
@@ -804,40 +620,8 @@ private DirectAnswerResult tryBuildCriticalDirectAnswer(String userMessage, bool
         String scopeToken = (scopeHints == null || scopeHints.isEmpty())
             ? extractScopedAreaTokenFallback(userMessage)
             : String.join(",", scopeHints);
-        Integer month = extractMonth(userMessage);
-        result.dbContext = getScopedMonthlyEnergyContext(scopeToken, month);
+        result.dbContext = getScopedMonthlyEnergyContext(scopeToken, criticalMonth);
         result.answer = buildScopedMonthlyEnergyDirectAnswer(result.dbContext);
-        return result;
-    }
-
-    if (localWantsMonthlyEnergyUsagePrompt(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "";
-        result.answer = "이번 달 전력 사용량은 계측기를 지정해야 조회할 수 있습니다. 예: 77번 계측기 이번 달 전력 사용량은?";
-        return result;
-    }
-
-    if (localWantsDisplayedVoltageMeaning(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[Displayed voltage meaning] source=average_voltage>line_voltage_avg>phase_voltage_avg>voltage_ab";
-        result.answer = buildDisplayedVoltageMeaningAnswer();
-        return result;
-    }
-
-    if (localWantsDisplayedMetricMeaning(userMessage)) {
-        String answer = buildDisplayedMetricMeaningAnswer(userMessage);
-        if (answer != null) {
-            DirectAnswerResult result = new DirectAnswerResult();
-            result.dbContext = "[Displayed metric meaning]";
-            result.answer = answer;
-            return result;
-        }
-    }
-
-    if (localWantsPowerFactorStandard(userMessage)) {
-        DirectAnswerResult result = new DirectAnswerResult();
-        result.dbContext = "[PF standard] IEEE";
-        result.answer = buildPowerFactorStandardDirectAnswer(userMessage);
         return result;
     }
 
@@ -888,27 +672,14 @@ private DirectAnswerResult tryBuildCriticalDirectAnswer(String userMessage, bool
 }
 
 private AgentExecutionContext buildExecutionContext(String userMessage, AgentRequestContext reqCtx, String model, String coderModel) {
-    AgentExecutionContext ctx = new AgentExecutionContext();
-    ctx.requestedMeterId = reqCtx.requestedMeterId;
-    ctx.requestedMeterScope = reqCtx.requestedMeterScope;
-    ctx.requestedMonth = reqCtx.requestedMonth;
-    ctx.requestedTopN = extractTopN(userMessage, 10, 50);
-    ctx.requestedPhase = reqCtx.requestedPhase;
-    ctx.requestedLinePair = reqCtx.requestedLinePair;
-    ctx.panelTokens = reqCtx.panelTokens;
-    ctx.needsMeter = routedWantsMeterSummary(userMessage);
-    ctx.needsAlarm = routedWantsAlarmSummary(userMessage);
-    ctx.needsFrequency = routedWantsMonthlyFrequencySummary(userMessage);
-    ctx.needsPerMeterPower = reqCtx.needsPerMeterPower;
-    ctx.needsMeterList = reqCtx.needsMeterList;
-    ctx.needsPhaseCurrent = reqCtx.needsPhaseCurrent;
-    ctx.needsPhaseVoltage = reqCtx.needsPhaseVoltage;
-    ctx.needsLineVoltage = reqCtx.needsLineVoltage;
-    ctx.needsHarmonic = reqCtx.needsHarmonic;
-    ctx.forceCoderFlow = coderModel.equals(routeModel(userMessage, model, coderModel));
-    ctx.needsDb = ctx.needsMeter || ctx.needsAlarm || ctx.needsFrequency || ctx.needsPerMeterPower ||
-        ctx.needsMeterList || ctx.needsPhaseCurrent || ctx.needsPhaseVoltage || ctx.needsLineVoltage || ctx.needsHarmonic;
-    return ctx;
+    return epms.util.AgentExecutionSupport.buildExecutionContext(
+        reqCtx,
+        extractTopN(userMessage, 10, 50),
+        routedWantsMeterSummary(userMessage),
+        routedWantsAlarmSummary(userMessage),
+        routedWantsMonthlyFrequencySummary(userMessage),
+        coderModel.equals(routeModel(userMessage, model, coderModel))
+    );
 }
 
 private void applyClassifierHints(AgentExecutionContext ctx, String userMessage, String classifierRaw) {
@@ -928,40 +699,29 @@ private void applyClassifierHints(AgentExecutionContext ctx, String userMessage,
     String cMeterScope = extractJsonStringField(classifierRaw, "meter_scope");
     String cPhase = extractJsonStringField(classifierRaw, "phase");
     String cLinePair = extractJsonStringField(classifierRaw, "line_pair");
-
-    if (cNeedsDb != null) ctx.needsDb = ctx.needsDb || cNeedsDb.booleanValue();
-    ctx.needsDb = ctx.needsDb || ctx.forceCoderFlow;
-    if (cNeedsMeter != null) ctx.needsMeter = ctx.needsMeter || cNeedsMeter.booleanValue();
-    if (cNeedsAlarm != null) ctx.needsAlarm = ctx.needsAlarm || cNeedsAlarm.booleanValue();
-    if (cNeedsFrequency != null) ctx.needsFrequency = ctx.needsFrequency || cNeedsFrequency.booleanValue();
-    if (cNeedsPower != null) ctx.needsPerMeterPower = ctx.needsPerMeterPower || cNeedsPower.booleanValue();
-    if (cNeedsMeterList != null) ctx.needsMeterList = ctx.needsMeterList || cNeedsMeterList.booleanValue();
-    if (cNeedsPhaseCurrent != null) ctx.needsPhaseCurrent = ctx.needsPhaseCurrent || cNeedsPhaseCurrent.booleanValue();
-    if (cNeedsPhaseVoltage != null) ctx.needsPhaseVoltage = ctx.needsPhaseVoltage || cNeedsPhaseVoltage.booleanValue();
-    if (cNeedsLineVoltage != null) ctx.needsLineVoltage = ctx.needsLineVoltage || cNeedsLineVoltage.booleanValue();
-    if (cNeedsHarmonic != null) ctx.needsHarmonic = ctx.needsHarmonic || cNeedsHarmonic.booleanValue();
-    if (ctx.needsMeterList && !routedWantsPerMeterPowerSummary(userMessage)) ctx.needsPerMeterPower = false;
-    if (ctx.needsHarmonic && !routedWantsMonthlyFrequencySummary(userMessage)) ctx.needsFrequency = false;
-    if (cMeterId != null) ctx.requestedMeterId = cMeterId;
-    if (cMonth != null && cMonth.intValue() >= 1 && cMonth.intValue() <= 12) ctx.requestedMonth = cMonth;
-    if ((ctx.panelTokens == null || ctx.panelTokens.isEmpty()) && cPanel != null && !cPanel.trim().isEmpty()) {
-        ctx.panelTokens = panelTokensFromRaw(cPanel);
-    }
-    if ((ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) && cMeterScope != null && !cMeterScope.trim().isEmpty()) {
-        ctx.requestedMeterScope = cMeterScope;
-    }
-    if ((ctx.requestedPhase == null || ctx.requestedPhase.trim().isEmpty()) && cPhase != null && !cPhase.trim().isEmpty()) {
-        ctx.requestedPhase = cPhase;
-    }
-    if ((ctx.requestedLinePair == null || ctx.requestedLinePair.trim().isEmpty()) && cLinePair != null && !cLinePair.trim().isEmpty()) {
-        ctx.requestedLinePair = cLinePair;
-    }
-    if (ctx.requestedMeterScope == null || ctx.requestedMeterScope.trim().isEmpty()) {
-        List<String> scopeHints = findScopeTokensFromMeterMaster(userMessage, 4);
-        if (scopeHints != null && !scopeHints.isEmpty()) {
-            ctx.requestedMeterScope = String.join(",", scopeHints);
-        }
-    }
+    List<String> parsedPanelTokens = (cPanel == null || cPanel.trim().isEmpty()) ? Collections.<String>emptyList() : panelTokensFromRaw(cPanel);
+    epms.util.AgentExecutionSupport.applyClassifierHints(
+        ctx,
+        cNeedsDb,
+        cNeedsMeter,
+        cNeedsAlarm,
+        cNeedsFrequency,
+        cNeedsPower,
+        cNeedsMeterList,
+        cNeedsPhaseCurrent,
+        cNeedsPhaseVoltage,
+        cNeedsLineVoltage,
+        cNeedsHarmonic,
+        cMeterId,
+        cMonth,
+        cMeterScope,
+        cPhase,
+        cLinePair,
+        parsedPanelTokens,
+        routedWantsPerMeterPowerSummary(userMessage),
+        routedWantsMonthlyFrequencySummary(userMessage),
+        findScopeTokensFromMeterMaster(userMessage, 4)
+    );
 }
 
 private PlannerExecutionResult executePlannerAndLoadContexts(
@@ -1179,16 +939,16 @@ private SpecializedAnswerResult tryBuildSpecializedAnswer(AgentExecutionContext 
             result.answer = buildPerMeterPowerDirectAnswer(plannerResult.powerCtx);
         } else if (execCtx.needsMeterList && plannerResult.meterListCtx != null && !plannerResult.meterListCtx.trim().isEmpty()) {
             result.answer = buildUserDbContext(plannerResult.meterListCtx);
-            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "계측기 목록을 조회했습니다.";
+            result.answer = epms.util.AgentDirectAnswerHelper.chooseUserContextAnswer(result.answer, "계측기 목록을 조회했습니다.");
         } else if (execCtx.needsPhaseCurrent && plannerResult.phaseCurrentCtx != null && !plannerResult.phaseCurrentCtx.trim().isEmpty()) {
             result.answer = buildUserDbContext(plannerResult.phaseCurrentCtx);
-            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전류를 조회했습니다.";
+            result.answer = epms.util.AgentDirectAnswerHelper.chooseUserContextAnswer(result.answer, "상전류를 조회했습니다.");
         } else if (execCtx.needsPhaseVoltage && plannerResult.phaseVoltageCtx != null && !plannerResult.phaseVoltageCtx.trim().isEmpty()) {
             result.answer = buildUserDbContext(plannerResult.phaseVoltageCtx);
-            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "상전압을 조회했습니다.";
+            result.answer = epms.util.AgentDirectAnswerHelper.chooseUserContextAnswer(result.answer, "상전압을 조회했습니다.");
         } else if (execCtx.needsLineVoltage && plannerResult.lineVoltageCtx != null && !plannerResult.lineVoltageCtx.trim().isEmpty()) {
             result.answer = buildUserDbContext(plannerResult.lineVoltageCtx);
-            if (result.answer == null || result.answer.trim().isEmpty()) result.answer = "선간전압을 조회했습니다.";
+            result.answer = epms.util.AgentDirectAnswerHelper.chooseUserContextAnswer(result.answer, "선간전압을 조회했습니다.");
         }
     }
     if (result.answer == null) return null;
@@ -1732,12 +1492,12 @@ private boolean routedWantsBuildingCountSummary(String userMessage) {
 
 private boolean routedWantsUsageTypeCountSummary(String userMessage) {
     Boolean delegated = invokeAgentQueryRouterBoolean("wantsUsageTypeCountSummary", userMessage);
-    return delegated != null ? delegated.booleanValue() : false;
+    return (delegated != null ? delegated.booleanValue() : false) && !hasAlarmIntent(userMessage);
 }
 
 private boolean routedWantsUsageTypeListSummary(String userMessage) {
     Boolean delegated = invokeAgentQueryRouterBoolean("wantsUsageTypeListSummary", userMessage);
-    return delegated != null ? delegated.booleanValue() : false;
+    return (delegated != null ? delegated.booleanValue() : false) && !hasAlarmIntent(userMessage);
 }
 
 private boolean routedWantsAlarmSeveritySummary(String userMessage) {
@@ -2145,6 +1905,7 @@ private boolean localWantsUsageMonthlyEnergySummary(String userMessage) {
 private boolean localWantsUsageTypeListSummary(String userMessage) {
     String m = normalizeForIntent(userMessage);
     boolean hasUsage = m.contains("용도") || m.contains("사용처") || m.contains("usage");
+    boolean hasAlarm = m.contains("알람") || m.contains("경보") || m.contains("alarm");
     boolean hasList =
         m.contains("리스트") || m.contains("목록") || m.contains("list")
         || m.contains("종류") || m.contains("항목") || m.contains("보여") || m.contains("알려");
@@ -2157,7 +1918,7 @@ private boolean localWantsUsageTypeListSummary(String userMessage) {
     boolean hasPowerIntent =
         m.contains("전력") || m.contains("전력량") || m.contains("사용량")
         || m.contains("kwh") || m.contains("kw") || m.contains("power");
-    return hasUsage && hasList && !hasTopIntent && !hasCount && !hasPowerIntent;
+    return hasUsage && hasList && !hasAlarm && !hasTopIntent && !hasCount && !hasPowerIntent;
 }
 
 private boolean localWantsUsagePowerTopSummary(String userMessage) {
@@ -2190,12 +1951,18 @@ private boolean localWantsUsageAlarmTopSummary(String userMessage) {
     boolean hasAlarm = m.contains("알람") || m.contains("경보") || m.contains("alarm");
     boolean hasTop =
         m.contains("가장많은") || m.contains("제일많은") || m.contains("가장많이")
-        || m.contains("top") || m.contains("상위") || m.contains("많은");
+        || m.contains("top") || m.contains("상위") || m.contains("많은")
+        || m.contains("목록") || m.contains("보여") || m.contains("알려");
     boolean hasCountIntent =
         m.contains("가진") || m.contains("보유") || m.contains("건수")
         || m.contains("개수") || m.contains("갯수") || m.contains("수")
         || m.endsWith("용도는") || m.endsWith("용도는?") || m.endsWith("용도?");
-    return hasUsage && hasAlarm && hasTop && hasCountIntent;
+    return hasUsage && hasAlarm && hasTop && (hasCountIntent || m.contains("상위") || m.contains("top"));
+}
+
+private boolean hasAlarmIntent(String userMessage) {
+    String m = normalizeForIntent(userMessage);
+    return m.contains("알람") || m.contains("경보") || m.contains("alarm");
 }
 
 private boolean localWantsHarmonicExceedCount(String userMessage) {
@@ -2236,7 +2003,7 @@ private boolean localWantsDisplayedVoltageMeaning(String userMessage) {
 }
 
 private String buildDisplayedVoltageMeaningAnswer() {
-    return "\uD604\uC7AC \uC0C1\uD0DC \uCE74\uB4DC\uC758 \uC804\uC555(V)\uC740 \uBCF4\uD1B5 average_voltage(\uD3C9\uADE0\uC804\uC555)\uC785\uB2C8\uB2E4. \uB2E4\uB9CC average_voltage\uAC00 \uC5C6\uAC70\uB098 0\uC774\uBA74 line_voltage_avg, phase_voltage_avg, \uB9C8\uC9C0\uB9C9\uC73C\uB85C voltage_ab \uC21C\uC11C\uB85C \uB300\uCCB4\uD574\uC11C \uBCF4\uC5EC\uC90D\uB2C8\uB2E4.";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildDisplayedVoltageMeaningAnswer();
 }
 
 private boolean localWantsDisplayedMetricMeaning(String userMessage) {
@@ -2281,23 +2048,7 @@ private boolean localPrefersNarrativeLlm(String userMessage) {
 }
 
 private String buildDisplayedMetricMeaningAnswer(String userMessage) {
-    String m = normalizeForIntent(userMessage);
-    if (m.contains("\uC804\uB958") || m.contains("current")) {
-        return "\uD604\uC7AC \uC0C1\uD0DC \uCE74\uB4DC\uC758 \uC804\uB958(I)\uB294 average_current \uAC12\uC785\uB2C8\uB2E4.";
-    }
-    if (m.contains("\uC5ED\uB960") || m.contains("powerfactor") || m.contains("pf")) {
-        return "\uD604\uC7AC \uC0C1\uD0DC \uCE74\uB4DC\uC758 \uC5ED\uB960(PF)\uC740 COALESCE(power_factor, power_factor_avg, (power_factor_a + power_factor_b + power_factor_c) / 3.0) \uAE30\uC900\uC785\uB2C8\uB2E4.";
-    }
-    if (m.contains("\uC720\uD6A8\uC804\uB825") || m.contains("activepower")) {
-        return "\uD604\uC7AC \uC0C1\uD0DC \uCE74\uB4DC\uC758 \uC720\uD6A8\uC804\uB825(kW)\uC740 active_power_total \uAC12\uC785\uB2C8\uB2E4.";
-    }
-    if (m.contains("\uBB34\uD6A8\uC804\uB825") || m.contains("reactivepower")) {
-        return "\uD604\uC7AC \uC0C1\uD0DC \uCE74\uB4DC\uC758 \uBB34\uD6A8\uC804\uB825(kVAr)\uC740 reactive_power_total \uAC12\uC785\uB2C8\uB2E4.";
-    }
-    if (m.contains("\uC8FC\uD30C\uC218") || m.contains("frequency")) {
-        return "\uD604\uC7AC \uC0C1\uD0DC \uCE74\uB4DC\uC758 \uC8FC\uD30C\uC218(Hz)\uB294 frequency \uAC12\uC785\uB2C8\uB2E4.";
-    }
-    return null;
+    return epms.util.AgentCriticalDirectAnswerHelper.buildDisplayedMetricMeaningAnswer(userMessage);
 }
 
 private boolean localWantsTripAlarmOnly(String userMessage) {
@@ -2312,152 +2063,43 @@ private String buildPowerFactorStandardDirectAnswer(String userMessage) {
         new Object[] { userMessage }
     );
     if (delegated != null) return delegated;
-    String m = normalizeForIntent(userMessage);
-    if (m.contains("ieee")) {
-        return "IEEE에는 모든 설비에 공통으로 적용되는 단일 역률 최소 기준치가 명시돼 있다고 보기 어렵습니다. 실무에서는 보통 0.9 이상을 최소 관리 기준으로 보고, 운영 목표는 0.95 이상으로 두는 경우가 많습니다.";
-    }
-    return "역률 기준은 적용 규정과 계약 조건에 따라 달라질 수 있지만, 실무에서는 보통 0.9 이상을 최소 관리 기준으로 보고 0.95 이상을 목표로 관리하는 경우가 많습니다.";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildPowerFactorStandardDirectAnswer(userMessage);
 }
 
 private String buildPowerFactorOpsGuideDirectAnswer() {
-    return "역률이 낮을 때 운영자가 먼저 볼 항목입니다.\n\n"
-        + "1. 콘덴서 뱅크와 역률보상반 투입 상태 확인\n"
-        + "2. 무효전력(kVAr) 급증 여부와 시간대별 편차 확인\n"
-        + "3. 대형 유도성 부하(모터, 펌프, 팬, 냉동기) 운전 상태 확인\n"
-        + "4. 고조파 과다로 보상 설비가 정상 동작하지 않는지 점검\n"
-        + "5. 계측기 무신호 또는 데이터 이상 여부 확인\n\n"
-        + "점검 순서:\n"
-        + "- 보상설비 투입/차단 상태\n"
-        + "- 최근 kW, kVAr, PF 추이\n"
-        + "- 저역률 발생 시간대와 운전 설비 매칭\n"
-        + "- 고조파/알람 동시 발생 여부\n"
-        + "- 계측기 통신 상태";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildPowerFactorOpsGuideDirectAnswer();
 }
 
 private String buildPeakCauseGuideDirectAnswer(Integer month) {
-    String periodLabel = month == null ? "최대 피크" : (java.time.LocalDate.now().getYear() + "-" + String.format(java.util.Locale.US, "%02d", month.intValue()) + " 최대 피크");
-    return periodLabel + "가 높게 나온 가능한 원인입니다.\n\n"
-        + "1. 대형 부하 동시 투입\n"
-        + "2. 모터, 펌프, 냉동기 등의 기동전류/돌입전류 영향\n"
-        + "3. 특정 패널 또는 계측기에 부하가 집중된 경우\n"
-        + "4. 냉난방, 압축기, 생산설비 등 시간대성 고부하 운전\n"
-        + "5. 역률 저하나 무효전력 증가로 설비 부담이 커진 경우\n"
-        + "6. 고조파, 불평형, 계측 이상치 등 전력품질 문제\n\n"
-        + "확인 순서:\n"
-        + "- 피크 발생 시각의 운전 설비 목록 확인\n"
-        + "- 같은 시각의 kW, kVAr, PF, 알람 이력 확인\n"
-        + "- 상위 부하 패널/계측기 집중 여부 확인\n"
-        + "- 반복 피크인지 일시적 이벤트인지 구분\n"
-        + "- 계측값 이상치나 초기 적재값 여부 점검";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildPeakCauseGuideDirectAnswer(month);
 }
 
 private String buildAlarmTrendGuideDirectAnswer(Integer month) {
-    String periodLabel = month == null ? "최근 알람 추이" : (java.time.LocalDate.now().getYear() + "-" + String.format(java.util.Locale.US, "%02d", month.intValue()) + " 알람 추이");
-    return periodLabel + "를 원인과 점검 순서 기준으로 정리하면 다음과 같습니다.\n\n"
-        + "1. 추이 확인\n"
-        + "- 알람 건수가 특정 날짜나 시간대에 집중되는지 확인\n"
-        + "- 반복 발생 유형(TRIP, 통신이상, 과전류, 고조파 등) 구분\n\n"
-        + "2. 가능한 원인\n"
-        + "- 특정 설비의 반복 기동 또는 정지\n"
-        + "- 전력품질 문제(역률, 고조파, 불평형, 주파수 이상)\n"
-        + "- 통신 불안정이나 계측기 무신호\n"
-        + "- 특정 패널/구간 부하 집중 또는 보호장치 민감도 문제\n\n"
-        + "3. 점검 순서\n"
-        + "- 알람 상위 유형과 건수 확인\n"
-        + "- 반복 발생 계측기와 패널 확인\n"
-        + "- 발생 시각과 설비 운전 이력 비교\n"
-        + "- 미해결 알람 여부 확인\n"
-        + "- 통신 상태와 계측기 전원/신호 상태 점검";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildAlarmTrendGuideDirectAnswer(month);
 }
 
 private String buildFrequencyOpsGuideDirectAnswer() {
-    return "주파수가 흔들릴 때 운영자가 먼저 볼 항목입니다.\n\n"
-        + "1. 계통 이상 또는 상위 전원 변동 여부 확인\n"
-        + "2. 발전기, UPS, 인버터, 대형 회전기 운전 상태 확인\n"
-        + "3. 같은 시각의 알람과 전압 변동 동시 발생 여부 확인\n"
-        + "4. 특정 계측기만 흔들리는지 전체 계통인지 구분\n"
-        + "5. 계측기 통신 지연이나 측정 이상 여부 점검\n\n"
-        + "점검 순서:\n"
-        + "- 주파수 이상 발생 시각 확인\n"
-        + "- 전원계통, 발전기, UPS 이벤트 확인\n"
-        + "- 같은 시각 전압, 전류, 알람 비교\n"
-        + "- 단일 계측기 문제인지 전체 계통 문제인지 구분\n"
-        + "- 통신 상태와 계측값 이상 여부 점검";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildFrequencyOpsGuideDirectAnswer();
 }
 
 private String buildHarmonicOpsGuideDirectAnswer() {
-    return "고조파가 높을 때 운영자가 먼저 볼 항목입니다.\n\n"
-        + "1. 인버터, UPS, 정류기, VFD 같은 비선형 부하 운전 상태 확인\n"
-        + "2. 특정 시간대나 특정 패널에 집중되는지 확인\n"
-        + "3. 필터나 리액터 설치와 동작 상태 확인\n"
-        + "4. 콘덴서 뱅크와 함께 문제 발생 여부 확인\n"
-        + "5. 계측기 이상치인지 실제 전력품질 문제인지 구분\n\n"
-        + "점검 순서:\n"
-        + "- THD 전압/전류 증가 시각 확인\n"
-        + "- 비선형 부하 운전 이력 확인\n"
-        + "- 관련 패널, 계측기, 상별 편차 확인\n"
-        + "- 역률보상설비와 필터 동작 여부 점검\n"
-        + "- 반복 패턴인지 일시적 이벤트인지 구분";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildHarmonicOpsGuideDirectAnswer();
 }
 
 private String buildUnbalanceOpsGuideDirectAnswer() {
-    return "불평형이 심할 때 운영자가 먼저 볼 항목입니다.\n\n"
-        + "1. 상별 전류와 전압 편차 확인\n"
-        + "2. 단상 부하 편중 여부 확인\n"
-        + "3. 특정 패널 또는 분기 회로에 부하가 몰렸는지 점검\n"
-        + "4. 결선 이상, 접촉 불량, 상 손실 가능성 확인\n"
-        + "5. 반복 발생 시간대와 설비 운전 조건 확인\n\n"
-        + "점검 순서:\n"
-        + "- 상별 값(A/B/C 또는 R/S/T) 비교\n"
-        + "- 단상 부하 분산 상태 확인\n"
-        + "- 패널, 분기 회로 집중 여부 점검\n"
-        + "- 보호장치, 단자, 결선 상태 확인\n"
-        + "- 전압 불평형과 전류 불평형 동시 여부 확인";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildUnbalanceOpsGuideDirectAnswer();
 }
 
 private String buildVoltageOpsGuideDirectAnswer() {
-    return "전압이 떨어질 때 운영자가 먼저 볼 항목입니다.\n\n"
-        + "1. 특정 계측기만 문제인지 전체 계통 문제인지 구분\n"
-        + "2. 같은 시각의 전류 증가, 피크 상승, 알람 발생 여부 확인\n"
-        + "3. 변압기, 차단기, 접속부, 케이블 과부하 가능성 점검\n"
-        + "4. 대형 부하 기동 시점과 전압 강하 연관성 확인\n"
-        + "5. 계측기 설정 오류나 측정 이상 여부 확인\n\n"
-        + "점검 순서:\n"
-        + "- 전압 저하 시각과 지속 시간 확인\n"
-        + "- 상별 전압 편차 확인\n"
-        + "- 같은 시각 전류, kW, 알람 비교\n"
-        + "- 상위 전원과 하위 패널 구간별로 원인 범위 축소\n"
-        + "- 결선, 접속 상태, 계측 이상 여부 점검";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildVoltageOpsGuideDirectAnswer();
 }
 
 private String buildCurrentOpsGuideDirectAnswer() {
-    return "전류가 튈 때 운영자가 먼저 볼 항목입니다.\n\n"
-        + "1. 특정 설비 기동이나 부하 급변 여부 확인\n"
-        + "2. 상별 전류 편차와 반복 패턴 확인\n"
-        + "3. 같은 시각 전압 강하, 알람, 피크 상승 여부 확인\n"
-        + "4. CT 설정, 결선, 계측 이상 가능성 점검\n"
-        + "5. 과전류 보호장치 민감도와 차단 이력 확인\n\n"
-        + "점검 순서:\n"
-        + "- 전류 급변 발생 시각 확인\n"
-        + "- 설비 운전 이력과 매칭\n"
-        + "- 상별 전류와 전압 동시 확인\n"
-        + "- 과전류 알람 또는 트립 이력 비교\n"
-        + "- 계측기와 CT 결선 상태 점검";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildCurrentOpsGuideDirectAnswer();
 }
 
 private String buildCommunicationOpsGuideDirectAnswer() {
-    return "통신이 끊길 때 운영자가 먼저 볼 항목입니다.\n\n"
-        + "1. 특정 계측기만 문제인지 구간 전체 문제인지 구분\n"
-        + "2. 전원 상태와 네트워크 링크 상태 확인\n"
-        + "3. RS-485, 게이트웨이, 스위치, PLC 중 어느 구간에서 끊기는지 점검\n"
-        + "4. 같은 시각 무신호 알람이나 데이터 공백 발생 여부 확인\n"
-        + "5. 주소 충돌, 포트 설정, polling 지연 여부 확인\n\n"
-        + "점검 순서:\n"
-        + "- 무신호 발생 계측기 범위 확인\n"
-        + "- 전원과 통신선 상태 확인\n"
-        + "- 게이트웨이, 스위치, PLC 로그 확인\n"
-        + "- 최근 설정 변경 여부 확인\n"
-        + "- polling 주기, 주소, 포트 설정 점검";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildCommunicationOpsGuideDirectAnswer();
 }
 
 private String extractPhaseLabel(String userMessage) {
@@ -2689,16 +2331,6 @@ private Object invokeAgentResponseFlowHelper(String methodName, Class<?>[] argTy
 private Object invokeAgentOutputHelper(String methodName, Class<?>[] argTypes, Object[] args) {
     try {
         Class<?> cls = Class.forName("epms.util.AgentOutputHelper");
-        java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
-        return m.invoke(null, args);
-    } catch (Throwable ignore) {
-        return null;
-    }
-}
-
-private Object invokeAgentJsonHelper(String methodName, Class<?>[] argTypes, Object[] args) {
-    try {
-        Class<?> cls = Class.forName("epms.util.AgentJsonHelper");
         java.lang.reflect.Method m = cls.getMethod(methodName, argTypes);
         return m.invoke(null, args);
     } catch (Throwable ignore) {
@@ -5952,81 +5584,11 @@ private String buildAlarmMeterTopDirectAnswer(String ctx) {
 }
 
 private String buildUsageAlarmTopDirectAnswer(String ctx) {
-    if (ctx == null || ctx.trim().isEmpty()) {
-        return "용도별 알람 집계 데이터를 찾지 못했습니다.";
-    }
-    if (ctx.contains("unavailable")) {
-        return "용도별 알람 집계를 현재 조회할 수 없습니다.";
-    }
-    if (ctx.contains("no data")) {
-        return "용도별 알람 집계 데이터가 없습니다.";
-    }
-
-    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
-    java.util.regex.Matcher dm = java.util.regex.Pattern.compile("days=([0-9]+)").matcher(ctx);
-    String periodLabel = pm.find() ? trimToNull(pm.group(1)) : null;
-    String daysLabel = dm.find() ? trimToNull(dm.group(1)) : null;
-    java.util.regex.Matcher row = java.util.regex.Pattern.compile("\\s[0-9]+\\)([^=;]+)=([0-9]+);").matcher(ctx);
-    java.util.ArrayList<String> parts = new java.util.ArrayList<String>();
-    while (row.find()) {
-        String usage = trimToNull(row.group(1));
-        String cnt = trimToNull(row.group(2));
-        if (usage == null || cnt == null) continue;
-        parts.add(usage + " " + cnt + "건");
-    }
-    if (parts.isEmpty()) {
-        return "용도별 알람 집계 데이터가 없습니다.";
-    }
-
-    StringBuilder out = new StringBuilder();
-    if (periodLabel != null && !periodLabel.isEmpty()) {
-        out.append(periodLabel).append(" 알람이 많은 용도입니다.\n");
-    } else if (daysLabel != null && !daysLabel.isEmpty()) {
-        out.append("최근 ").append(daysLabel).append("일 알람이 많은 용도입니다.\n");
-    } else {
-        out.append("알람이 많은 용도입니다.\n");
-    }
-    for (int i = 0; i < parts.size(); i++) {
-        out.append(i + 1).append(". ").append(parts.get(i));
-        if (i + 1 < parts.size()) out.append("\n");
-    }
-    return out.toString();
+    return epms.util.AgentAnswerFormatter.buildUsageAlarmTopDirectAnswer(ctx);
 }
 
 private String buildUsageAlarmCountDirectAnswer(String ctx) {
-    if (ctx == null || ctx.trim().isEmpty()) {
-        return "용도별 알람 건수 데이터를 찾지 못했습니다.";
-    }
-    if (ctx.contains("usage token required")) {
-        return "용도 정보를 지정해 주세요.";
-    }
-    if (ctx.contains("unavailable")) {
-        return "용도별 알람 건수를 현재 조회할 수 없습니다.";
-    }
-    if (ctx.contains("no data")) {
-        return "용도별 알람 건수 데이터가 없습니다.";
-    }
-
-    java.util.regex.Matcher um = java.util.regex.Pattern.compile("usage=([^;]+)").matcher(ctx);
-    java.util.regex.Matcher pm = java.util.regex.Pattern.compile("period=([^;]+)").matcher(ctx);
-    java.util.regex.Matcher dm = java.util.regex.Pattern.compile("days=([0-9]+)").matcher(ctx);
-    java.util.regex.Matcher cm = java.util.regex.Pattern.compile("count=([0-9]+)").matcher(ctx);
-    String usage = um.find() ? trimToNull(um.group(1)) : null;
-    String periodLabel = pm.find() ? trimToNull(pm.group(1)) : null;
-    String daysLabel = dm.find() ? trimToNull(dm.group(1)) : null;
-    String count = cm.find() ? trimToNull(cm.group(1)) : "0";
-
-    String prefix;
-    if (periodLabel != null && !periodLabel.isEmpty()) {
-        prefix = (usage == null ? "해당 용도" : usage) + " 알람 건수 조회 결과입니다.";
-        return prefix + "\n\n핵심 값:\n- 건수: " + count + "건\n\n메타 정보:\n- 기간: " + periodLabel;
-    }
-    if (daysLabel != null && !daysLabel.isEmpty()) {
-        prefix = (usage == null ? "해당 용도" : usage) + " 알람 건수 조회 결과입니다.";
-        return prefix + "\n\n핵심 값:\n- 건수: " + count + "건\n\n메타 정보:\n- 기간: 최근 " + daysLabel + "일";
-    }
-    prefix = (usage == null ? "해당 용도" : usage) + " 알람 건수 조회 결과입니다.";
-    return prefix + "\n\n핵심 값:\n- 건수: " + count + "건";
+    return epms.util.AgentAnswerFormatter.buildUsageAlarmCountDirectAnswer(ctx);
 }
 
 private String buildUsageTypeListDirectAnswer(String ctx) {
@@ -6354,19 +5916,19 @@ private String buildHarmonicExceedCountDirectAnswer(String ctx) {
 }
 
 private String buildHarmonicExceedStandardDirectAnswer() {
-    return "현재 고조파 이상 기준은 THD_V 3.0% 초과 또는 THD_I 20.0% 초과입니다.";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildHarmonicExceedStandardDirectAnswer();
 }
 
 private String buildPowerFactorThresholdDirectAnswer() {
-    return "운영 기준으로는 보통 역률 0.90 미만을 이상으로 보고, 관리 목표는 0.95 이상으로 둡니다.";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildPowerFactorThresholdDirectAnswer();
 }
 
 private String buildEpmsKnowledgeDirectAnswer() {
-    return "네. 이 EPMS에서는 계측기 상태(전압/전루/역률/주파수), 알람, 전력량, 주파수, 역률, 고조파, 불평형 같은 전력 품질 정보를 조회하고 요약해서 답하도록 구성돼 있습니다.";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildEpmsKnowledgeDirectAnswer();
 }
 
 private String buildFrequencyOutlierStandardDirectAnswer() {
-    return "현재 주파수 이상치는 59.5Hz 미만이거나 60.5Hz 초과인 경우로 판단합니다.";
+    return epms.util.AgentCriticalDirectAnswerHelper.buildFrequencyOutlierStandardDirectAnswer();
 }
 
 private String buildCurrentUnbalanceCountDirectAnswer(String ctx) {
@@ -6879,141 +6441,23 @@ private void writeErrorJson(javax.servlet.jsp.JspWriter out, javax.servlet.http.
 }
 
 private List<String> panelTokensFromRaw(String panel) {
-    ArrayList<String> tokens = new ArrayList<String>();
-    if (panel == null) return tokens;
-    String candidate = panel.replaceAll("[\"'`]", " ").trim();
-    if (candidate.isEmpty()) return tokens;
-    String[] parts = candidate.split("[\\s_\\-]+");
-    for (int i = 0; i < parts.length; i++) {
-        String p = parts[i];
-        if (p == null) continue;
-        p = p.trim();
-        p = p.replaceAll("(?i)panel", "");
-        p = p.replace("패널", "").replace("판넬", "");
-        p = p.trim();
-        if (p.length() < 2) continue;
-        if ("meter".equalsIgnoreCase(p) || "미터".equals(p)) continue;
-        tokens.add(p.toUpperCase(java.util.Locale.ROOT));
-    }
-    return tokens;
+    return epms.util.AgentSupport.panelTokensFromRaw(panel);
 }
 
 private String unescapeJsonText(String s) {
-    Object delegated = invokeAgentJsonHelper(
-        "unescapeJsonText",
-        new Class<?>[] { String.class },
-        new Object[] { s }
-    );
-    if (delegated instanceof String) return (String) delegated;
-    if (s == null) return "";
-    StringBuilder out = new StringBuilder(s.length());
-    for (int i = 0; i < s.length(); i++) {
-        char ch = s.charAt(i);
-        if (ch != '\\' || i + 1 >= s.length()) {
-            out.append(ch);
-            continue;
-        }
-        char next = s.charAt(++i);
-        switch (next) {
-            case '"':
-                out.append('"');
-                break;
-            case '\\':
-                if (i + 5 < s.length() && s.charAt(i + 1) == 'u') {
-                    String hex = s.substring(i + 2, i + 6);
-                    try {
-                        out.append((char) Integer.parseInt(hex, 16));
-                        i += 5;
-                        break;
-                    } catch (Exception ignore) {
-                    }
-                }
-                out.append('\\');
-                break;
-            case '/':
-                out.append('/');
-                break;
-            case 'b':
-                out.append('\b');
-                break;
-            case 'f':
-                out.append('\f');
-                break;
-            case 'n':
-                out.append('\n');
-                break;
-            case 'r':
-                out.append('\r');
-                break;
-            case 't':
-                out.append('\t');
-                break;
-            case 'u':
-                if (i + 4 < s.length()) {
-                    String hex = s.substring(i + 1, i + 5);
-                    try {
-                        out.append((char) Integer.parseInt(hex, 16));
-                        i += 4;
-                        break;
-                    } catch (Exception ignore) {
-                    }
-                }
-                out.append('\\').append('u');
-                break;
-            default:
-                out.append(next);
-                break;
-        }
-    }
-    return out.toString();
+    return epms.util.AgentSupport.unescapeJsonText(s);
 }
 
 private String extractJsonStringField(String json, String field) {
-    Object delegated = invokeAgentJsonHelper(
-        "extractJsonStringField",
-        new Class<?>[] { String.class, String.class },
-        new Object[] { json, field }
-    );
-    if (delegated instanceof String || delegated == null) return (String) delegated;
-    if (json == null || field == null) return null;
-    try {
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"", java.util.regex.Pattern.DOTALL);
-        java.util.regex.Matcher m = p.matcher(json);
-        if (m.find()) return unescapeJsonText(m.group(1));
-    } catch (Exception ignore) {}
-    return null;
+    return epms.util.AgentSupport.extractJsonStringField(json, field);
 }
 
 private Integer extractJsonIntField(String json, String field) {
-    Object delegated = invokeAgentJsonHelper(
-        "extractJsonIntField",
-        new Class<?>[] { String.class, String.class },
-        new Object[] { json, field }
-    );
-    if (delegated instanceof Integer || delegated == null) return (Integer) delegated;
-    if (json == null || field == null) return null;
-    try {
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*(\\d+)");
-        java.util.regex.Matcher m = p.matcher(json);
-        if (m.find()) return Integer.valueOf(m.group(1));
-    } catch (Exception ignore) {}
-    return null;
+    return epms.util.AgentSupport.extractJsonIntField(json, field);
 }
 
 private Boolean extractJsonBoolField(String json, String field) {
-    Object delegated = invokeAgentJsonHelper(
-        "extractJsonBoolField",
-        new Class<?>[] { String.class, String.class },
-        new Object[] { json, field }
-    );
-    if (delegated instanceof Boolean || delegated == null) return (Boolean) delegated;
-    if (json == null || field == null) return null;
-    try {
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*(true|false)", java.util.regex.Pattern.CASE_INSENSITIVE);
-        java.util.regex.Matcher m = p.matcher(json);
-        if (m.find()) return Boolean.valueOf(m.group(1).toLowerCase(java.util.Locale.ROOT));
-    } catch (Exception ignore) {}
-    return null;
+    return epms.util.AgentSupport.extractJsonBoolField(json, field);
 }
 
 private boolean modelExistsInTagList(String tagJson, String modelName) {
@@ -7277,16 +6721,7 @@ try {
     AgentRequestContext reqCtx = buildAgentRequestContext(userMessage);
     AgentExecutionContext execCtx = buildExecutionContext(userMessage, reqCtx, model, coderModel);
     if (forceAiNarrative) {
-        execCtx.needsMeter = false;
-        execCtx.needsAlarm = false;
-        execCtx.needsFrequency = false;
-        execCtx.needsPerMeterPower = false;
-        execCtx.needsMeterList = false;
-        execCtx.needsPhaseCurrent = false;
-        execCtx.needsPhaseVoltage = false;
-        execCtx.needsLineVoltage = false;
-        execCtx.needsHarmonic = false;
-        execCtx.needsDb = false;
+        epms.util.AgentExecutionSupport.clearDbNeeds(execCtx);
     }
     String schemaContext = getSchemaContextCached();
 

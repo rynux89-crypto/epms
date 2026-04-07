@@ -11,6 +11,8 @@ import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import javax.servlet.ServletContext;
 
@@ -270,6 +272,123 @@ public final class AgentSupport {
             }
         }
         return body.toString();
+    }
+
+    public static List<String> panelTokensFromRaw(String panel) {
+        ArrayList<String> tokens = new ArrayList<String>();
+        if (panel == null) return tokens;
+        String candidate = panel.replaceAll("[\"'`]", " ").trim();
+        if (candidate.isEmpty()) return tokens;
+        String[] parts = candidate.split("[\\s_\\-]+");
+        for (int i = 0; i < parts.length; i++) {
+            String p = parts[i];
+            if (p == null) continue;
+            p = p.trim();
+            p = p.replaceAll("(?i)panel", "");
+            p = p.replace("패널", "").replace("판넬", "");
+            p = p.trim();
+            if (p.length() < 2) continue;
+            if ("meter".equalsIgnoreCase(p) || "미터".equals(p)) continue;
+            tokens.add(p.toUpperCase(java.util.Locale.ROOT));
+        }
+        return tokens;
+    }
+
+    public static String unescapeJsonText(String s) {
+        if (s == null) return "";
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch != '\\' || i + 1 >= s.length()) {
+                out.append(ch);
+                continue;
+            }
+            char next = s.charAt(++i);
+            switch (next) {
+                case '"':
+                    out.append('"');
+                    break;
+                case '\\':
+                    if (i + 5 < s.length() && s.charAt(i + 1) == 'u') {
+                        String hex = s.substring(i + 2, i + 6);
+                        try {
+                            out.append((char) Integer.parseInt(hex, 16));
+                            i += 5;
+                            break;
+                        } catch (Exception ignore) {
+                        }
+                    }
+                    out.append('\\');
+                    break;
+                case '/':
+                    out.append('/');
+                    break;
+                case 'b':
+                    out.append('\b');
+                    break;
+                case 'f':
+                    out.append('\f');
+                    break;
+                case 'n':
+                    out.append('\n');
+                    break;
+                case 'r':
+                    out.append('\r');
+                    break;
+                case 't':
+                    out.append('\t');
+                    break;
+                case 'u':
+                    if (i + 4 < s.length()) {
+                        String hex = s.substring(i + 1, i + 5);
+                        try {
+                            out.append((char) Integer.parseInt(hex, 16));
+                            i += 4;
+                            break;
+                        } catch (Exception ignore) {
+                        }
+                    }
+                    out.append('\\').append('u');
+                    break;
+                default:
+                    out.append(next);
+                    break;
+            }
+        }
+        return out.toString();
+    }
+
+    public static String extractJsonStringField(String json, String field) {
+        if (json == null || field == null) return null;
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"", java.util.regex.Pattern.DOTALL);
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) return unescapeJsonText(m.group(1));
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    public static Integer extractJsonIntField(String json, String field) {
+        if (json == null || field == null) return null;
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*(\\d+)");
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) return Integer.valueOf(m.group(1));
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    public static Boolean extractJsonBoolField(String json, String field) {
+        if (json == null || field == null) return null;
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(field) + "\"\\s*:\\s*(true|false)", java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) return Boolean.valueOf(m.group(1).toLowerCase(java.util.Locale.ROOT));
+        } catch (Exception ignore) {
+        }
+        return null;
     }
 
     private static String normalizeIntent(String s) {

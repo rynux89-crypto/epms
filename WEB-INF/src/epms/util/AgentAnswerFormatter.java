@@ -834,6 +834,81 @@ public final class AgentAnswerFormatter {
         return prefix + "\n\n핵심 값:\n- 누적 전력량: " + sumKwh + "kWh\n- 평균전력: " + avgKw + "kW\n\n메타 정보:\n- 집계 계측기 수: " + meterCount + "개";
     }
 
+    public static String buildUsageAlarmTopDirectAnswer(String ctx) {
+        if (ctx == null || ctx.trim().isEmpty()) {
+            return "\uC6A9\uB3C4\uBCC4 \uC54C\uB78C \uC9D1\uACC4 \uB370\uC774\uD130\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+        }
+        if (ctx.contains("unavailable")) {
+            return "\uC6A9\uB3C4\uBCC4 \uC54C\uB78C \uC9D1\uACC4\uB97C \uD604\uC7AC \uC870\uD68C\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.";
+        }
+        if (ctx.contains("no data")) {
+            return "\uC6A9\uB3C4\uBCC4 \uC54C\uB78C \uC9D1\uACC4 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
+        }
+
+        Matcher pm = Pattern.compile("period=([^;]+)").matcher(ctx);
+        Matcher dm = Pattern.compile("days=([0-9]+)").matcher(ctx);
+        String periodLabel = pm.find() ? trimToNull(pm.group(1)) : null;
+        String daysLabel = dm.find() ? trimToNull(dm.group(1)) : null;
+        Matcher row = Pattern.compile("\\s[0-9]+\\)([^=;]+)=([0-9]+);").matcher(ctx);
+        ArrayList<String> parts = new ArrayList<String>();
+        while (row.find()) {
+            String usage = trimToNull(row.group(1));
+            String cnt = trimToNull(row.group(2));
+            if (usage == null || cnt == null) continue;
+            parts.add(usage + " " + cnt + "\uAC74");
+        }
+        if (parts.isEmpty()) {
+            return "\uC6A9\uB3C4\uBCC4 \uC54C\uB78C \uC9D1\uACC4 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
+        }
+
+        StringBuilder out = new StringBuilder();
+        if (periodLabel != null && !periodLabel.isEmpty()) {
+            out.append(periodLabel).append(" \uC54C\uB78C\uC774 \uB9CE\uC740 \uC6A9\uB3C4\uC785\uB2C8\uB2E4.\n");
+        } else if (daysLabel != null && !daysLabel.isEmpty()) {
+            out.append("\uCD5C\uADFC ").append(daysLabel).append("\uC77C \uC54C\uB78C\uC774 \uB9CE\uC740 \uC6A9\uB3C4\uC785\uB2C8\uB2E4.\n");
+        } else {
+            out.append("\uC54C\uB78C\uC774 \uB9CE\uC740 \uC6A9\uB3C4\uC785\uB2C8\uB2E4.\n");
+        }
+        for (int i = 0; i < parts.size(); i++) {
+            out.append(i + 1).append(". ").append(parts.get(i));
+            if (i + 1 < parts.size()) out.append("\n");
+        }
+        return out.toString();
+    }
+
+    public static String buildUsageAlarmCountDirectAnswer(String ctx) {
+        if (ctx == null || ctx.trim().isEmpty()) {
+            return "\uC6A9\uB3C4\uBCC4 \uC54C\uB78C \uAC74\uC218 \uB370\uC774\uD130\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+        }
+        if (ctx.contains("usage token required")) {
+            return "\uC6A9\uB3C4 \uC815\uBCF4\uB97C \uC9C0\uC815\uD574 \uC8FC\uC138\uC694.";
+        }
+        if (ctx.contains("unavailable")) {
+            return "\uC6A9\uB3C4\uBCC4 \uC54C\uB78C \uAC74\uC218\uB97C \uD604\uC7AC \uC870\uD68C\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.";
+        }
+        if (ctx.contains("no data")) {
+            return "\uC6A9\uB3C4\uBCC4 \uC54C\uB78C \uAC74\uC218 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
+        }
+
+        Matcher um = Pattern.compile("usage=([^;]+)").matcher(ctx);
+        Matcher pm = Pattern.compile("period=([^;]+)").matcher(ctx);
+        Matcher dm = Pattern.compile("days=([0-9]+)").matcher(ctx);
+        Matcher cm = Pattern.compile("count=([0-9]+)").matcher(ctx);
+        String usage = um.find() ? trimToNull(um.group(1)) : null;
+        String periodLabel = pm.find() ? trimToNull(pm.group(1)) : null;
+        String daysLabel = dm.find() ? trimToNull(dm.group(1)) : null;
+        String count = cm.find() ? trimToNull(cm.group(1)) : "0";
+
+        String prefix = (usage == null ? "\uD574\uB2F9 \uC6A9\uB3C4" : usage) + " \uC54C\uB78C \uAC74\uC218 \uC870\uD68C \uACB0\uACFC\uC785\uB2C8\uB2E4.";
+        if (periodLabel != null && !periodLabel.isEmpty()) {
+            return prefix + "\n\n\uD575\uC2EC \uAC12:\n- \uAC74\uC218: " + count + "\uAC74\n\n\uBA54\uD0C0 \uC815\uBCF4:\n- \uAE30\uAC04: " + periodLabel;
+        }
+        if (daysLabel != null && !daysLabel.isEmpty()) {
+            return prefix + "\n\n\uD575\uC2EC \uAC12:\n- \uAC74\uC218: " + count + "\uAC74\n\n\uBA54\uD0C0 \uC815\uBCF4:\n- \uAE30\uAC04: \uCD5C\uADFC " + daysLabel + "\uC77C";
+        }
+        return prefix + "\n\n\uD575\uC2EC \uAC12:\n- \uAC74\uC218: " + count + "\uAC74";
+    }
+
     private static String trimToNull(String s) {
         return EpmsWebUtil.trimToNull(s);
     }
