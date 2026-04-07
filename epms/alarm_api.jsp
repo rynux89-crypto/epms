@@ -1,1 +1,1 @@
-<%@ include file="/WEB-INF/jspf/alarm_api_runtime.jsp" %>
+<jsp:forward page="/api/alarm" />

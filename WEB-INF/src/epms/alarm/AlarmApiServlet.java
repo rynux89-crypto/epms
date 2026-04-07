@@ -5,26 +5,26 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import javax.servlet.RequestDispatcher;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 /**
- * Thin servlet entrypoint for the alarm API.
- *
- * <p>For now this servlet keeps backward compatibility by forwarding
- * non-trivial actions to the existing JSP implementation while exposing a
- * stable controller endpoint for future migration.</p>
+ * Servlet entrypoint for the alarm API.
  */
 public final class AlarmApiServlet extends HttpServlet {
-    private static final String JSP_PATH = "/WEB-INF/jspf/alarm_api_runtime.jsp";
     private static final String JSON_TYPE = "application/json;charset=UTF-8";
     private static final long QUEUE_WARN_INTERVAL_MS = 30_000L;
+    private static final long DI_RULE_CACHE_TTL_MS = 30_000L;
     private static final DateTimeFormatter ISO_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX").withZone(ZoneId.systemDefault());
     private static volatile long lastQueueWarnAtMs = 0L;
+    private static final ConcurrentHashMap<String, Integer> LAST_DI_VALUE_MAP = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> AI_PENDING_ON_MS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, AlarmApiModels.CacheEntry<Map<String, AlarmApiModels.DiRuleMeta>>> DI_RULE_CACHE = new ConcurrentHashMap<>();
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -84,11 +84,27 @@ public final class AlarmApiServlet extends HttpServlet {
                 writeJsonError(resp, "plc_id is required");
                 return;
             }
-
-            req.setAttribute("alarmApi.action", normalizedAction);
-            req.setAttribute("alarmApi.validated", Boolean.TRUE);
-            RequestDispatcher dispatcher = req.getRequestDispatcher(JSP_PATH);
-            dispatcher.forward(req, resp);
+            try {
+                if ("process_ai".equalsIgnoreCase(normalizedAction)) {
+                    AlarmApiModels.AiRequestPayload aiReq = AlarmApiRequestSupport.parseAiRequest(req);
+                    AlarmProcessingResult result =
+                            AlarmApiProcessingSupport.processAiEvents(aiReq.plcId, aiReq.rows, aiReq.measuredAt, AI_PENDING_ON_MS);
+                    writeJsonCounts(resp, result);
+                } else {
+                    AlarmApiModels.DiRequestPayload diReq = AlarmApiRequestSupport.parseDiRequest(req);
+                    AlarmProcessingResult result =
+                            AlarmApiProcessingSupport.processDiEvents(
+                                    diReq.plcId,
+                                    diReq.rows,
+                                    diReq.measuredAt,
+                                    LAST_DI_VALUE_MAP,
+                                    DI_RULE_CACHE,
+                                    DI_RULE_CACHE_TTL_MS);
+                    writeJsonCounts(resp, result);
+                }
+            } catch (Exception e) {
+                writeJsonError(resp, e.getMessage());
+            }
             return;
         }
 
@@ -123,6 +139,15 @@ public final class AlarmApiServlet extends HttpServlet {
 
     private static void writeJsonError(HttpServletResponse resp, String message) throws IOException {
         resp.getWriter().write("{\"ok\":false,\"error\":\"" + escapeJson(message) + "\"}");
+    }
+
+    private static void writeJsonCounts(HttpServletResponse resp, AlarmProcessingResult result) throws IOException {
+        AlarmProcessingResult safe = (result == null) ? AlarmFacade.processingResult(0, 0, 0) : result;
+        resp.getWriter().write(
+                "{\"ok\":true,\"opened\":" + safe.getOpened() +
+                        ",\"closed\":" + safe.getClosed() +
+                        ",\"rows\":" + safe.getInspected() +
+                        "," + AlarmFacade.getQueuedWriteSummaryJson() + "}");
     }
 
     private static String escapeJson(String s) {
