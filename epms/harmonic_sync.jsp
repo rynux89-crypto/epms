@@ -1,4 +1,4 @@
-<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
+﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
 <%@ include file="../includes/dbconfig.jspf" %>
@@ -257,17 +257,17 @@
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>🎵 고조파 동기화 (plc_ai_samples → harmonic_measurements)</h2>
+        <h2>수동 고조파 동기화 (plc_ai_samples → harmonic_measurements)</h2>
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='/epms/ai_measurements_verify.jsp'">AI 적재 검증</button>
-            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
+            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
         </div>
     </div>
 
     <div class="info-box">
         소스: <span class="mono">plc_ai_samples</span> + <span class="mono"><%= hasAiMaster ? "plc_ai_mapping_master" : "plc_meter_map + plc_ai_measurements_match" %></span><br/>
-        타겟: <span class="mono">harmonic_measurements</span><br/>
-        정책: meter별 최신 시각보다 <b>새로운 시각</b> 데이터만 INSERT (중복 방지)
+        타깃: <span class="mono">harmonic_measurements</span><br/>
+        정책: meter별 최신 시각보다 <b>더 새로운 시각</b> 데이터만 INSERT 합니다. (중복 방지)
     </div>
 
     <% if (message != null) { %><div class="ok-box"><%= message %></div><% } %>
@@ -283,7 +283,7 @@
         </div>
     </form>
 
-    <h3 style="margin-top:14px;">최근 적재 데이터(상위 20)</h3>
+    <h3 style="margin-top:14px;">최근 적재 데이터 (상위 20)</h3>
     <table>
         <thead>
         <tr>

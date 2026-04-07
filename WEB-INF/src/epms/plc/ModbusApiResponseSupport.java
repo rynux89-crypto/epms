@@ -9,11 +9,11 @@ import java.util.Map;
 
 public final class ModbusApiResponseSupport {
     private static final String STATUS_REASON_INACTIVE = "plc_config.enabled=0 상태입니다.";
-    private static final String STATUS_REASON_PLC_RECONNECTING = "PLC 재연결 시도 중입니다.";
+    private static final String STATUS_REASON_PLC_RECONNECTING = "PLC 재연결을 시도 중입니다.";
     private static final String STATUS_REASON_CONFIG_MISSING = "PLC 설정을 찾을 수 없거나 IP가 비어 있습니다.";
-    private static final String STATUS_REASON_MANUALLY_STOPPED = "수동 중지로 polling 재시작이 막혀 있습니다.";
+    private static final String STATUS_REASON_MANUALLY_STOPPED = "수동 중지로 polling 자동 시작이 막혀 있습니다.";
     private static final String STATUS_REASON_RUNTIME_RESET = "서버 재시작 또는 런타임 초기화로 polling 상태가 초기화된 것으로 보입니다.";
-    private static final String STATUS_REASON_NO_ACTIVE_TASK = "현재 활성 polling 작업이 없습니다.";
+    private static final String STATUS_REASON_NO_ACTIVE_TASK = "현재 실행 중인 polling 작업이 없습니다.";
 
     public static final class PlcConfigSnapshot {
         public boolean exists;

@@ -1,4 +1,4 @@
-<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
+﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <html>
 <head>
     <title>Alarm Queue Diagnostics</title>
@@ -59,7 +59,7 @@
         <div class="toolbar">
             <div id="refreshInfo" class="pill">Last update: -</div>
             <button id="refreshBtn" class="btn" type="button">새로고침</button>
-            <a class="back-btn" href="<%= request.getContextPath() %>/epms/epms_main.jsp" style="text-decoration:none;">EPMS 메인</a>            
+            <a class="back-btn" href="<%= request.getContextPath() %>/epms/epms_main.jsp" style="text-decoration:none;">EPMS 메인</a>
         </div>
     </div>
 

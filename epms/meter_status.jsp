@@ -3,11 +3,10 @@
 <%@ include file="../includes/dbconfig.jspf" %>
 <%
     //request.setCharacterEncoding("UTF-8");
-
     // meter_id parameter
     String meterId = request.getParameter("meter_id");
     boolean hasMeterId = (meterId != null && !meterId.trim().isEmpty());
-    boolean hasData    = false;   // ?ㅼ젣 痢≪젙 ?곗씠??議댁옱 ?щ?
+    boolean hasData    = false;   // 실제 측정 데이터 존재 여부
     
     int selectedIndex = -1;
 
@@ -91,7 +90,7 @@
                 meterOptions.add(new String[]{ rsOpt.getString("meter_id"), rsOpt.getString("name") });
             }
         }
-    } catch(Exception e) { out.println("?듭뀡 議고쉶 ?ㅻ쪟: " + e.getMessage()); }
+    } catch(Exception e) { out.println("옵션 조회 오류: " + e.getMessage()); }
     meterOptionQueryMs = (System.nanoTime() - sectionStartNs) / 1000000L;
 
     // resolved actual meter_id, with legacy index fallback
@@ -126,13 +125,13 @@
     meterId = meter_id;
 
 
-    // ====== 怨듯넻 硫뷀? ?뺣낫 ======
+    // ====== 공통 메타 정보 ======
     // meterName    = "-";
     panelName = "-";
     buildingName = "-";
     usageType = "-";
 
-    // ====== measurements / vw_meter_measurements 湲곗? 怨꾩륫媛?======
+    // ====== measurements / vw_meter_measurements 기준 계측값 ======
     measuredAt = null;
     voltage_ab = 0;
     voltage_bc = 0;
@@ -165,7 +164,7 @@
     quality_status = "";
     harmonicDistortionRateMissing = false;
 
-    // ====== harmonic_measurements / vw_harmonic_measurements 湲곗? ======
+    // ====== harmonic_measurements / vw_harmonic_measurements 기준 ======
     thd_voltage_a = 0;
     thd_voltage_b = 0;
     thd_voltage_c = 0;
@@ -203,16 +202,16 @@
     current_h9_c = 0;
     current_h11_c = 0;
 
-    // ====== voltage_events / vw_voltage_event_log 湲곗? ?대깽??吏묎퀎 ======
+    // ====== voltage_events / vw_voltage_event_log 기준 이벤트 집계 ======
     sagCount = 0;
     swellCount = 0;
     otherVoltageEvents = 0;
 
-    // ====== alarm_log / vw_alarm_log 湲곗? ?뚮엺 吏묎퀎 ======
+    // ====== alarm_log / vw_alarm_log 기준 알람 집계 ======
     totalAlarms = 0;
     recentAlarmTypeLabelsJson = "[]";
     recentAlarmTypeCountsJson = "[]";
-    recentAlarmTypeSummaryText = "理쒓렐 7???뚮엺 ?놁쓬";
+    recentAlarmTypeSummaryText = "최근 7일 알람 없음";
     freshnessText = "-";
     riskSummaryText = "정상";
     qualityTrendLabels = new ArrayList<>();
@@ -224,7 +223,7 @@
 
     try {
         if (hasMeterId) {
-            // 1) 理쒖떊 怨꾩륫媛? vw_meter_measurements
+            // 1) 최신 계측값: vw_meter_measurements
             String sqlMeas =
                 "SELECT TOP 1 " +
                 "  meter_id, meter_name, panel_name, building_name, usage_type, " +
@@ -544,10 +543,10 @@
                 }
             }
 
-            // ?곗씠?곌? ?섎굹???놁쑝硫??섎㉧吏 荑쇰━??援녹씠 ???대룄 ?섏?留?            // 洹몃옒??meter_id 湲곗??쇰줈 怨좎“???뚮━而??대깽?몃뒗 ?덉쓣 ???덉쑝??怨꾩냽 吏꾪뻾
-            // (?꾩슂?섎㈃ if (hasData) { ... } 濡?媛먯떥????
+            // 기본 데이터가 없더라도 meter_id 기준의 고조파, 알람, 이벤트 조회는 값이 있을 수 있으므로 계속 진행
+            // 필요하면 if (hasData) { ... } 형태로 더 감쌀 수 있음
 
-            // 2) 理쒖떊 怨좎“?? vw_harmonic_measurements
+            // 2) 최신 고조파: vw_harmonic_measurements
             String sqlHarm =
                 "SELECT TOP 1 " +
                 "  thd_voltage_a, thd_voltage_b, thd_voltage_c, " +
@@ -616,7 +615,7 @@
             }
             latestHarmonicQueryMs = (System.nanoTime() - sectionStartNs) / 1000000L;
 
-            // 4) 理쒓렐 7???꾩븬 ?대깽??吏묎퀎: vw_voltage_event_log
+            // 4) 최근 7일 전압 이벤트 집계: vw_voltage_event_log
             String sqlVoltEvent =
                 "SELECT event_type, COUNT(*) AS cnt " +
                 "FROM vw_voltage_event_log " +
@@ -643,7 +642,7 @@
             }
             voltageEventQueryMs = (System.nanoTime() - sectionStartNs) / 1000000L;
 
-            // 5) 理쒓렐 7???뚮엺 嫄댁닔: vw_alarm_log
+            // 5) 최근 7일 알람 건수: vw_alarm_log
             String sqlAlarm =
                 "SELECT COUNT(*) AS cnt " +
                 "FROM vw_alarm_log " +
@@ -757,12 +756,12 @@
           function syncUIAndTimer() {
             const selected = selectedFromQuery();
 
-            // ???붾㈃ ?쒖떆(泥댄겕) ?뺤떎??諛섏쁺
+            // 선택값을 즉시 체크 상태에 반영
             document.querySelectorAll('input[name="refresh"]').forEach(r => {
               r.checked = (r.value === selected);
             });
 
-            // ????대㉧ 諛섏쁺
+            // 선택값에 맞는 타이머 반영
             startRefresh(selected === "off" ? null : Number(selected));
           }
 
@@ -776,10 +775,10 @@
           }
 
           window.addEventListener("DOMContentLoaded", () => {
-            // 濡쒕뱶??泥댄겕 蹂듭썝 + ??대㉧ ?쒖옉
+            // 로드 시 체크 복원 + 타이머 시작
             syncUIAndTimer();
 
-            // ?대깽??諛붿씤??(DOM 濡쒕뱶???ㅻ씪 100% 遺숈쓬)
+            // 이벤트 바인딩 (DOM 로드 후라 100% 동작)
             document.querySelectorAll('input[name="refresh"]').forEach(radio => {
               radio.addEventListener("change", function () {
                 setQueryAndReload(this.value);
@@ -935,11 +934,11 @@
 
 
   <%
-      // meter_id ?녾굅???곗씠???놁쑝硫?李⑦듃 罹붾쾭???먯껜媛 ?놁쑝誘濡?JS???ㅽ뻾?대룄 ?덉쟾?섏?留?      // 遺덊븘?뷀븳 ?뚮뜑瑜?以꾩씠怨??띠쑝硫?hasMeterId && hasData??寃쎌슦?먮쭔 ?ㅽ겕由쏀듃 異쒕젰
+      // meter_id가 없거나 데이터가 없으면 차트 캔버스 자체가 없으므로 JS도 안전하지만, 불필요한 로드를 줄이기 위해 hasMeterId && hasData일 때만 스크립트 출력
       if (hasMeterId && hasData) {
   %>
   <script>
-    // ===== JSP 媛???JS ?곸닔 =====
+    // ===== JSP 값 -> JS 상수 =====
     const vUnbalance = <%= voltage_unbalance_rate %>;
     const vThd       = <%= harmonic_distortion_rate %>;
     const qualityTrendLabels = [<%
@@ -1002,17 +1001,17 @@
     const alarmCnt = <%= totalAlarms %>;
     const recentAlarmTypeLabels = <%= recentAlarmTypeLabelsJson %>;
     const recentAlarmTypeCounts = <%= recentAlarmTypeCountsJson %>;
-    const recentAlarmTypeDisplayLabels = (recentAlarmTypeLabels.length ? recentAlarmTypeLabels : ['?뚮엺 ?놁쓬']).map(label =>
+    const recentAlarmTypeDisplayLabels = (recentAlarmTypeLabels.length ? recentAlarmTypeLabels : ['알람 없음']).map(label =>
       label.length > 18 ? (label.substring(0, 18) + '...') : label
     );
 
-    // 1. ?덉쭏 ?곹깭 李⑦듃
+    // 1. 전압 품질 상태 차트
     const ctxQuality = document.getElementById('qualityChart');
     if (ctxQuality) {
       new Chart(ctxQuality, {
         type: 'bar',
         data: {
-          labels: ['?꾩븬 遺덊룊?뺤쑉', '?꾩븬 ?쒗삎??THD)'],
+          labels: ['전압 불평형율', '전압 왜형율(THD)'],
           datasets: [{
             data: [vUnbalance, vThd]
           }]
@@ -1025,14 +1024,14 @@
             x: { grid: { display: false } },
             y: {
               beginAtZero: true,
-              title: { display: true, text: '媛?(%)' }
+              title: { display: true, text: '값 (%)' }
             }
           }
         }
       });
     }
 
-    const qualityLabels = qualityTrendLabels.length ? qualityTrendLabels : ['?꾩옱'];
+    const qualityLabels = qualityTrendLabels.length ? qualityTrendLabels : ['현재'];
     const qualityUnbalanceData = qualityTrendUnbalance.length ? qualityTrendUnbalance : [vUnbalance];
     const qualityThdData = qualityTrendThd.length ? qualityTrendThd : [vThd];
     if (ctxQuality) {
@@ -1181,7 +1180,7 @@
       }
     }
 
-    // 2. ?꾨젰 ?곹깭 李⑦듃 (P, Q, S)
+    // 2. 부하 / 전력 상태 차트 (P, Q, S)
     const ctxPower = document.getElementById('powerChart');
     if (ctxPower) {
       new Chart(ctxPower, {
@@ -1217,7 +1216,7 @@
       });
     }
 
-    // 3. 怨좎“??李⑦듃 (3,5,7,9,11李? ?곷퀎)
+    // 3. 고조파 차트 (3, 5, 7, 9, 11차 상별)
     const ctxHarm = document.getElementById('harmonicChart');
     if (ctxHarm) {
       new Chart(ctxHarm, {
@@ -1326,6 +1325,8 @@
   </div>
 </body>
 </html>
+
+
 
 
 
