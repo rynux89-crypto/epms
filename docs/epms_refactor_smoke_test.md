@@ -42,6 +42,8 @@ This checklist covers the JSP files refactored during the current EPMS cleanup w
   - JSON response contains `ok`, `opened`, `closed`.
   - `alarm_log` and `device_events` are updated as before.
   - No duplicate open alarms appear for the same active condition.
+- Quick check:
+  - `powershell -ExecutionPolicy Bypass -File scripts/smoke_alarm_api.ps1`
 
 ### `epms/plc/modbus_api.jsp`
 
