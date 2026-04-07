@@ -524,8 +524,8 @@ public final class AgentDbTools {
         if (filtered) {
             where.append("WHERE m.meter_id = ? ");
         } else if (panelFiltered) {
-            where.append("WHERE 1=1 ");
             for (int i = 0; i < panelTokens.size(); i++) {
+                where.append(i == 0 ? "WHERE 1=1 " : "");
                 where.append("AND UPPER(REPLACE(REPLACE(m.panel_name,'_',''),' ','')) LIKE ? ");
             }
         }

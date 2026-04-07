@@ -134,9 +134,13 @@ public final class AgentLocalIntentSupport {
 
     public static boolean wantsPowerFactorStandard(String userMessage) {
         String m = AgentTextUtil.normalizeForIntent(userMessage);
+        String raw = userMessage == null ? "" : userMessage.toLowerCase(java.util.Locale.ROOT);
         boolean hasPf = m.contains("역률") || m.contains("powerfactor") || m.contains("pf");
         boolean hasStandard = m.contains("기준") || m.contains("기준치") || m.contains("표준") || m.contains("standard");
         boolean hasIeee = m.contains("ieee");
+        if (!hasPf) hasPf = raw.contains("역률") || raw.contains("power factor");
+        if (!hasStandard) hasStandard = raw.contains("기준") || raw.contains("표준");
+        if (!hasIeee) hasIeee = raw.contains("ieee");
         return hasPf && hasStandard && hasIeee;
     }
 
@@ -253,10 +257,15 @@ public final class AgentLocalIntentSupport {
 
     public static boolean wantsCurrentUnbalanceCount(String userMessage) {
         String m = AgentTextUtil.normalizeForIntent(userMessage);
+        String raw = userMessage == null ? "" : userMessage.toLowerCase(java.util.Locale.ROOT);
         boolean hasCurrent = m.contains("전류") || m.contains("current");
         boolean hasUnbalance = m.contains("불평형") || m.contains("불균형") || m.contains("unbalance") || m.contains("imbalance");
         boolean hasCount = m.contains("수는") || m.contains("몇개") || m.contains("몇건") || m.contains("개수")
             || m.contains("갯수") || m.contains("건수") || m.contains("count") || m.contains("총몇");
+        if (!hasCurrent) hasCurrent = raw.contains("전류");
+        if (!hasUnbalance) hasUnbalance = raw.contains("불평형") || raw.contains("불균형");
+        if (!hasCount) hasCount = raw.contains("수는") || raw.contains("개수") || raw.contains("갯수")
+            || raw.contains("건수") || raw.contains("몇 개") || raw.contains("몇개") || raw.contains("총 ");
         return hasCurrent && hasUnbalance && hasCount;
     }
 

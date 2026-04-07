@@ -45,11 +45,15 @@ public final class AgentScopedIntentSupport {
 
     public static boolean wantsPanelMonthlyEnergySummary(String userMessage, boolean hasPanelTokens) {
         String m = AgentTextUtil.normalizeForIntent(userMessage);
+        String raw = userMessage == null ? "" : userMessage.toLowerCase(java.util.Locale.ROOT);
         boolean hasPanel = m.contains("패널") || m.contains("panel") || m.contains("판넬");
         boolean hasEnergy = m.contains("전력사용량") || m.contains("사용전력") || m.contains("전력량") || m.contains("사용량")
             || m.contains("kwh") || m.contains("energy");
         boolean hasTotal = m.contains("전체") || m.contains("총") || m.contains("합계") || m.contains("누적")
             || m.endsWith("은?") || m.endsWith("는?") || m.endsWith("?");
+        if (!hasPanel) hasPanel = raw.contains("패널") || raw.contains("panel");
+        if (!hasEnergy) hasEnergy = raw.contains("전력량") || raw.contains("사용량") || raw.contains("energy") || raw.contains("kwh");
+        if (!hasTotal) hasTotal = raw.contains("전체") || raw.contains("총") || raw.contains("합계");
         return hasPanel && hasEnergy && hasTotal && hasPanelTokens;
     }
 
