@@ -41,6 +41,7 @@ public final class AgentRuntimeDirectSupport {
 
     public static DirectAnswerResult tryBuildDirectAnswer(String userMessage, boolean forceLlmOnly) throws Exception {
         if (forceLlmOnly) return null;
+        String rawLower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
 
         String directIntentText = AgentTextUtil.normalizeForIntent(userMessage);
         Integer directMeterId = AgentQueryExtractSupport.extractMeterId(userMessage);
@@ -88,6 +89,22 @@ public final class AgentRuntimeDirectSupport {
             AgentQueryExtractSupport.extractLinePairLabel(userMessage),
             AgentQueryRouterCompat.wantsPanelLatestStatus(userMessage)
         );
+        boolean rawEnergyNow = (rawLower.contains("현재") || rawLower.contains("지금") || rawLower.contains("latest") || rawLower.contains("now"))
+            && (rawLower.contains("전력량") || rawLower.contains("사용량") || rawLower.contains("energy") || rawLower.contains("kwh"));
+        if (rawEnergyNow && (directReq.directMeterId != null || (directReq.directPanelTokens != null && !directReq.directPanelTokens.isEmpty()))) {
+            return AgentDirectPowerHelper.energyValue(
+                AgentDbTools.getLatestEnergyContext(directReq.directMeterId, joinCsv(directReq.directPanelTokens)),
+                false
+            );
+        }
+        if ((rawLower.contains("역률") || rawLower.contains("power factor") || rawLower.contains("pf"))
+            && (rawLower.contains("기준") || rawLower.contains("표준") || rawLower.contains("standard"))) {
+            DirectAnswerResult result = new DirectAnswerResult();
+            result.dbContext = "[PF standard] IEEE";
+            String delegated = AgentAnswerFormatter.buildPowerFactorStandardDirectAnswer(userMessage);
+            result.answer = delegated != null ? delegated : AgentCriticalDirectAnswerHelper.buildPowerFactorStandardDirectAnswer(userMessage);
+            return result;
+        }
         boolean wantsReactiveEnergyValue = AgentQueryRouterCompat.wantsReactiveEnergyValue(userMessage);
         boolean wantsEnergyValue = AgentQueryRouterCompat.wantsEnergyValue(userMessage);
         boolean wantsActivePowerValue = AgentQueryRouterCompat.wantsActivePowerValue(userMessage);
@@ -216,6 +233,7 @@ public final class AgentRuntimeDirectSupport {
 
     public static DirectAnswerResult tryBuildCriticalDirectAnswer(String userMessage, boolean forceLlmOnly) throws Exception {
         if (forceLlmOnly) return null;
+        String rawLower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
 
         boolean criticalHasMeterHint =
             AgentQueryExtractSupport.extractMeterId(userMessage) != null
@@ -274,6 +292,26 @@ public final class AgentRuntimeDirectSupport {
             criticalAlarmSeed.directPeriodLabel,
             criticalPanelTokens
         );
+        boolean rawPanelMonthly = criticalPanelTokens != null && !criticalPanelTokens.isEmpty()
+            && (rawLower.contains("패널") || rawLower.contains("panel"))
+            && (rawLower.contains("전체") || rawLower.contains("총") || rawLower.contains("합계"))
+            && (rawLower.contains("전력량") || rawLower.contains("사용량") || rawLower.contains("energy") || rawLower.contains("kwh"));
+        if (rawPanelMonthly) {
+            return AgentCriticalResultHelper.panelMonthlyEnergy(
+                AgentDbTools.getPanelMonthlyEnergyContext(joinCsv(criticalPanelTokens), criticalReq.criticalMonth)
+            );
+        }
+        boolean rawCurrentUnbalanceCount = (rawLower.contains("전류") || rawLower.contains("current"))
+            && (rawLower.contains("불평형") || rawLower.contains("불균형") || rawLower.contains("unbalance") || rawLower.contains("imbalance"))
+            && (rawLower.contains("수는") || rawLower.contains("개수") || rawLower.contains("갯수")
+                || rawLower.contains("건수") || rawLower.contains("몇개") || rawLower.contains("몇 개")
+                || rawLower.contains("count") || rawLower.contains("총 "));
+        if (rawCurrentUnbalanceCount) {
+            String countCtx = criticalReq.criticalFromTs != null
+                ? AgentDbTools.getCurrentUnbalanceCountContext(10.0d, criticalReq.criticalFromTs, criticalReq.criticalToTs, criticalReq.criticalPeriodLabel)
+                : AgentDbTools.getCurrentUnbalanceCountContext(10.0d, null, null, null);
+            return AgentDirectOutlierHelper.currentUnbalanceCount(countCtx);
+        }
         Integer harmonicCountTopN = AgentQueryExtractSupport.extractTopN(userMessage, 200, 500);
         return AgentCriticalFlowHelper.tryBuildCriticalAnswer(
             userMessage,
@@ -322,5 +360,12 @@ public final class AgentRuntimeDirectSupport {
             ),
             AgentLocalIntentSupport.wantsOpenAlarmCountSummary(userMessage)
         );
+    }
+
+    private static String joinCsv(java.util.List<String> items) {
+        if (items == null || items.isEmpty()) {
+            return null;
+        }
+        return String.join(",", items);
     }
 }
