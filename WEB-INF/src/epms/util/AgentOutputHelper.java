@@ -21,6 +21,10 @@ public final class AgentOutputHelper {
         return "{\"error\":" + quote(errorMessage) + "}";
     }
 
+    public static String quoteJson(String value) {
+        return quote(value);
+    }
+
     private static String quote(String value) {
         return "\"" + EpmsWebUtil.escJson(value == null ? "" : value) + "\"";
     }

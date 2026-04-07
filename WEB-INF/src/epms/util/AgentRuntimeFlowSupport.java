@@ -106,6 +106,19 @@ public final class AgentRuntimeFlowSupport {
         return AgentModelRouter.routeModel(userMessage, defaultModel, aiModel, pqModel, alarmModel);
     }
 
+    public static String routeCoderModel(String userMessage, String defaultModel, String coderModel) {
+        String m = AgentTextUtil.normalizeForIntent(userMessage);
+        boolean isCoderTask =
+            m.contains("sql") || m.contains("query") || m.contains("쿼리") ||
+            m.contains("select") || m.contains("where") || m.contains("join") ||
+            m.contains("groupby") || m.contains("orderby") ||
+            m.contains("테이블") || m.contains("컬럼") || m.contains("column") ||
+            m.contains("스키마") || m.contains("schema") ||
+            m.contains("ddl") || m.contains("dml") ||
+            m.contains("insert") || m.contains("update") || m.contains("delete");
+        return isCoderTask ? coderModel : defaultModel;
+    }
+
     private static void assertModelExists(String tagJson, String modelName) {
         if (modelName == null || modelName.isEmpty()) {
             return;
