@@ -21,6 +21,7 @@ Related files:
 - `docs/sql/create_epms_peak_policy_schema.sql`
 - `docs/sql/create_epms_peak_15min_summary.sql`
 - `docs/sql/create_peak_15min_summary_agent_job.sql`
+- `docs/sql/check_peak_management_readiness.sql`
 
 ## 3. Pre-Deployment Checklist
 
@@ -45,6 +46,7 @@ Validation after execution:
 - Confirm that `dbo.peak_15min_summary` exists.
 - Confirm that `dbo.sp_refresh_peak_15min_summary` exists.
 - Confirm that SQL Agent job `EPMS Peak 15min Summary Refresh` exists.
+- Run `docs/sql/check_peak_management_readiness.sql` once and review the result.
 
 ## 5. Initial Data Refresh Checklist
 
