@@ -518,3 +518,9 @@
 1. create_epms_peak_15min_summary.sql ?ㅽ뻾
 2. create_peak_15min_summary_agent_job.sql ?ㅽ뻾
 3. peak_management.jsp?먯꽌 吏묎퀎 ?뚯씠釉??ъ슜 ?щ?? 留덉?留?吏묎퀎 ?쒓컖 ?뺤씤
+
+## 15. 운영 적용 체크리스트
+
+Peak 관리 운영 전환용 체크리스트는 아래 문서에 정리되어 있다.
+
+- docs/epms_peak_operations_checklist.md
