@@ -1,0 +1,24 @@
+[app]
+name = "EPMS"
+base_url = "http://localhost:8080"
+
+[database]
+jndi_name = "java:comp/env/jdbc/epms"
+server = "localhost,1433"
+name = "EPMS"
+user = "sa"
+password = "1234"
+encrypt = "true"
+trust_server_certificate = "true"
+
+[backup]
+dir = 'C:\backup'
+retain_days = 7
+schedule = "02:00"
+
+[plc]
+default_polling_ms = 3000
+default_write_interval_sec = 3
+
+[agent]
+properties_path = "epms/agent_model.properties"

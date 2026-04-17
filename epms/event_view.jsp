@@ -172,14 +172,14 @@
 
         StringBuilder fromWhere = new StringBuilder();
         fromWhere.append("FROM dbo.device_events de ")
-                 .append("LEFT JOIN dbo.meters m ON m.meter_id = de.device_id ")
+                 .append("LEFT JOIN dbo.meters m ON m.meter_id = COALESCE(de.meter_id, de.device_id) ")
                  .append("WHERE 1=1 ");
 
         List<Object> params = new ArrayList<>();
 
         if (!meterId.isEmpty()) {
             try {
-                fromWhere.append("AND de.device_id = ? ");
+                fromWhere.append("AND COALESCE(de.meter_id, de.device_id) = ? ");
                 params.add(Integer.parseInt(meterId));
             } catch (Exception ignore) { meterId = ""; }
         }
@@ -233,20 +233,20 @@
 
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ")
-           .append("  de.event_id, de.device_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, ")
+           .append("  de.event_id, COALESCE(de.meter_id, de.device_id) AS meter_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, ")
            .append("  de.event_type, de.severity, de.event_time, de.restored_time, de.description, ")
            .append("  alink.alarm_id ")
            .append("FROM dbo.device_events de ")
-           .append("LEFT JOIN dbo.meters m ON m.meter_id = de.device_id ")
+           .append("LEFT JOIN dbo.meters m ON m.meter_id = COALESCE(de.meter_id, de.device_id) ")
            .append("OUTER APPLY ( ")
            .append("  SELECT TOP 1 al.alarm_id ")
            .append("  FROM dbo.alarm_log al ")
-           .append("  WHERE al.meter_id = de.device_id ")
+           .append("  WHERE al.meter_id = COALESCE(de.meter_id, de.device_id) ")
            .append("    AND al.alarm_type = de.event_type ")
            .append("    AND ABS(DATEDIFF(SECOND, al.triggered_at, de.event_time)) <= 5 ")
            .append("  ORDER BY ABS(DATEDIFF(SECOND, al.triggered_at, de.event_time)), al.alarm_id DESC ")
            .append(") alink ")
-           .append(fromWhere.toString().replaceFirst("^FROM dbo.device_events de LEFT JOIN dbo.meters m ON m.meter_id = de.device_id ", ""))
+           .append(fromWhere.toString().replaceFirst("^FROM dbo.device_events de LEFT JOIN dbo.meters m ON m.meter_id = COALESCE\\(de.meter_id, de.device_id\\) ", ""))
            .append("ORDER BY de.event_time DESC, de.event_id DESC ")
            .append("OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
 
@@ -261,7 +261,7 @@
                 while (rs.next()) {
                     Map<String, Object> row = new HashMap<>();
                     row.put("event_id", rs.getLong("event_id"));
-                    row.put("device_id", rs.getInt("device_id"));
+                    row.put("meter_id", rs.getInt("meter_id"));
                     row.put("meter_name", rs.getString("meter_name"));
                     row.put("panel_name", rs.getString("panel_name"));
                     row.put("building_name", rs.getString("building_name"));
@@ -586,7 +586,7 @@
                     </thead>
                     <tbody>
                     <% for (Map<String, Object> e : events) {
-                        String meterIdStr = String.valueOf(e.get("device_id") == null ? "" : e.get("device_id"));
+                        String meterIdStr = String.valueOf(e.get("meter_id") == null ? "" : e.get("meter_id"));
                         String eventIdStr = String.valueOf(e.get("event_id") == null ? "" : e.get("event_id"));
                         String eventTimeStr = String.valueOf(e.get("event_time") == null ? "" : e.get("event_time"));
                         String sev = normalizeSeverity(e.get("severity"));
@@ -599,7 +599,7 @@
                             <td><%= h(e.get("event_time")) %></td>
                             <td><%= h(e.get("building_name")) %></td>
                             <td><%= h(e.get("usage_type")) %></td>
-                            <td><%= h(e.get("meter_name")) %> (#<%= h(e.get("device_id")) %>)</td>
+                            <td><%= h(e.get("meter_name")) %> (#<%= h(e.get("meter_id")) %>)</td>
                             <td><%= h(e.get("panel_name")) %></td>
                             <td><%= h(cleanEventType(e.get("event_type"))) %></td>
                             <td class="sev-<%= h(sev) %>"><%= h(sev) %></td>

@@ -61,6 +61,8 @@ public final class AlarmDiProcessingSupport {
 
         int deviceId = pointId;
         int alarmMeterId = resolveDiAlarmMeterId(meterIdByName, itemName);
+        Integer eventMeterId = alarmMeterId > 0 ? Integer.valueOf(alarmMeterId) : null;
+        int eventEntityId = alarmMeterId > 0 ? alarmMeterId : deviceId;
         String eventType = buildDiEventType(bitNo, tagName);
         String diRuleCode = resolveDiRuleCode(eventType, tagName);
         DiRuleMeta diRuleMeta = diRuleMetaMap == null ? null : diRuleMetaMap.get(normKey(diRuleCode));
@@ -72,18 +74,18 @@ public final class AlarmDiProcessingSupport {
 
         if (prev == null) {
             if (value == 1) {
-                openDiAlarmIfNeeded(selOpen, ins, selAlarmOpen, insAlarm, deviceId, alarmMeterId, eventType, sev, measuredAt, desc, diRuleMeta, diRuleEnabled, out);
+                openDiAlarmIfNeeded(selOpen, ins, selAlarmOpen, insAlarm, eventMeterId, eventEntityId, alarmMeterId, eventType, sev, measuredAt, desc, diRuleMeta, diRuleEnabled, out);
             } else {
-                closeDiAlarmIfOpen(selOpen, close, selAlarmOpenAll, clearAlarm, deviceId, alarmMeterId, eventType, measuredAt, out);
+                closeDiAlarmIfOpen(selOpen, close, selAlarmOpenAll, clearAlarm, eventEntityId, alarmMeterId, eventType, measuredAt, out);
             }
             lastDiValueMap.put(diKey, Integer.valueOf(value));
             return out;
         }
 
         if (prev.intValue() == 0 && value == 1) {
-            openDiAlarmIfNeeded(selOpen, ins, selAlarmOpen, insAlarm, deviceId, alarmMeterId, eventType, sev, measuredAt, desc, diRuleMeta, diRuleEnabled, out);
+            openDiAlarmIfNeeded(selOpen, ins, selAlarmOpen, insAlarm, eventMeterId, eventEntityId, alarmMeterId, eventType, sev, measuredAt, desc, diRuleMeta, diRuleEnabled, out);
         } else if (prev.intValue() == 1 && value == 0) {
-            closeDiAlarmIfOpen(selOpen, close, selAlarmOpenAll, clearAlarm, deviceId, alarmMeterId, eventType, measuredAt, out);
+            closeDiAlarmIfOpen(selOpen, close, selAlarmOpenAll, clearAlarm, eventEntityId, alarmMeterId, eventType, measuredAt, out);
         }
         lastDiValueMap.put(diKey, Integer.valueOf(value));
         return out;
@@ -94,7 +96,8 @@ public final class AlarmDiProcessingSupport {
             PreparedStatement ins,
             PreparedStatement selAlarmOpen,
             PreparedStatement insAlarm,
-            int deviceId,
+            Integer meterId,
+            int eventEntityId,
             int alarmMeterId,
             String eventType,
             String severity,
@@ -105,16 +108,16 @@ public final class AlarmDiProcessingSupport {
             OpenCloseCount out) throws Exception {
         if (!diRuleEnabled) return;
         Long openEventId = null;
-        if (!AlarmFacade.isDiEventOpen(deviceId, eventType, measuredAt.getTime())) {
-            openEventId = AlarmPersistenceSupport.findOpenEventId(selOpen, deviceId, eventType);
+        if (!AlarmFacade.isDiEventOpen(eventEntityId, eventType, measuredAt.getTime())) {
+            openEventId = AlarmPersistenceSupport.findOpenEventId(selOpen, eventEntityId, eventType);
             if (openEventId != null) {
-                AlarmFacade.rememberDiEventOpen(deviceId, eventType, severity, measuredAt.getTime());
+                AlarmFacade.rememberDiEventOpen(eventEntityId, eventType, severity, measuredAt.getTime());
             }
         } else {
             openEventId = Long.valueOf(-1L);
         }
         if (openEventId == null) {
-            out.opened += AlarmPersistenceSupport.insertDeviceEvent(ins, deviceId, eventType, measuredAt, severity, description);
+            out.opened += AlarmPersistenceSupport.insertDeviceEvent(ins, meterId, eventEntityId, eventType, measuredAt, severity, description);
         }
         if (alarmMeterId > 0 && ("ALARM".equalsIgnoreCase(severity) || "CRITICAL".equalsIgnoreCase(severity))) {
             Long openAlarmId = null;
@@ -137,18 +140,18 @@ public final class AlarmDiProcessingSupport {
             PreparedStatement close,
             PreparedStatement selAlarmOpenAll,
             PreparedStatement clearAlarm,
-            int deviceId,
+            int eventEntityId,
             int alarmMeterId,
             String eventType,
             Timestamp measuredAt,
             OpenCloseCount out) throws Exception {
-        Long openEventId = AlarmPersistenceSupport.findOpenEventId(selOpen, deviceId, eventType);
+        Long openEventId = AlarmPersistenceSupport.findOpenEventId(selOpen, eventEntityId, eventType);
         if (openEventId != null) {
             int changed = AlarmPersistenceSupport.closeOpenEvent(close, measuredAt, openEventId);
             out.closed += changed;
             if (changed > 0) {
-                AlarmFacade.clearDiEventOpen(deviceId, eventType);
-                AlarmFacade.queueCloseDiEvent(deviceId, eventType, "device event restored");
+                AlarmFacade.clearDiEventOpen(eventEntityId, eventType);
+                AlarmFacade.queueCloseDiEvent(eventEntityId, eventType, "device event restored");
             }
         }
         if (alarmMeterId > 0) {

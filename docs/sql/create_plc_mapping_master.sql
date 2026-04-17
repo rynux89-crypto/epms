@@ -35,6 +35,7 @@ BEGIN
         point_id INT NOT NULL,
         di_address INT NOT NULL,
         bit_no INT NOT NULL,
+        meter_id INT NULL,
         tag_name NVARCHAR(255) NULL,
         item_name NVARCHAR(255) NULL,
         panel_name NVARCHAR(255) NULL,
@@ -50,6 +51,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.plc_di
     CREATE INDEX IX_plc_di_mapping_master_addr ON dbo.plc_di_mapping_master (plc_id, di_address, bit_no);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.plc_di_mapping_master') AND name = 'IX_plc_di_mapping_master_panel')
     CREATE INDEX IX_plc_di_mapping_master_panel ON dbo.plc_di_mapping_master (panel_name, item_name);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.plc_di_mapping_master') AND name = 'IX_plc_di_mapping_master_meter')
+    CREATE INDEX IX_plc_di_mapping_master_meter ON dbo.plc_di_mapping_master (meter_id, plc_id, point_id, di_address, bit_no);
 GO
 
 ;WITH ai_src AS (
@@ -146,6 +149,7 @@ GO
         dt.point_id,
         dt.di_address,
         dt.bit_no,
+        COALESCE(mp_exact.meter_id, mp_name.meter_id, mp_panel.meter_id) AS meter_id,
         dt.tag_name,
         dt.item_name,
         dt.panel_name,
@@ -155,12 +159,38 @@ GO
     LEFT JOIN dbo.plc_di_map dm
       ON dm.plc_id = dt.plc_id
      AND dm.point_id = dt.point_id
+    OUTER APPLY (
+        SELECT TOP 1 m.meter_id
+        FROM dbo.meters m
+        WHERE dt.item_name IS NOT NULL
+          AND dt.panel_name IS NOT NULL
+          AND UPPER(LTRIM(RTRIM(m.name))) = UPPER(LTRIM(RTRIM(dt.item_name)))
+          AND UPPER(LTRIM(RTRIM(m.panel_name))) = UPPER(LTRIM(RTRIM(dt.panel_name)))
+        ORDER BY m.meter_id
+    ) mp_exact
+    OUTER APPLY (
+        SELECT TOP 1 m.meter_id
+        FROM dbo.meters m
+        WHERE mp_exact.meter_id IS NULL
+          AND dt.item_name IS NOT NULL
+          AND UPPER(LTRIM(RTRIM(m.name))) = UPPER(LTRIM(RTRIM(dt.item_name)))
+        ORDER BY m.meter_id
+    ) mp_name
+    OUTER APPLY (
+        SELECT CASE WHEN COUNT(*) = 1 THEN MIN(m.meter_id) END AS meter_id
+        FROM dbo.meters m
+        WHERE mp_exact.meter_id IS NULL
+          AND mp_name.meter_id IS NULL
+          AND dt.panel_name IS NOT NULL
+          AND UPPER(LTRIM(RTRIM(m.panel_name))) = UPPER(LTRIM(RTRIM(dt.panel_name)))
+    ) mp_panel
 )
 MERGE dbo.plc_di_mapping_master AS t
 USING di_seed AS s
 ON (t.plc_id = s.plc_id AND t.point_id = s.point_id AND t.di_address = s.di_address AND t.bit_no = s.bit_no)
 WHEN MATCHED THEN
     UPDATE SET
+        meter_id = s.meter_id,
         tag_name = s.tag_name,
         item_name = s.item_name,
         panel_name = s.panel_name,
@@ -168,5 +198,5 @@ WHEN MATCHED THEN
         note = s.note,
         updated_at = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN
-    INSERT (plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled, note, updated_at)
-    VALUES (s.plc_id, s.point_id, s.di_address, s.bit_no, s.tag_name, s.item_name, s.panel_name, s.enabled, s.note, SYSUTCDATETIME());
+    INSERT (plc_id, point_id, di_address, bit_no, meter_id, tag_name, item_name, panel_name, enabled, note, updated_at)
+    VALUES (s.plc_id, s.point_id, s.di_address, s.bit_no, s.meter_id, s.tag_name, s.item_name, s.panel_name, s.enabled, s.note, SYSUTCDATETIME());

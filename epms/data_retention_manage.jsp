@@ -175,9 +175,7 @@
         "dbo.measurements",
         "dbo.harmonic_measurements",
         "dbo.flicker_measurements",
-        "dbo.voltage_events",
         "dbo.device_events",
-        "dbo.voltage_event_log",
         "dbo.alarm_log",
         "dbo.plc_ai_samples",
         "dbo.plc_di_samples"

@@ -22,11 +22,11 @@ public final class ModbusDiPersistService {
 
         String selOpenSql =
             "SELECT TOP 1 event_id FROM dbo.device_events " +
-            "WHERE device_id = ? AND event_type = ? AND restored_time IS NULL " +
+            "WHERE COALESCE(meter_id, device_id) = ? AND event_type = ? AND restored_time IS NULL " +
             "ORDER BY event_id DESC";
         String insSql =
-            "INSERT INTO dbo.device_events (device_id, event_type, event_time, severity, description) " +
-            "VALUES (?, ?, ?, ?, ?)";
+            "INSERT INTO dbo.device_events (meter_id, device_id, event_type, event_time, severity, description) " +
+            "VALUES (?, ?, ?, ?, ?, ?)";
         String closeSql =
             "UPDATE dbo.device_events " +
             "SET restored_time = ?, duration_seconds = DATEDIFF(SECOND, event_time, ?), " +
@@ -42,6 +42,7 @@ public final class ModbusDiPersistService {
             Map<String, ModbusDiRuleSupport.DiRuleMeta> diRuleMetaMap = ModbusDiRuleSupport.loadCachedDiRuleMeta(conn);
 
             for (PlcDiReadRow row : diRows) {
+                int mappedMeterId = row.meterId;
                 int pointId = row.pointId;
                 int diAddress = row.diAddress;
                 int bitNo = row.bitNo;
@@ -50,9 +51,10 @@ public final class ModbusDiPersistService {
                 String itemName = asString(row.itemName);
                 String panelName = asString(row.panelName);
 
-                int deviceId = pointId;
-                int alarmMeterId = ModbusMeterResolutionSupport.resolveDiAlarmMeterId(meterMaps, itemName, panelName);
-                Integer alarmMeterKey = alarmMeterId > 0 ? Integer.valueOf(alarmMeterId) : null;
+                int resolvedMeterId = mappedMeterId > 0 ? mappedMeterId
+                        : ModbusMeterResolutionSupport.resolveDiAlarmMeterId(meterMaps, itemName, panelName);
+                Integer alarmMeterKey = resolvedMeterId > 0 ? Integer.valueOf(resolvedMeterId) : null;
+                int eventEntityId = resolvedMeterId > 0 ? resolvedMeterId : pointId;
                 String eventType = ModbusDiRuleSupport.buildDiEventType(bitNo, tagName);
                 String diRuleCode = ModbusDiRuleSupport.resolveDiRuleCode(eventType, tagName);
                 ModbusDiRuleSupport.DiRuleMeta diRuleMeta = diRuleMetaMap.get(ModbusDiRuleSupport.normKey(diRuleCode));
@@ -64,11 +66,11 @@ public final class ModbusDiPersistService {
                     if (value == 1) {
                         if (diRuleEnabled) {
                             opened += openDiEventIfNeeded(
-                                    conn, selOpen, ins, deviceId, plcId, diAddress, bitNo, tagName, itemName, panelName,
+                                    conn, selOpen, ins, alarmMeterKey, eventEntityId, plcId, diAddress, bitNo, tagName, itemName, panelName,
                                     measuredAt, alarmMeterKey, eventType, diRuleMeta);
                         }
                     } else {
-                        closed += closeDiEventIfNeeded(conn, selOpen, close, deviceId, measuredAt, alarmMeterKey, eventType, itemName, panelName);
+                        closed += closeDiEventIfNeeded(conn, selOpen, close, eventEntityId, measuredAt, alarmMeterKey, eventType, itemName, panelName);
                     }
                     ModbusCacheSupport.lastDiValueMap().put(diKey, Integer.valueOf(value));
                     continue;
@@ -77,11 +79,11 @@ public final class ModbusDiPersistService {
                 if (prev.intValue() == 0 && value == 1) {
                     if (diRuleEnabled) {
                         opened += openDiEventIfNeeded(
-                                conn, selOpen, ins, deviceId, plcId, diAddress, bitNo, tagName, itemName, panelName,
+                                conn, selOpen, ins, alarmMeterKey, eventEntityId, plcId, diAddress, bitNo, tagName, itemName, panelName,
                                 measuredAt, alarmMeterKey, eventType, diRuleMeta);
                     }
                 } else if (prev.intValue() == 1 && value == 0) {
-                    closed += closeDiEventIfNeeded(conn, selOpen, close, deviceId, measuredAt, alarmMeterKey, eventType, itemName, panelName);
+                    closed += closeDiEventIfNeeded(conn, selOpen, close, eventEntityId, measuredAt, alarmMeterKey, eventType, itemName, panelName);
                 }
                 ModbusCacheSupport.lastDiValueMap().put(diKey, Integer.valueOf(value));
             }
@@ -93,7 +95,8 @@ public final class ModbusDiPersistService {
             Connection conn,
             PreparedStatement selOpen,
             PreparedStatement ins,
-            int deviceId,
+            Integer meterId,
+            int eventEntityId,
             int plcId,
             int diAddress,
             int bitNo,
@@ -104,16 +107,18 @@ public final class ModbusDiPersistService {
             Integer alarmMeterKey,
             String eventType,
             ModbusDiRuleSupport.DiRuleMeta diRuleMeta) throws Exception {
-        String desc = ModbusDiRuleSupport.renderDiDescription(diRuleMeta, plcId, deviceId, diAddress, bitNo, tagName, itemName, panelName, eventType);
+        String desc = ModbusDiRuleSupport.renderDiDescription(diRuleMeta, plcId, eventEntityId, diAddress, bitNo, tagName, itemName, panelName, eventType);
         String sev = ModbusDiRuleSupport.getDiSeverity(tagName);
-        Long openEventId = findOpenDeviceEventId(selOpen, deviceId, eventType);
+        Long openEventId = findOpenDeviceEventId(selOpen, eventEntityId, eventType);
         int opened = 0;
         if (openEventId == null) {
-            ins.setInt(1, deviceId);
-            ins.setString(2, eventType);
-            ins.setTimestamp(3, measuredAt);
-            ins.setString(4, sev);
-            ins.setString(5, desc);
+            if (meterId != null && meterId.intValue() > 0) ins.setInt(1, meterId.intValue());
+            else ins.setNull(1, Types.INTEGER);
+            ins.setInt(2, eventEntityId);
+            ins.setString(3, eventType);
+            ins.setTimestamp(4, measuredAt);
+            ins.setString(5, sev);
+            ins.setString(6, desc);
             opened += ins.executeUpdate();
         }
         if ("ALARM".equalsIgnoreCase(sev) || "CRITICAL".equalsIgnoreCase(sev)) {
@@ -126,13 +131,13 @@ public final class ModbusDiPersistService {
             Connection conn,
             PreparedStatement selOpen,
             PreparedStatement close,
-            int deviceId,
+            int eventEntityId,
             Timestamp measuredAt,
             Integer alarmMeterKey,
             String eventType,
             String itemName,
             String panelName) throws Exception {
-        Long openEventId = findOpenDeviceEventId(selOpen, deviceId, eventType);
+        Long openEventId = findOpenDeviceEventId(selOpen, eventEntityId, eventType);
         int closed = 0;
         if (openEventId != null) {
             close.setTimestamp(1, measuredAt);
@@ -145,8 +150,8 @@ public final class ModbusDiPersistService {
         return closed;
     }
 
-    private static Long findOpenDeviceEventId(PreparedStatement selOpen, int deviceId, String eventType) throws Exception {
-        selOpen.setInt(1, deviceId);
+    private static Long findOpenDeviceEventId(PreparedStatement selOpen, int eventEntityId, String eventType) throws Exception {
+        selOpen.setInt(1, eventEntityId);
         selOpen.setString(2, eventType);
         try (ResultSet rs = selOpen.executeQuery()) {
             if (rs.next()) {

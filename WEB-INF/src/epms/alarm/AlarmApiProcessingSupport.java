@@ -86,11 +86,11 @@ public final class AlarmApiProcessingSupport {
 
         String selOpenSql =
             "SELECT TOP 1 event_id FROM dbo.device_events " +
-            "WHERE device_id = ? AND event_type = ? AND restored_time IS NULL " +
+            "WHERE COALESCE(meter_id, device_id) = ? AND event_type = ? AND restored_time IS NULL " +
             "ORDER BY event_id DESC";
         String insSql =
-            "INSERT INTO dbo.device_events (device_id, event_type, event_time, severity, description) " +
-            "VALUES (?, ?, ?, ?, ?)";
+            "INSERT INTO dbo.device_events (meter_id, device_id, event_type, event_time, severity, description) " +
+            "VALUES (?, ?, ?, ?, ?, ?)";
         String closeSql =
             "UPDATE dbo.device_events " +
             "SET restored_time = ?, duration_seconds = DATEDIFF(SECOND, event_time, ?), " +

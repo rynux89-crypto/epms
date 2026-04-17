@@ -10,6 +10,5 @@
     <a href="voltage_unbalance.jsp">불평형</a>
     <a href="harmonics.jsp">고조파</a>
     <a href="variation.jsp">변동율</a>
-    <a href="voltage_events.jsp">전압강하/상승</a>
     <a href="alarm_view.jsp">알람</a>
 </div>

@@ -1,4 +1,4 @@
-﻿includes\bems.jsp:45:FROM vw_meter_measurements
+includes\bems.jsp:45:FROM vw_meter_measurements
 includes\bems.jsp:55:FROM vw_meter_measurements
 includes\bems.jsp:105:FROM vw_meter_measurements
 includes\bems.jsp:114:FROM vw_meter_measurements
@@ -35,7 +35,6 @@ pages\meter_status.jsp:27:FROM meters
 pages\meter_status.jsp:120:FROM vw_meter_measurements
 pages\meter_status.jsp:185:FROM vw_harmonic_measurements
 pages\meter_status.jsp:215:FROM vw_flicker_with_meter
-pages\meter_status.jsp:232:FROM vw_voltage_event_log
 pages\meter_status.jsp:257:FROM vw_alarm_log
 epms\alarm_view.jsp:38:FROM meters
 epms\alarm_view.jsp:46:FROM vw_alarm_log
@@ -123,7 +122,6 @@ epms\meter_status.jsp:27:FROM meters
 epms\meter_status.jsp:120:FROM vw_meter_measurements
 epms\meter_status.jsp:185:FROM vw_harmonic_measurements
 epms\meter_status.jsp:215:FROM vw_flicker_with_meter
-epms\meter_status.jsp:232:FROM vw_voltage_event_log
 epms\meter_status.jsp:257:FROM vw_alarm_log
 epms\plc_excel_import.jsp:44:FROM dbo.plc_config
 epms\plc_register.jsp:53:FROM dbo.plc_config

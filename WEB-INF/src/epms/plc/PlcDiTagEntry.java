@@ -1,6 +1,7 @@
 package epms.plc;
 
 public final class PlcDiTagEntry {
+    public final int meterId;
     public final int pointId;
     public final int diAddress;
     public final int bitNo;
@@ -8,7 +9,8 @@ public final class PlcDiTagEntry {
     public final String itemName;
     public final String panelName;
 
-    public PlcDiTagEntry(int pointId, int diAddress, int bitNo, String tagName, String itemName, String panelName) {
+    public PlcDiTagEntry(int meterId, int pointId, int diAddress, int bitNo, String tagName, String itemName, String panelName) {
+        this.meterId = meterId;
         this.pointId = pointId;
         this.diAddress = diAddress;
         this.bitNo = bitNo;

@@ -35,8 +35,8 @@ public final class AlarmPersistenceSupport {
         }
     }
 
-    public static Long findOpenEventId(PreparedStatement ps, int deviceId, String eventType) throws Exception {
-        ps.setInt(1, deviceId);
+    public static Long findOpenEventId(PreparedStatement ps, int eventEntityId, String eventType) throws Exception {
+        ps.setInt(1, eventEntityId);
         ps.setString(2, eventType);
         try (ResultSet rs = ps.executeQuery()) {
             if (rs.next()) return rs.getLong(1);
@@ -53,9 +53,9 @@ public final class AlarmPersistenceSupport {
         return null;
     }
 
-    public static List<Long> findOpenEventIds(PreparedStatement ps, int deviceId, String eventType) throws Exception {
+    public static List<Long> findOpenEventIds(PreparedStatement ps, int eventEntityId, String eventType) throws Exception {
         List<Long> out = new ArrayList<>();
-        ps.setInt(1, deviceId);
+        ps.setInt(1, eventEntityId);
         ps.setString(2, eventType);
         try (ResultSet rs = ps.executeQuery()) {
             while (rs.next()) out.add(Long.valueOf(rs.getLong(1)));
@@ -91,19 +91,22 @@ public final class AlarmPersistenceSupport {
 
     public static int insertDeviceEvent(
             PreparedStatement ins,
-            int deviceId,
+            Integer meterId,
+            int eventEntityId,
             String eventType,
             Timestamp measuredAt,
             String severity,
             String description) throws Exception {
-        ins.setInt(1, deviceId);
-        ins.setString(2, eventType);
-        ins.setTimestamp(3, measuredAt);
-        ins.setString(4, severity);
-        ins.setString(5, description);
+        if (meterId != null && meterId.intValue() > 0) ins.setInt(1, meterId.intValue());
+        else ins.setNull(1, Types.INTEGER);
+        ins.setInt(2, eventEntityId);
+        ins.setString(3, eventType);
+        ins.setTimestamp(4, measuredAt);
+        ins.setString(5, severity);
+        ins.setString(6, description);
         int updated = ins.executeUpdate();
         if (updated > 0) {
-            AlarmFacade.queueOpenDiEvent(deviceId, eventType, severity, description);
+            AlarmFacade.queueOpenDiEvent(eventEntityId, eventType, severity, description);
         }
         return updated;
     }

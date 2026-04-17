@@ -1,13 +1,9 @@
-﻿TABLE_SCHEMA|TABLE_NAME|COLUMN_NAME|CONSTRAINT_NAME|definition
+TABLE_SCHEMA|TABLE_NAME|COLUMN_NAME|CONSTRAINT_NAME|definition
 ------------|----------|-----------|---------------|----------
 dbo|device_events|outage_count|DF__device_ev__outag__5EBF139D|((0))
 dbo|device_events|switch_count|DF__device_ev__switc__5FB337D6|((0))
 dbo|device_events|trip_count|DF__device_ev__trip___5DCAEF64|((0))
 dbo|devices|status|DF__devices__status__59FA5E80|('Active')
-dbo|measurenets|created_at|DF_measurenets_created|(sysutcdatetime())
-dbo|measurenets|is_active|DF_measurenets_active|((1))
-dbo|measurenets|protocol|DF_measurenets_protocol|('MODBUS_TCP')
-dbo|measurenets|updated_at|DF_measurenets_updated|(sysutcdatetime())
 dbo|plc_ai_measurements_match|float_registers|DF_plc_ai_match_float_regs|((2))
 dbo|plc_ai_measurements_match|target_table|DF_plc_ai_match_target_table|('measurements')
 dbo|plc_ai_measurements_match|updated_at|DF_plc_ai_match_updated|(sysutcdatetime())

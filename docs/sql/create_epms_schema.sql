@@ -11,7 +11,7 @@ GO
 USE [epms];
 GO
 
-/****** Object:  Table [dbo].[alarm_log]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[alarm_log]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -38,7 +38,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 
 SET ANSI_PADDING OFF
-/****** Object:  Index [idx_alarm_meter_time]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_alarm_meter_time]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE NONCLUSTERED INDEX [idx_alarm_meter_time] ON [dbo].[alarm_log]
 (
 	[meter_id] ASC,
@@ -46,14 +46,14 @@ CREATE NONCLUSTERED INDEX [idx_alarm_meter_time] ON [dbo].[alarm_log]
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 SET ANSI_PADDING ON
 
-/****** Object:  Index [idx_alarm_severity]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_alarm_severity]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE NONCLUSTERED INDEX [idx_alarm_severity] ON [dbo].[alarm_log]
 (
 	[severity] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[alarm_rule]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[alarm_rule]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -85,7 +85,7 @@ PRIMARY KEY CLUSTERED
 SET ANSI_PADDING OFF
 SET ANSI_PADDING ON
 
-/****** Object:  Index [ux_alarm_rule_code]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [ux_alarm_rule_code]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [ux_alarm_rule_code] ON [dbo].[alarm_rule]
 (
 	[rule_code] ASC
@@ -99,7 +99,7 @@ ALTER TABLE [dbo].[alarm_rule] ADD  DEFAULT (sysutcdatetime()) FOR [created_at]
 ALTER TABLE [dbo].[alarm_rule] ADD  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[building_alias]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[building_alias]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[building_alias](
@@ -117,7 +117,7 @@ PRIMARY KEY CLUSTERED
 
 SET ANSI_PADDING ON
 
-/****** Object:  Index [UX_building_alias_keyword]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [UX_building_alias_keyword]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [UX_building_alias_keyword] ON [dbo].[building_alias]
 (
 	[alias_keyword] ASC
@@ -127,7 +127,7 @@ ALTER TABLE [dbo].[building_alias] ADD  CONSTRAINT [DF_building_alias_created_at
 ALTER TABLE [dbo].[building_alias] ADD  CONSTRAINT [DF_building_alias_updated_at]  DEFAULT (sysdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[daily_measurements]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[daily_measurements]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[daily_measurements](
@@ -148,7 +148,7 @@ PRIMARY KEY CLUSTERED
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY]
 
-/****** Object:  Index [idx_daily_meter_date]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_daily_meter_date]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [idx_daily_meter_date] ON [dbo].[daily_measurements]
 (
 	[meter_id] ASC,
@@ -156,12 +156,13 @@ CREATE UNIQUE NONCLUSTERED INDEX [idx_daily_meter_date] ON [dbo].[daily_measurem
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[device_events]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[device_events]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
 CREATE TABLE [dbo].[device_events](
 	[event_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[meter_id] [int] NULL,
 	[device_id] [int] NULL,
 	[event_type] [varchar](50) COLLATE Korean_Wansung_CI_AS NULL,
 	[event_time] [datetime] NOT NULL,
@@ -181,7 +182,7 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 
 SET ANSI_PADDING OFF
-/****** Object:  Index [idx_device_event_time]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_device_event_time]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE NONCLUSTERED INDEX [idx_device_event_time] ON [dbo].[device_events]
 (
 	[device_id] ASC,
@@ -189,7 +190,15 @@ CREATE NONCLUSTERED INDEX [idx_device_event_time] ON [dbo].[device_events]
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 SET ANSI_PADDING ON
 
-/****** Object:  Index [idx_device_event_type]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_device_event_meter_time]    Script Date: 2026-04-09 3:00:00 ******/
+CREATE NONCLUSTERED INDEX [idx_device_event_meter_time] ON [dbo].[device_events]
+(
+	[meter_id] ASC,
+	[event_time] DESC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+SET ANSI_PADDING ON
+
+/****** Object:  Index [idx_device_event_type]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE NONCLUSTERED INDEX [idx_device_event_type] ON [dbo].[device_events]
 (
 	[event_type] ASC
@@ -198,8 +207,7 @@ ALTER TABLE [dbo].[device_events] ADD  DEFAULT ((0)) FOR [trip_count]
 ALTER TABLE [dbo].[device_events] ADD  DEFAULT ((0)) FOR [outage_count]
 ALTER TABLE [dbo].[device_events] ADD  DEFAULT ((0)) FOR [switch_count]
 GO
-
-/****** Object:  Table [dbo].[devices]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[devices]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -220,14 +228,14 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 
 SET ANSI_PADDING OFF
-/****** Object:  Index [idx_devices_id]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_devices_id]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [idx_devices_id] ON [dbo].[devices]
 (
 	[device_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 SET ANSI_PADDING ON
 
-/****** Object:  Index [idx_devices_location]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_devices_location]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE NONCLUSTERED INDEX [idx_devices_location] ON [dbo].[devices]
 (
 	[location] ASC
@@ -235,7 +243,7 @@ CREATE NONCLUSTERED INDEX [idx_devices_location] ON [dbo].[devices]
 ALTER TABLE [dbo].[devices] ADD  DEFAULT ('Active') FOR [status]
 GO
 
-/****** Object:  Table [dbo].[di_group_rule_map]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[di_group_rule_map]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -257,7 +265,7 @@ PRIMARY KEY CLUSTERED
 SET ANSI_PADDING OFF
 SET ANSI_PADDING ON
 
-/****** Object:  Index [ux_di_group_rule_map_metric]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [ux_di_group_rule_map_metric]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [ux_di_group_rule_map_metric] ON [dbo].[di_group_rule_map]
 (
 	[metric_key] ASC
@@ -268,7 +276,7 @@ ALTER TABLE [dbo].[di_group_rule_map] ADD  DEFAULT (sysutcdatetime()) FOR [creat
 ALTER TABLE [dbo].[di_group_rule_map] ADD  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[di_signal_group_map]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[di_signal_group_map]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -292,7 +300,7 @@ PRIMARY KEY CLUSTERED
 SET ANSI_PADDING OFF
 SET ANSI_PADDING ON
 
-/****** Object:  Index [ux_di_signal_group_map_key]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [ux_di_signal_group_map_key]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [ux_di_signal_group_map_key] ON [dbo].[di_signal_group_map]
 (
 	[group_key] ASC,
@@ -306,7 +314,7 @@ ALTER TABLE [dbo].[di_signal_group_map] ADD  DEFAULT (sysutcdatetime()) FOR [cre
 ALTER TABLE [dbo].[di_signal_group_map] ADD  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[flicker_measurements]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Table [dbo].[flicker_measurements]    Script Date: 2026-04-02 1:00:03 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[flicker_measurements](
@@ -321,19 +329,19 @@ PRIMARY KEY CLUSTERED
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY]
 
-/****** Object:  Index [idx_flicker_measured_at]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_flicker_measured_at]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE NONCLUSTERED INDEX [idx_flicker_measured_at] ON [dbo].[flicker_measurements]
 (
 	[measured_at] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-/****** Object:  Index [idx_flicker_meter_id]    Script Date: 2026-04-02 오후 1:00:03 ******/
+/****** Object:  Index [idx_flicker_meter_id]    Script Date: 2026-04-02 1:00:03 ******/
 CREATE NONCLUSTERED INDEX [idx_flicker_meter_id] ON [dbo].[flicker_measurements]
 (
 	[meter_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[harmonic_measurements]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Table [dbo].[harmonic_measurements]    Script Date: 2026-04-02 1:00:04 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[harmonic_measurements](
@@ -384,7 +392,7 @@ PRIMARY KEY CLUSTERED
 
 GO
 
-/****** Object:  Table [dbo].[measurements]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Table [dbo].[measurements]    Script Date: 2026-04-02 1:00:04 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -459,12 +467,12 @@ PRIMARY KEY CLUSTERED
 ) ON [PRIMARY]
 
 SET ANSI_PADDING OFF
-/****** Object:  Index [idx_measurements_id]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [idx_measurements_id]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [idx_measurements_id] ON [dbo].[measurements]
 (
 	[measurement_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-/****** Object:  Index [idx_measurements_meter_time]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [idx_measurements_meter_time]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE NONCLUSTERED INDEX [idx_measurements_meter_time] ON [dbo].[measurements]
 (
 	[meter_id] ASC,
@@ -472,38 +480,8 @@ CREATE NONCLUSTERED INDEX [idx_measurements_meter_time] ON [dbo].[measurements]
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[measurenets]    Script Date: 2026-04-02 오후 1:00:04 ******/
-SET ANSI_NULLS ON
-SET QUOTED_IDENTIFIER ON
-SET ANSI_PADDING ON
-CREATE TABLE [dbo].[measurenets](
-	[plc_id] [int] IDENTITY(1,1) NOT NULL,
-	[plc_name] [nvarchar](100) COLLATE Korean_Wansung_CI_AS NOT NULL,
-	[protocol] [nvarchar](30) COLLATE Korean_Wansung_CI_AS NOT NULL,
-	[ip_address] [varchar](45) COLLATE Korean_Wansung_CI_AS NOT NULL,
-	[port] [int] NOT NULL,
-	[is_active] [bit] NOT NULL,
-	[created_at] [datetime2](7) NOT NULL,
-	[updated_at] [datetime2](7) NOT NULL,
-PRIMARY KEY CLUSTERED 
-(
-	[plc_id] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
- CONSTRAINT [UQ_measurenets_ip_port] UNIQUE NONCLUSTERED 
-(
-	[ip_address] ASC,
-	[port] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-) ON [PRIMARY]
 
-SET ANSI_PADDING OFF
-ALTER TABLE [dbo].[measurenets] ADD  CONSTRAINT [DF_measurenets_protocol]  DEFAULT ('MODBUS_TCP') FOR [protocol]
-ALTER TABLE [dbo].[measurenets] ADD  CONSTRAINT [DF_measurenets_active]  DEFAULT ((1)) FOR [is_active]
-ALTER TABLE [dbo].[measurenets] ADD  CONSTRAINT [DF_measurenets_created]  DEFAULT (sysutcdatetime()) FOR [created_at]
-ALTER TABLE [dbo].[measurenets] ADD  CONSTRAINT [DF_measurenets_updated]  DEFAULT (sysutcdatetime()) FOR [updated_at]
-GO
-
-/****** Object:  Table [dbo].[meter_tree]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Table [dbo].[meter_tree]    Script Date: 2026-04-02 1:00:04 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[meter_tree](
@@ -526,13 +504,13 @@ PRIMARY KEY CLUSTERED
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY]
 
-/****** Object:  Index [IX_meter_tree_child]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [IX_meter_tree_child]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE NONCLUSTERED INDEX [IX_meter_tree_child] ON [dbo].[meter_tree]
 (
 	[child_meter_id] ASC,
 	[is_active] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-/****** Object:  Index [IX_meter_tree_parent]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [IX_meter_tree_parent]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE NONCLUSTERED INDEX [IX_meter_tree_parent] ON [dbo].[meter_tree]
 (
 	[parent_meter_id] ASC,
@@ -546,7 +524,7 @@ ALTER TABLE [dbo].[meter_tree]  WITH CHECK ADD  CONSTRAINT [CK_meter_tree_not_se
 ALTER TABLE [dbo].[meter_tree] CHECK CONSTRAINT [CK_meter_tree_not_self]
 GO
 
-/****** Object:  Table [dbo].[meters]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Table [dbo].[meters]    Script Date: 2026-04-02 1:00:04 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -567,20 +545,20 @@ PRIMARY KEY CLUSTERED
 SET ANSI_PADDING OFF
 SET ANSI_PADDING ON
 
-/****** Object:  Index [idx_meters_building_usage]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [idx_meters_building_usage]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE NONCLUSTERED INDEX [idx_meters_building_usage] ON [dbo].[meters]
 (
 	[building_name] ASC,
 	[usage_type] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-/****** Object:  Index [idx_meters_meter_id]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [idx_meters_meter_id]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [idx_meters_meter_id] ON [dbo].[meters]
 (
 	[meter_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[metric_catalog]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Table [dbo].[metric_catalog]    Script Date: 2026-04-02 1:00:04 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -604,7 +582,7 @@ ALTER TABLE [dbo].[metric_catalog] ADD  DEFAULT (sysutcdatetime()) FOR [created_
 ALTER TABLE [dbo].[metric_catalog] ADD  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[metric_catalog_tag_map]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Table [dbo].[metric_catalog_tag_map]    Script Date: 2026-04-02 1:00:04 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 SET ANSI_PADDING ON
@@ -625,7 +603,7 @@ PRIMARY KEY CLUSTERED
 SET ANSI_PADDING OFF
 SET ANSI_PADDING ON
 
-/****** Object:  Index [ix_metric_catalog_tag_map_metric_key]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [ix_metric_catalog_tag_map_metric_key]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE NONCLUSTERED INDEX [ix_metric_catalog_tag_map_metric_key] ON [dbo].[metric_catalog_tag_map]
 (
 	[metric_key] ASC,
@@ -634,7 +612,7 @@ CREATE NONCLUSTERED INDEX [ix_metric_catalog_tag_map_metric_key] ON [dbo].[metri
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 SET ANSI_PADDING ON
 
-/****** Object:  Index [ux_metric_catalog_tag_map_key_token]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [ux_metric_catalog_tag_map_key_token]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [ux_metric_catalog_tag_map_key_token] ON [dbo].[metric_catalog_tag_map]
 (
 	[metric_key] ASC,
@@ -646,7 +624,7 @@ ALTER TABLE [dbo].[metric_catalog_tag_map] ADD  DEFAULT (sysutcdatetime()) FOR [
 ALTER TABLE [dbo].[metric_catalog_tag_map] ADD  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[monthly_measurements]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Table [dbo].[monthly_measurements]    Script Date: 2026-04-02 1:00:04 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[monthly_measurements](
@@ -665,7 +643,7 @@ PRIMARY KEY CLUSTERED
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY]
 
-/****** Object:  Index [idx_monthly_meter_month]    Script Date: 2026-04-02 오후 1:00:04 ******/
+/****** Object:  Index [idx_monthly_meter_month]    Script Date: 2026-04-02 1:00:04 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [idx_monthly_meter_month] ON [dbo].[monthly_measurements]
 (
 	[meter_id] ASC,
@@ -673,7 +651,7 @@ CREATE UNIQUE NONCLUSTERED INDEX [idx_monthly_meter_month] ON [dbo].[monthly_mea
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[plc_ai_measurements_match]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_ai_measurements_match]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_ai_measurements_match](
@@ -696,7 +674,7 @@ ALTER TABLE [dbo].[plc_ai_measurements_match] ADD  CONSTRAINT [DF_plc_ai_match_t
 ALTER TABLE [dbo].[plc_ai_measurements_match] ADD  CONSTRAINT [DF_plc_ai_match_updated]  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[plc_ai_samples]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_ai_samples]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_ai_samples](
@@ -720,7 +698,7 @@ ALTER TABLE [dbo].[plc_ai_samples] ADD  DEFAULT (sysdatetime()) FOR [measured_at
 ALTER TABLE [dbo].[plc_ai_samples] ADD  DEFAULT ('GOOD') FOR [quality]
 GO
 
-/****** Object:  Table [dbo].[plc_ai_write_task]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_ai_write_task]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_ai_write_task](
@@ -753,7 +731,7 @@ ALTER TABLE [dbo].[plc_ai_write_task] ADD  CONSTRAINT [DF_plc_ai_write_task_valu
 ALTER TABLE [dbo].[plc_ai_write_task] ADD  CONSTRAINT [DF_plc_ai_write_task_task_scope]  DEFAULT ('POINT') FOR [task_scope]
 GO
 
-/****** Object:  Table [dbo].[plc_config]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_config]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_config](
@@ -779,7 +757,7 @@ ALTER TABLE [dbo].[plc_config] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
 ALTER TABLE [dbo].[plc_config] ADD  CONSTRAINT [DF_plc_config_insert_ms]  DEFAULT ((1000)) FOR [insert_ms]
 GO
 
-/****** Object:  Table [dbo].[plc_di_map]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_di_map]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_di_map](
@@ -800,7 +778,7 @@ ALTER TABLE [dbo].[plc_di_map] ADD  DEFAULT ((1)) FOR [enabled]
 ALTER TABLE [dbo].[plc_di_map] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[plc_di_samples]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_di_samples]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_di_samples](
@@ -824,7 +802,7 @@ ALTER TABLE [dbo].[plc_di_samples] ADD  DEFAULT (sysdatetime()) FOR [measured_at
 ALTER TABLE [dbo].[plc_di_samples] ADD  DEFAULT ('GOOD') FOR [quality]
 GO
 
-/****** Object:  Table [dbo].[plc_di_tag_map]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_di_tag_map]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_di_tag_map](
@@ -848,7 +826,7 @@ ALTER TABLE [dbo].[plc_di_tag_map] ADD  DEFAULT ((1)) FOR [enabled]
 ALTER TABLE [dbo].[plc_di_tag_map] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[plc_meter_map]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_meter_map]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_meter_map](
@@ -872,7 +850,7 @@ ALTER TABLE [dbo].[plc_meter_map] ADD  DEFAULT ((1)) FOR [enabled]
 ALTER TABLE [dbo].[plc_meter_map] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[plc_metric_random_range]    Script Date: 2026-04-02 오후 1:00:05 ******/
+/****** Object:  Table [dbo].[plc_metric_random_range]    Script Date: 2026-04-02 1:00:05 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_metric_random_range](
@@ -891,7 +869,7 @@ ALTER TABLE [dbo].[plc_metric_random_range] ADD  DEFAULT ((1)) FOR [enabled]
 ALTER TABLE [dbo].[plc_metric_random_range] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[plc_write_control]    Script Date: 2026-04-02 오후 1:00:06 ******/
+/****** Object:  Table [dbo].[plc_write_control]    Script Date: 2026-04-02 1:00:06 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_write_control](
@@ -908,7 +886,7 @@ ALTER TABLE [dbo].[plc_write_control] ADD  DEFAULT ((0)) FOR [enabled]
 ALTER TABLE [dbo].[plc_write_control] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[usage_type_alias]    Script Date: 2026-04-02 오후 1:00:06 ******/
+/****** Object:  Table [dbo].[usage_type_alias]    Script Date: 2026-04-02 1:00:06 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[usage_type_alias](
@@ -926,7 +904,7 @@ PRIMARY KEY CLUSTERED
 
 SET ANSI_PADDING ON
 
-/****** Object:  Index [UX_usage_type_alias_keyword]    Script Date: 2026-04-02 오후 1:00:06 ******/
+/****** Object:  Index [UX_usage_type_alias_keyword]    Script Date: 2026-04-02 1:00:06 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [UX_usage_type_alias_keyword] ON [dbo].[usage_type_alias]
 (
 	[alias_keyword] ASC
@@ -936,42 +914,8 @@ ALTER TABLE [dbo].[usage_type_alias] ADD  CONSTRAINT [DF_usage_type_alias_create
 ALTER TABLE [dbo].[usage_type_alias] ADD  CONSTRAINT [DF_usage_type_alias_updated_at]  DEFAULT (sysdatetime()) FOR [updated_at]
 GO
 
-/****** Object:  Table [dbo].[voltage_events]    Script Date: 2026-04-02 오후 1:00:06 ******/
-SET ANSI_NULLS ON
-SET QUOTED_IDENTIFIER ON
-SET ANSI_PADDING ON
-CREATE TABLE [dbo].[voltage_events](
-	[event_id] [bigint] IDENTITY(1,1) NOT NULL,
-	[meter_id] [int] NULL,
-	[event_type] [varchar](10) COLLATE Korean_Wansung_CI_AS NULL,
-	[triggered_at] [datetime] NULL,
-	[duration_ms] [int] NULL,
-	[voltage_level] [float] NULL,
-	[severity] [varchar](20) COLLATE Korean_Wansung_CI_AS NULL,
-	[description] [text] COLLATE Korean_Wansung_CI_AS NULL,
-PRIMARY KEY CLUSTERED 
-(
-	[event_id] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 
-SET ANSI_PADDING OFF
-/****** Object:  Index [idx_voltage_meter_time]    Script Date: 2026-04-02 오후 1:00:06 ******/
-CREATE NONCLUSTERED INDEX [idx_voltage_meter_time] ON [dbo].[voltage_events]
-(
-	[meter_id] ASC,
-	[triggered_at] DESC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-SET ANSI_PADDING ON
-
-/****** Object:  Index [idx_voltage_type]    Script Date: 2026-04-02 오후 1:00:06 ******/
-CREATE NONCLUSTERED INDEX [idx_voltage_type] ON [dbo].[voltage_events]
-(
-	[event_type] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
-GO
-
-/****** Object:  Table [dbo].[yearly_measurements]    Script Date: 2026-04-02 오후 1:00:06 ******/
+/****** Object:  Table [dbo].[yearly_measurements]    Script Date: 2026-04-02 1:00:06 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[yearly_measurements](
@@ -990,7 +934,7 @@ PRIMARY KEY CLUSTERED
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY]
 
-/****** Object:  Index [idx_yearly_meter_year]    Script Date: 2026-04-02 오후 1:00:06 ******/
+/****** Object:  Index [idx_yearly_meter_year]    Script Date: 2026-04-02 1:00:06 ******/
 CREATE UNIQUE NONCLUSTERED INDEX [idx_yearly_meter_year] ON [dbo].[yearly_measurements]
 (
 	[meter_id] ASC,
@@ -1010,6 +954,12 @@ GO
 ALTER TABLE [dbo].[device_events]  WITH CHECK ADD  CONSTRAINT [FK_device_events_meters_meter_id] FOREIGN KEY([device_id])
 REFERENCES [dbo].[meters] ([meter_id])
 ALTER TABLE [dbo].[device_events] CHECK CONSTRAINT [FK_device_events_meters_meter_id]
+GO
+
+
+ALTER TABLE [dbo].[device_events]  WITH CHECK ADD  CONSTRAINT [FK_device_events_meter_id] FOREIGN KEY([meter_id])
+REFERENCES [dbo].[meters] ([meter_id])
+ALTER TABLE [dbo].[device_events] CHECK CONSTRAINT [FK_device_events_meter_id]
 GO
 
 ALTER TABLE [dbo].[flicker_measurements]  WITH CHECK ADD FOREIGN KEY([meter_id])
@@ -1038,9 +988,6 @@ ALTER TABLE [dbo].[monthly_measurements]  WITH CHECK ADD FOREIGN KEY([meter_id])
 REFERENCES [dbo].[meters] ([meter_id])
 GO
 
-ALTER TABLE [dbo].[voltage_events]  WITH CHECK ADD FOREIGN KEY([meter_id])
-REFERENCES [dbo].[meters] ([meter_id])
-GO
 
 ALTER TABLE [dbo].[yearly_measurements]  WITH CHECK ADD FOREIGN KEY([meter_id])
 REFERENCES [dbo].[meters] ([meter_id])
@@ -1077,30 +1024,25 @@ IF OBJECT_ID(N'[dbo].[vw_device_event_log]', N'V') IS NOT NULL
 GO
 CREATE VIEW vw_device_event_log AS
 SELECT
-    b.device_id,
-    b.device_name,
-    b.location,
-    b.panel_name,
-    b.building_name,
-    b.install_date,
-	b.status,
-	b.remarks,
-
+    COALESCE(e.meter_id, e.device_id) AS meter_id,
+    m.name AS meter_name,
+    m.panel_name,
+    m.building_name,
+    m.usage_type,
     e.event_id,
     e.event_type,
     e.event_time,
     e.restored_time,
     e.severity,
     e.description,
-
     e.trip_count,
     e.outage_count,
     e.switch_count,
     e.downtime_minutes,
     e.duration_seconds,
     e.operating_time_minutes
-FROM devices b
-INNER JOIN device_events e ON b.device_id = e.device_id;
+FROM device_events e
+LEFT JOIN meters m ON m.meter_id = COALESCE(e.meter_id, e.device_id);
 GO
 
 IF OBJECT_ID(N'[dbo].[vw_flicker_with_meter]', N'V') IS NOT NULL
@@ -1149,44 +1091,44 @@ SELECT
     ms.measurement_id,
     ms.measured_at,
 
-    -- 전압
+    -- ?�압
     ms.voltage_ab, ms.voltage_bc, ms.voltage_ca,
     ms.voltage_an, ms.voltage_bn, ms.voltage_cn,
 
-    -- 전류
+    -- ?�류
     ms.current_a, ms.current_b, ms.current_c, ms.current_n,
 
-    -- 평균값
+    -- ?�균�?
     ms.average_voltage,
     ms.average_current,
 
-    -- 역률 및 주파수
+    -- ??�� �?주파??
     ms.frequency,
     ms.power_factor,
     ms.power_factor_a, ms.power_factor_b, ms.power_factor_c,
 
-    -- 전력
+    -- ?�력
     ms.active_power_total,
     ms.reactive_power_total,
     ms.apparent_power_total,
     ms.max_power,
 
-    -- 에너지
+    -- ?�너지
     ms.energy_consumed_total,
     ms.energy_generated_total,
 
-    -- 전략량
+    -- ?�략??
     ms.voltage_max,
     ms.voltage_min,
     ms.voltage_stddev,
     ms.voltage_variation_rate,
     ms.energy_generated_delta,
 
-    -- 품질 지표
+    -- ?�질 지??
     ms.voltage_unbalance_rate,
     ms.harmonic_distortion_rate,
     ms.quality_status,
-    -- 위상각
+    -- ?�상�?
     ms.voltage_phase_a, ms.voltage_phase_b, ms.voltage_phase_c,
     ms.current_phase_a, ms.current_phase_b, ms. current_phase_c
 
@@ -1194,27 +1136,6 @@ FROM meters m
 INNER JOIN measurements ms ON m.meter_id = ms.meter_id;
 GO
 
-IF OBJECT_ID(N'[dbo].[vw_voltage_event_log]', N'V') IS NOT NULL
-    DROP VIEW [dbo].[vw_voltage_event_log];
-GO
-CREATE VIEW vw_voltage_event_log AS
-SELECT
-    m.meter_id,
-    m.name AS meter_name,
-    m.panel_name,
-    m.building_name,
-    m.usage_type,
-
-    ve.event_id,
-    ve.event_type,              -- 'sag' or 'swell'
-    ve.triggered_at,
-    ve.duration_ms,
-    ve.voltage_level,
-    ve.severity,
-    ve.description
-FROM meters m
-INNER JOIN voltage_events ve ON m.meter_id = ve.meter_id;
-GO
 
 IF OBJECT_ID(N'[dbo].[vw_daily_measurements]', N'V') IS NOT NULL
     DROP VIEW [dbo].[vw_daily_measurements];
@@ -1337,7 +1258,7 @@ BEGIN
 END
 GO
 
-/****** Object:  Table [dbo].[plc_ai_mapping_master]    Script Date: 2026-04-03 오전 9:00:00 ******/
+/****** Object:  Table [dbo].[plc_ai_mapping_master]    Script Date: 2026-04-03 9:00:00 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_ai_mapping_master](
@@ -1376,7 +1297,7 @@ GO
 SET ANSI_PADDING ON
 GO
 
-/****** Object:  Index [IX_plc_ai_mapping_master_token_idx]    Script Date: 2026-04-03 오전 9:00:00 ******/
+/****** Object:  Index [IX_plc_ai_mapping_master_token_idx]    Script Date: 2026-04-03 9:00:00 ******/
 CREATE NONCLUSTERED INDEX [IX_plc_ai_mapping_master_token_idx] ON [dbo].[plc_ai_mapping_master]
 (
 	[token] ASC,
@@ -1384,7 +1305,7 @@ CREATE NONCLUSTERED INDEX [IX_plc_ai_mapping_master_token_idx] ON [dbo].[plc_ai_
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Index [IX_plc_ai_mapping_master_meter_addr]    Script Date: 2026-04-03 오전 9:00:00 ******/
+/****** Object:  Index [IX_plc_ai_mapping_master_meter_addr]    Script Date: 2026-04-03 9:00:00 ******/
 CREATE NONCLUSTERED INDEX [IX_plc_ai_mapping_master_meter_addr] ON [dbo].[plc_ai_mapping_master]
 (
 	[plc_id] ASC,
@@ -1393,7 +1314,7 @@ CREATE NONCLUSTERED INDEX [IX_plc_ai_mapping_master_meter_addr] ON [dbo].[plc_ai
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Table [dbo].[plc_di_mapping_master]    Script Date: 2026-04-03 오전 9:00:00 ******/
+/****** Object:  Table [dbo].[plc_di_mapping_master]    Script Date: 2026-04-03 9:00:00 ******/
 SET ANSI_NULLS ON
 SET QUOTED_IDENTIFIER ON
 CREATE TABLE [dbo].[plc_di_mapping_master](
@@ -1401,6 +1322,7 @@ CREATE TABLE [dbo].[plc_di_mapping_master](
 	[point_id] [int] NOT NULL,
 	[di_address] [int] NOT NULL,
 	[bit_no] [int] NOT NULL,
+	[meter_id] [int] NULL,
 	[tag_name] [nvarchar](255) COLLATE Korean_Wansung_CI_AS NULL,
 	[item_name] [nvarchar](255) COLLATE Korean_Wansung_CI_AS NULL,
 	[panel_name] [nvarchar](255) COLLATE Korean_Wansung_CI_AS NULL,
@@ -1425,7 +1347,7 @@ GO
 SET ANSI_PADDING ON
 GO
 
-/****** Object:  Index [IX_plc_di_mapping_master_addr]    Script Date: 2026-04-03 오전 9:00:00 ******/
+/****** Object:  Index [IX_plc_di_mapping_master_addr]    Script Date: 2026-04-03 9:00:00 ******/
 CREATE NONCLUSTERED INDEX [IX_plc_di_mapping_master_addr] ON [dbo].[plc_di_mapping_master]
 (
 	[plc_id] ASC,
@@ -1434,7 +1356,7 @@ CREATE NONCLUSTERED INDEX [IX_plc_di_mapping_master_addr] ON [dbo].[plc_di_mappi
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
-/****** Object:  Index [IX_plc_di_mapping_master_panel]    Script Date: 2026-04-03 오전 9:00:00 ******/
+/****** Object:  Index [IX_plc_di_mapping_master_panel]    Script Date: 2026-04-03 9:00:00 ******/
 CREATE NONCLUSTERED INDEX [IX_plc_di_mapping_master_panel] ON [dbo].[plc_di_mapping_master]
 (
 	[panel_name] ASC,
@@ -1442,6 +1364,28 @@ CREATE NONCLUSTERED INDEX [IX_plc_di_mapping_master_panel] ON [dbo].[plc_di_mapp
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
 
+/****** Object:  Index [IX_plc_di_mapping_master_meter]    Script Date: 2026-04-09 3:00:00 ******/
+CREATE NONCLUSTERED INDEX [IX_plc_di_mapping_master_meter] ON [dbo].[plc_di_mapping_master]
+(
+	[meter_id] ASC,
+	[plc_id] ASC,
+	[point_id] ASC,
+	[di_address] ASC,
+	[bit_no] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[plc_di_mapping_master]  WITH NOCHECK ADD  CONSTRAINT [FK_plc_di_mapping_master_meter] FOREIGN KEY([meter_id])
+REFERENCES [dbo].[meters] ([meter_id])
+GO
+
+/*
+After seeding plc_di_mapping_master rows on a live system, run:
+  docs/sql/migrate_to_meter_centric_di.sql
+  docs/sql/seed_di_virtual_meters.sql
+The second script creates DI-only representative meters for logical DI groups
+that do not correspond to an existing physical power meter.
+*/
 /* Aggregate measurements schema sync with dbo.measurements */
 IF COL_LENGTH('dbo.daily_measurements', 'line_voltage_avg') IS NULL
     ALTER TABLE dbo.daily_measurements ADD line_voltage_avg FLOAT NULL;

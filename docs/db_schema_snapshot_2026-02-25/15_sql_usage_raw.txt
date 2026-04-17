@@ -1,4 +1,4 @@
-﻿pages\harmonics_v.jsp:43:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
+pages\harmonics_v.jsp:43:            ResultSet rs = stmt.executeQuery("SELECT DISTINCT building_name FROM meters WHERE building_name IS NOT NULL ORDER BY building_name");
 pages\harmonics_v.jsp:47:            rs = stmt.executeQuery("SELECT DISTINCT usage_type FROM meters WHERE usage_type IS NOT NULL ORDER BY usage_type");
 pages\harmonics_v.jsp:52:        StringBuilder meterSql = new StringBuilder("SELECT meter_id, name FROM meters WHERE 1=1 ");
 pages\harmonics_v.jsp:148:        String sql = "SELECT meter_id, harmonic_id, measured_at, thd_voltage_a, thd_voltage_b, thd_voltage_c FROM vw_harmonic_measurements" +
@@ -46,7 +46,6 @@ pages\meter_status.jsp:27:        ResultSet rsOpt = stmt.executeQuery("SELECT me
 pages\meter_status.jsp:120:                "FROM vw_meter_measurements " +
 pages\meter_status.jsp:185:                "FROM vw_harmonic_measurements " +
 pages\meter_status.jsp:215:                "FROM vw_flicker_with_meter " +
-pages\meter_status.jsp:232:                "FROM vw_voltage_event_log " +
 pages\meter_status.jsp:257:                "FROM vw_alarm_log " +
 epms\alarm_detail.jsp:36:                "FROM vw_alarm_log WHERE alarm_id = ?";
 epms\alarm_detail.jsp:66:                    "FROM vw_meter_measurements " +
@@ -117,7 +116,6 @@ epms\meter_status.jsp:27:        ResultSet rsOpt = stmt.executeQuery("SELECT met
 epms\meter_status.jsp:120:                "FROM vw_meter_measurements " +
 epms\meter_status.jsp:185:                "FROM vw_harmonic_measurements " +
 epms\meter_status.jsp:215:                "FROM vw_flicker_with_meter " +
-epms\meter_status.jsp:232:                "FROM vw_voltage_event_log " +
 epms\meter_status.jsp:257:                "FROM vw_alarm_log " +
 epms\modbus_api.jsp:287:                "SELECT plc_ip, plc_port, unit_id, polling_ms, enabled FROM dbo.plc_config WHERE plc_id = ?")) {
 epms\modbus_api.jsp:322:                "FROM dbo.plc_meter_map WHERE plc_id = ? AND enabled = 1 ORDER BY meter_id, start_address")) {

@@ -56,10 +56,10 @@ try (Connection conn = openDbConnection()) {
         if (eventIdInt != null || (meterIdInt != null && !eventTimeParam.trim().isEmpty())) {
             if (eventIdInt != null) {
                 String eventSql =
-                    "SELECT TOP 1 de.event_id, de.device_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
+                    "SELECT TOP 1 de.event_id, COALESCE(de.meter_id, de.device_id) AS meter_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
                     "de.event_type, de.severity, de.event_time, de.restored_time, de.description " +
                     "FROM dbo.device_events de " +
-                    "LEFT JOIN dbo.meters m ON m.meter_id = de.device_id " +
+                    "LEFT JOIN dbo.meters m ON m.meter_id = COALESCE(de.meter_id, de.device_id) " +
                     "WHERE de.event_id = ? ";
 
                 try (PreparedStatement ps = conn.prepareStatement(eventSql)) {
@@ -68,7 +68,7 @@ try (Connection conn = openDbConnection()) {
                         if (rs.next()) {
                             foundEvent = true;
                             event.put("event_id", rs.getLong("event_id"));
-                            event.put("device_id", rs.getInt("device_id"));
+                            event.put("meter_id", rs.getInt("meter_id"));
                             event.put("meter_name", rs.getString("meter_name"));
                             event.put("panel_name", rs.getString("panel_name"));
                             event.put("building_name", rs.getString("building_name"));
@@ -83,11 +83,11 @@ try (Connection conn = openDbConnection()) {
                 }
             } else {
                 String eventSql =
-                    "SELECT TOP 1 de.event_id, de.device_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
+                    "SELECT TOP 1 de.event_id, COALESCE(de.meter_id, de.device_id) AS meter_id, m.name AS meter_name, m.panel_name, m.building_name, m.usage_type, " +
                     "de.event_type, de.severity, de.event_time, de.restored_time, de.description " +
                     "FROM dbo.device_events de " +
-                    "LEFT JOIN dbo.meters m ON m.meter_id = de.device_id " +
-                    "WHERE de.device_id = ? " +
+                    "LEFT JOIN dbo.meters m ON m.meter_id = COALESCE(de.meter_id, de.device_id) " +
+                    "WHERE COALESCE(de.meter_id, de.device_id) = ? " +
                     "ORDER BY ABS(DATEDIFF(SECOND, de.event_time, CAST(? AS DATETIME2))) ASC, de.event_id DESC";
 
                 try (PreparedStatement ps = conn.prepareStatement(eventSql)) {
@@ -97,7 +97,7 @@ try (Connection conn = openDbConnection()) {
                         if (rs.next()) {
                             foundEvent = true;
                             event.put("event_id", rs.getLong("event_id"));
-                            event.put("device_id", rs.getInt("device_id"));
+                            event.put("meter_id", rs.getInt("meter_id"));
                             event.put("meter_name", rs.getString("meter_name"));
                             event.put("panel_name", rs.getString("panel_name"));
                             event.put("building_name", rs.getString("building_name"));
@@ -113,7 +113,7 @@ try (Connection conn = openDbConnection()) {
             }
 
             if (foundEvent) {
-                Integer selectedMeterId = (Integer) event.get("device_id");
+                Integer selectedMeterId = (Integer) event.get("meter_id");
                 Timestamp eventTime = (Timestamp) event.get("event_time");
 
                 boolean loadedPoints = false;
@@ -264,7 +264,7 @@ try (Connection conn = openDbConnection()) {
             <section class="panel_s">
                 <div class="kv-grid">
                     <div class="kv"><div class="k">Event ID</div><div class="v"><%= event.get("event_id") %></div></div>
-                    <div class="kv"><div class="k">Meter</div><div class="v"><%= h(event.get("meter_name")) %> (#<%= event.get("device_id") %>)</div></div>
+                    <div class="kv"><div class="k">Meter</div><div class="v"><%= h(event.get("meter_name")) %> (#<%= event.get("meter_id") %>)</div></div>
                     <div class="kv"><div class="k">건물/용도</div><div class="v"><%= h(event.get("building_name")) %> / <%= h(event.get("usage_type")) %></div></div>
                     <div class="kv"><div class="k">패널</div><div class="v"><%= h(event.get("panel_name")) %></div></div>
                     <div class="kv"><div class="k">이벤트 유형</div><div class="v"><%= h(event.get("event_type")) %></div></div>

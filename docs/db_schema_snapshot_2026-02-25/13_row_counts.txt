@@ -1,4 +1,4 @@
-﻿TABLE_SCHEMA|TABLE_NAME|ROW_COUNT
+TABLE_SCHEMA|TABLE_NAME|ROW_COUNT
 ------------|----------|---------
 dbo|measurements|6633959
 dbo|harmonic_measurements|3017711
@@ -17,8 +17,6 @@ dbo|plc_ai_write_task|178
 dbo|plc_ai_measurements_match|62
 dbo|plc_metric_random_range|61
 dbo|plc_config|3
-dbo|measurenets|1
 dbo|plc_write_control|1
 dbo|monthly_measurements|0
-dbo|voltage_events|0
 dbo|yearly_measurements|0

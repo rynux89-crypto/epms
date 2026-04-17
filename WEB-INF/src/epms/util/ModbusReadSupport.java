@@ -113,6 +113,7 @@ public final class ModbusReadSupport {
 
         int diSeq = 1;
         for (PlcDiTagEntry t : diTagList) {
+            int meterId = t.meterId;
             int pointId = t.pointId;
             int diAddress = t.diAddress;
             int bitNo = t.bitNo;
@@ -128,7 +129,7 @@ public final class ModbusReadSupport {
             }
             int bitVal = ((plcBitNo >= 0 && plcBitNo <= 15) && (((word >> plcBitNo) & 0x1) == 1)) ? 1 : 0;
 
-            out.add(new PlcDiReadRow(diSeq++, pointId, diAddress, bitNo, tagName, itemName, panelName, bitVal));
+            out.add(new PlcDiReadRow(diSeq++, meterId, pointId, diAddress, bitNo, tagName, itemName, panelName, bitVal));
         }
         return new DiReadResult(out, Math.max(0L, System.currentTimeMillis() - t0));
     }

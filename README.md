@@ -76,6 +76,47 @@ updated_at=2026-03-08 20\:23\:55
 - Java 8+
 - SQL Server 연결 가능한 JNDI 리소스: `java:comp/env/jdbc/epms`
 - Ollama 서버 접근 가능
+- 공통 운영 설정 파일: `WEB-INF/config.toml`
+
+## 6.1 `WEB-INF/config.toml`
+
+EPMS 운영값을 한 곳에서 관리하기 위한 설정 파일입니다.
+
+- 위치: `WEB-INF/config.toml`
+- 현재 연결된 항목: `scripts/backup_epms_daily.ps1`
+- 현재 미연결 항목: JSP/Java 런타임 JNDI 자체는 아직 `config.toml`을 직접 읽지 않음
+
+백업 스크립트 우선순위:
+
+1. 명시적 스크립트 인자
+2. 환경변수
+3. `WEB-INF/config.toml`
+4. 스크립트 기본값
+
+## 6.2 최초 서버 설정
+
+Tomcat만 올라와 있고 SQL Server만 설치된 초기 서버라면, 먼저 아래 화면으로 접속해서 설정할 수 있습니다.
+
+- 진입 화면: `/epms/setup.jsp`
+- 주요 기능:
+  - `WEB-INF/config.toml` 저장
+  - SQL Server 직접 연결 테스트
+  - `create_epms_schema.sql` 기반 DB/스키마 초기화
+  - `create_plc_mapping_master.sql` 기반 PLC master 테이블 초기화
+  - 서버 맞춤형 백업 Job SQL 생성
+  - 최소 seed 데이터 생성/삭제
+
+권장 순서:
+
+1. `/epms/setup.jsp` 접속
+2. DB 서버/DB명/계정 입력 후 `Save + Test DB`
+3. 정상 연결 확인 후 `Save + Initialize Schema`
+4. 이후 일반 화면(`/epms/epms_main.jsp`) 접속
+
+참고:
+
+- 현재 앱 공통 DB 연결은 `JNDI -> WEB-INF/config.toml direct JDBC fallback` 순서로 동작합니다.
+- 즉 초기에는 JNDI 없이도 setup 화면과 일반 화면을 띄울 수 있습니다.
 
 ## 7. 운영 체크리스트
 
@@ -83,6 +124,8 @@ updated_at=2026-03-08 20\:23\:55
 - 모델 변경 시 `/api/tags` 조회가 정상인지 확인
 - 타임아웃은 모델 크기/응답시간에 맞게 조정
 - 스키마 변경이 잦으면 캐시 시간을 짧게 조정
+- DB 백업은 `scripts/backup_epms_daily.ps1`로 일일 전체 백업 + 보관 정리를 자동화 가능
+- 서버 이전 시 백업 Job은 자동 승계되지 않으므로 `docs/epms_backup_migration_checklist.md` 기준으로 재등록 필요
 
 ## 8. 참고
 

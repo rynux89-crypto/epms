@@ -161,6 +161,7 @@ public final class ModbusConfigRepository {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     diTagList.add(new PlcDiTagEntry(
+                            0,
                             rs.getInt("point_id"),
                             rs.getInt("di_address"),
                             rs.getInt("bit_no"),
@@ -277,7 +278,7 @@ public final class ModbusConfigRepository {
         List<PlcDiTagEntry> diTagList = new ArrayList<>();
         try (Connection conn = EpmsDataSourceProvider.resolveDataSource().getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                     "SELECT point_id, di_address, bit_no, tag_name, item_name, panel_name " +
+                     "SELECT meter_id, point_id, di_address, bit_no, tag_name, item_name, panel_name " +
                      "FROM dbo." + DI_MASTER_TABLE + " " +
                      "WHERE plc_id = ? AND enabled = 1 " +
                      "ORDER BY point_id, di_address, bit_no")) {
@@ -285,6 +286,7 @@ public final class ModbusConfigRepository {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     diTagList.add(new PlcDiTagEntry(
+                            rs.getInt("meter_id"),
                             rs.getInt("point_id"),
                             rs.getInt("di_address"),
                             rs.getInt("bit_no"),

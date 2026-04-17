@@ -16,6 +16,8 @@ private static boolean tableExists(Connection conn, String tableName) throws SQL
 %>
 <%
 try (Connection conn = openDbConnection()) {
+    request.setCharacterEncoding("UTF-8");
+    boolean useMaster = tableExists(conn, "plc_di_mapping_master");
     String plcParam = request.getParameter("plc_id");
     String pointParam = request.getParameter("point_id");
     String diAddressParam = request.getParameter("di_address");
@@ -24,6 +26,7 @@ try (Connection conn = openDbConnection()) {
     String tagNameParam = request.getParameter("tag_name");
     String enabledParam = request.getParameter("enabled");
     String sortParam = request.getParameter("sort");
+    String updateAction = request.getParameter("update_action");
 
     Integer plcId = null;
     Integer pointId = null;
@@ -52,6 +55,96 @@ try (Connection conn = openDbConnection()) {
     List<Map<String, Object>> tagRows = new ArrayList<>();
     List<String> panelOptions = new ArrayList<>();
     String error = null;
+    String message = null;
+
+    if ("POST".equalsIgnoreCase(request.getMethod()) && "update_di_mapping".equals(updateAction)) {
+        if (!useMaster) {
+            error = "DI mapping update is only available when plc_di_mapping_master is present.";
+        } else {
+            Integer origPlcId = null;
+            Integer origPointId = null;
+            Integer origDiAddress = null;
+            Integer origBitNo = null;
+            Integer newPlcId = null;
+            Integer newPointId = null;
+            Integer newDiAddress = null;
+            Integer newBitNo = null;
+            String newTagName = request.getParameter("new_tag_name");
+            String newItemName = request.getParameter("new_item_name");
+            String newPanelName = request.getParameter("new_panel_name");
+            boolean newEnabled = "1".equals(request.getParameter("new_enabled")) || "on".equalsIgnoreCase(request.getParameter("new_enabled"));
+
+            try { origPlcId = Integer.valueOf(request.getParameter("orig_plc_id")); } catch (Exception ignore) {}
+            try { origPointId = Integer.valueOf(request.getParameter("orig_point_id")); } catch (Exception ignore) {}
+            try { origDiAddress = Integer.valueOf(request.getParameter("orig_di_address")); } catch (Exception ignore) {}
+            try { origBitNo = Integer.valueOf(request.getParameter("orig_bit_no")); } catch (Exception ignore) {}
+            try { newPlcId = Integer.valueOf(request.getParameter("new_plc_id")); } catch (Exception ignore) {}
+            try { newPointId = Integer.valueOf(request.getParameter("new_point_id")); } catch (Exception ignore) {}
+            try { newDiAddress = Integer.valueOf(request.getParameter("new_di_address")); } catch (Exception ignore) {}
+            try { newBitNo = Integer.valueOf(request.getParameter("new_bit_no")); } catch (Exception ignore) {}
+
+            if (origPlcId == null || origPointId == null || origDiAddress == null || origBitNo == null ||
+                newPlcId == null || newPointId == null || newDiAddress == null || newBitNo == null) {
+                error = "Original key and new DI address fields are required.";
+            } else if (newPlcId.intValue() < 0 || newPointId.intValue() < 0 || newDiAddress.intValue() < 0 || newBitNo.intValue() < 0) {
+                error = "PLC ID, Point ID, DI address, and bit number must be zero or greater.";
+            } else {
+                String duplicateSql =
+                    "SELECT COUNT(*) " +
+                    "FROM dbo.plc_di_mapping_master " +
+                    "WHERE plc_id = ? AND point_id = ? AND di_address = ? AND bit_no = ? " +
+                    "  AND NOT (plc_id = ? AND point_id = ? AND di_address = ? AND bit_no = ?)";
+                try (PreparedStatement ps = conn.prepareStatement(duplicateSql)) {
+                    ps.setInt(1, newPlcId.intValue());
+                    ps.setInt(2, newPointId.intValue());
+                    ps.setInt(3, newDiAddress.intValue());
+                    ps.setInt(4, newBitNo.intValue());
+                    ps.setInt(5, origPlcId.intValue());
+                    ps.setInt(6, origPointId.intValue());
+                    ps.setInt(7, origDiAddress.intValue());
+                    ps.setInt(8, origBitNo.intValue());
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next() && rs.getInt(1) > 0) {
+                            error = "Another DI mapping already uses the requested PLC / Point / Address / Bit.";
+                        }
+                    }
+                }
+            }
+
+            if (error == null) {
+                String updateSql =
+                    "UPDATE dbo.plc_di_mapping_master " +
+                    "SET plc_id = ?, point_id = ?, di_address = ?, bit_no = ?, " +
+                    "    tag_name = ?, item_name = ?, panel_name = ?, enabled = ?, updated_at = SYSUTCDATETIME() " +
+                    "WHERE plc_id = ? AND point_id = ? AND di_address = ? AND bit_no = ?";
+                try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                    ps.setInt(1, newPlcId.intValue());
+                    ps.setInt(2, newPointId.intValue());
+                    ps.setInt(3, newDiAddress.intValue());
+                    ps.setInt(4, newBitNo.intValue());
+                    ps.setString(5, newTagName == null || newTagName.trim().isEmpty() ? null : newTagName.trim());
+                    ps.setString(6, newItemName == null || newItemName.trim().isEmpty() ? null : newItemName.trim());
+                    ps.setString(7, newPanelName == null || newPanelName.trim().isEmpty() ? null : newPanelName.trim());
+                    ps.setBoolean(8, newEnabled);
+                    ps.setInt(9, origPlcId.intValue());
+                    ps.setInt(10, origPointId.intValue());
+                    ps.setInt(11, origDiAddress.intValue());
+                    ps.setInt(12, origBitNo.intValue());
+                    int updated = ps.executeUpdate();
+                    if (updated == 1) {
+                        message = "DI mapping updated successfully.";
+                        plcId = newPlcId;
+                        pointId = newPointId;
+                        diAddress = newDiAddress;
+                    } else {
+                        error = "No DI mapping row was updated. The original key may have changed.";
+                    }
+                } catch (SQLIntegrityConstraintViolationException e) {
+                    error = "Failed to update DI mapping because the requested key conflicts with another row.";
+                }
+            }
+        }
+    }
 
     try {
         String plcSql = "SELECT plc_id, plc_ip, plc_port, unit_id, enabled FROM dbo.plc_config ORDER BY plc_id";
@@ -84,12 +177,11 @@ try (Connection conn = openDbConnection()) {
         }
 
         StringBuilder tagSql = new StringBuilder();
-        boolean useMaster = tableExists(conn, "plc_di_mapping_master");
         if (useMaster) {
-            tagSql.append("SELECT CAST(NULL AS INT) AS tag_id, plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled, updated_at ")
+            tagSql.append("SELECT CAST(NULL AS INT) AS tag_id, plc_id, point_id, di_address, bit_no, meter_id, tag_name, item_name, panel_name, enabled, updated_at ")
                   .append("FROM dbo.plc_di_mapping_master WHERE 1=1 ");
         } else {
-            tagSql.append("SELECT tag_id, plc_id, point_id, di_address, bit_no, tag_name, item_name, panel_name, enabled, CAST(NULL AS DATETIME) AS updated_at ")
+            tagSql.append("SELECT tag_id, plc_id, point_id, di_address, bit_no, CAST(NULL AS INT) AS meter_id, tag_name, item_name, panel_name, enabled, CAST(NULL AS DATETIME) AS updated_at ")
                   .append("FROM dbo.plc_di_tag_map WHERE 1=1 ");
         }
         List<Object> tagParams = new ArrayList<>();
@@ -128,6 +220,7 @@ try (Connection conn = openDbConnection()) {
                     r.put("point_id", rs.getInt("point_id"));
                     r.put("di_address", rs.getInt("di_address"));
                     r.put("bit_no", rs.getInt("bit_no"));
+                    r.put("meter_id", rs.getObject("meter_id"));
                     r.put("tag_name", rs.getString("tag_name"));
                     r.put("item_name", rs.getString("item_name"));
                     r.put("panel_name", rs.getString("panel_name"));
@@ -279,6 +372,83 @@ try (Connection conn = openDbConnection()) {
         .mono { font-family: Consolas, "Courier New", monospace; }
         .section-title { margin: 14px 0 6px; font-size: 15px; font-weight: 700; color: #1f3347; }
         .hint { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+        .page-wrap table {
+            overflow: visible !important;
+        }
+        .page-wrap td,
+        .page-wrap th {
+            overflow: visible;
+        }
+        .edit-cell {
+            position: relative;
+            vertical-align: top;
+            min-width: 92px;
+        }
+        .edit-cell details {
+            position: relative;
+        }
+        .edit-cell summary {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .edit-popover {
+            position: absolute;
+            top: 22px;
+            right: 0;
+            z-index: 20;
+            width: 280px;
+            padding: 12px;
+            border-radius: 14px;
+            border: 1px solid #cfe0f5;
+            background: #ffffff;
+            box-shadow: 0 18px 40px rgba(31, 51, 71, 0.18);
+        }
+        .edit-popover form {
+            display: grid;
+            gap: 6px;
+        }
+        .edit-popover label {
+            display: grid;
+            gap: 4px;
+            font-size: 11px;
+            color: #475569;
+            font-weight: 700;
+        }
+        .edit-popover input[type="text"],
+        .edit-popover input[type="number"] {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .edit-popover button {
+            margin-top: 4px;
+        }
+        .edit-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 6px;
+        }
+        .edit-actions button {
+            margin-top: 0;
+        }
+        .thead-filter input,
+        .thead-filter select {
+            width: 100%;
+            min-width: 0;
+            margin: 0;
+            font-size: 11px;
+            padding: 4px 6px;
+            box-sizing: border-box;
+        }
+        .thead-filter th {
+            background: #f8fbff;
+            padding: 6px;
+        }
+        .thead-filter button {
+            width: 100%;
+            white-space: nowrap;
+        }
         @media (max-width: 1100px) {
             .filter-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
         }
@@ -302,10 +472,20 @@ try (Connection conn = openDbConnection()) {
         기준 규칙: DI 주소는 <span class="mono">plc_di_map.start_address</span>와 동일 주소 체계를 사용합니다.
     </div>
 
+    <div class="info-box">
+        Source of truth: <span class="mono">plc_di_mapping_master</span> when present.<br/>
+        DI source rows are the editable source. The address section below is a grouped summary view only.
+    </div>
     <% if (error != null) { %>
     <div class="err-box">DB 오류: <%= h(error) %></div>
     <% } %>
 
+    <% if (message != null) { %>
+    <div class="info-box"><%= h(message) %></div>
+    <% } %>
+    <% if (!useMaster) { %>
+    <div class="info-box">Legacy fallback mode: this page is read-only because <span class="mono">plc_di_mapping_master</span> is not available.</div>
+    <% } %>
     <form method="GET" class="filter-grid">
         <div class="filter-item">
             <label for="plc_id">PLC</label>
@@ -377,14 +557,15 @@ try (Connection conn = openDbConnection()) {
 
         <div class="filter-summary">DI Address Map <%= mapRows.size() %>건 / DI Tag Map <%= tagRows.size() %>건</div>
     </form>
+    <div class="hint">Address summary <%= mapRows.size() %> rows / DI source rows <%= tagRows.size() %> rows</div>
 
     <div class="stats">
         <div class="stat-card">
-            <div class="k">DI Address Map</div>
+            <div class="k">Address Summary</div>
             <div class="v"><%= mapRows.size() %></div>
         </div>
         <div class="stat-card">
-            <div class="k">DI Tag Map</div>
+            <div class="k">DI Source Rows</div>
             <div class="v"><%= tagRows.size() %></div>
         </div>
         <div class="stat-card">
@@ -397,7 +578,8 @@ try (Connection conn = openDbConnection()) {
         </div>
     </div>
 
-    <div class="section-title">1) DI Tag Map</div>
+    <div class="section-title">1) DI Source Rows</div>
+    <div class="hint">This is the editable source table view. Changes here update <span class="mono">plc_di_mapping_master</span> directly.</div>
     <div class="hint">tag_name, item_name, panel_name 기준으로 현재 활성/비활성 태그를 조회합니다.</div>
     <table>
         <thead>
@@ -407,10 +589,46 @@ try (Connection conn = openDbConnection()) {
             <th>point_id</th>
             <th>di_address</th>
             <th>bit_no</th>
+            <th>meter_id</th>
             <th>tag_name</th>
             <th>item_name</th>
             <th>panel_name</th>
             <th>enabled</th>
+            <% if (useMaster) { %><th>edit</th><% } %>
+        </tr>
+        <tr class="thead-filter">
+            <th></th>
+            <th>
+                <select name="plc_id">
+                    <option value="">All</option>
+                    <% for (Map<String, Object> p : plcList) { %>
+                    <% String v = String.valueOf(p.get("plc_id")); %>
+                    <option value="<%= h(v) %>" <%= (plcId != null && plcId.toString().equals(v)) ? "selected" : "" %>><%= h(v) %></option>
+                    <% } %>
+                </select>
+            </th>
+            <th><input type="number" name="point_id" min="1" value="<%= pointId == null ? "" : pointId %>" placeholder="Point"></th>
+            <th><input type="number" name="di_address" min="0" value="<%= diAddress == null ? "" : diAddress %>" placeholder="Address"></th>
+            <th></th>
+            <th></th>
+            <th><input type="text" name="tag_name" value="<%= h(tagName) %>" placeholder="Tag"></th>
+            <th><input type="text" name="item_name" value="<%= h(itemName) %>" placeholder="Item"></th>
+            <th>
+                <select name="panel_name">
+                    <option value="">All</option>
+                    <% for (String p : panelOptions) { %>
+                    <option value="<%= h(p) %>" <%= p.equals(panelName) ? "selected" : "" %>><%= h(p) %></option>
+                    <% } %>
+                </select>
+            </th>
+            <th>
+                <select name="enabled">
+                    <option value="" <%= enabledFilter.isEmpty() ? "selected" : "" %>>All</option>
+                    <option value="Y" <%= "Y".equals(enabledFilter) ? "selected" : "" %>>ACTIVE</option>
+                    <option value="N" <%= "N".equals(enabledFilter) ? "selected" : "" %>>INACTIVE</option>
+                </select>
+            </th>
+            <th><button type="button" onclick="applyHeaderFilters()">Search</button></th>
         </tr>
         </thead>
         <tbody>
@@ -424,6 +642,7 @@ try (Connection conn = openDbConnection()) {
                 <td><%= r.get("point_id") %></td>
                 <td class="mono"><%= r.get("di_address") %></td>
                 <td class="mono"><%= r.get("bit_no") %></td>
+                <td><%= r.get("meter_id") == null ? "-" : r.get("meter_id") %></td>
                 <td><%= h(String.valueOf(r.get("tag_name") == null ? "-" : r.get("tag_name"))) %></td>
                 <td><%= h(String.valueOf(r.get("item_name") == null ? "-" : r.get("item_name"))) %></td>
                 <td><%= h(String.valueOf(r.get("panel_name") == null ? "-" : r.get("panel_name"))) %></td>
@@ -434,17 +653,48 @@ try (Connection conn = openDbConnection()) {
                     <span class="badge b-off">INACTIVE</span>
                     <% } %>
                 </td>
+                <% if (useMaster) { %>
+                <td class="edit-cell">
+                    <details>
+                        <summary>Edit</summary>
+                        <div class="edit-popover">
+                            <form method="POST">
+                                <input type="hidden" name="update_action" value="update_di_mapping">
+                            <input type="hidden" name="orig_plc_id" value="<%= r.get("plc_id") %>">
+                            <input type="hidden" name="orig_point_id" value="<%= r.get("point_id") %>">
+                            <input type="hidden" name="orig_di_address" value="<%= r.get("di_address") %>">
+                            <input type="hidden" name="orig_bit_no" value="<%= r.get("bit_no") %>">
+                            <label>PLC ID <input type="number" name="new_plc_id" min="0" value="<%= r.get("plc_id") %>"></label>
+                            <label>Point ID <input type="number" name="new_point_id" min="0" value="<%= r.get("point_id") %>"></label>
+                            <label>DI Address <input type="number" name="new_di_address" min="0" value="<%= r.get("di_address") %>"></label>
+                                <label>Bit No <input type="number" name="new_bit_no" min="0" value="<%= r.get("bit_no") %>"></label>
+                                <label>Tag Name <input type="text" name="new_tag_name" value="<%= h(String.valueOf(r.get("tag_name") == null ? "" : r.get("tag_name"))) %>"></label>
+                                <label>Item Name <input type="text" name="new_item_name" value="<%= h(String.valueOf(r.get("item_name") == null ? "" : r.get("item_name"))) %>"></label>
+                                <label>Panel Name <input type="text" name="new_panel_name" value="<%= h(String.valueOf(r.get("panel_name") == null ? "" : r.get("panel_name"))) %>"></label>
+                                <label><input type="checkbox" name="new_enabled" value="1" <%= Boolean.TRUE.equals(r.get("enabled")) ? "checked" : "" %>> Enabled</label>
+                                <div class="edit-actions">
+                                    <button type="button" onclick="this.closest('details').open=false;">Cancel</button>
+                                    <button type="submit">Save</button>
+                                </div>
+                            </form>
+                        </div>
+                    </details>
+                </td>
+                <% } %>
             </tr>
             <% } %>
         <% } %>
         </tbody>
     </table>
 
-    <div class="section-title">2) DI Address Map</div>
+    <div class="section-title">2) Address Summary</div>
+    <div class="hint">This section is grouped from the DI source rows and is shown for address-level review only.</div>
     <table>
         <thead>
         <tr>
+            <% if (!useMaster) { %>
             <th>di_map_id</th>
+            <% } %>
             <th>plc_id</th>
             <th>point_id</th>
             <th>start_address</th>
@@ -459,7 +709,9 @@ try (Connection conn = openDbConnection()) {
         <% } else { %>
             <% for (Map<String, Object> r : mapRows) { %>
             <tr>
+                <% if (!useMaster) { %>
                 <td><%= r.get("di_map_id") %></td>
+                <% } %>
                 <td><%= r.get("plc_id") %></td>
                 <td><%= r.get("point_id") %></td>
                 <td class="mono"><%= r.get("start_address") %></td>
@@ -479,6 +731,22 @@ try (Connection conn = openDbConnection()) {
     </table>
 </div>
 <footer>짤 EPMS Dashboard | SNUT CNT</footer>
+<script>
+function applyHeaderFilters() {
+    var row = document.querySelector('.thead-filter');
+    if (!row) return;
+    var params = new URLSearchParams(window.location.search);
+    ['plc_id', 'point_id', 'di_address', 'tag_name', 'item_name', 'panel_name', 'enabled'].forEach(function(name) {
+        var field = row.querySelector('[name="' + name + '"]');
+        if (!field) return;
+        var value = (field.value || '').trim();
+        if (value) params.set(name, value);
+        else params.delete(name);
+    });
+    params.set('sort', '<%= h(sortKey) %>');
+    window.location.href = 'di_mapping.jsp?' + params.toString();
+}
+</script>
 </body>
 </html>
 <%

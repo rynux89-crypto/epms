@@ -202,7 +202,7 @@
     current_h9_c = 0;
     current_h11_c = 0;
 
-    // ====== voltage_events / vw_voltage_event_log 기준 이벤트 집계 ======
+    // ====== voltage event 집계 제거됨 ======
     sagCount = 0;
     swellCount = 0;
     otherVoltageEvents = 0;
@@ -614,33 +614,6 @@
                 }
             }
             latestHarmonicQueryMs = (System.nanoTime() - sectionStartNs) / 1000000L;
-
-            // 4) 최근 7일 전압 이벤트 집계: vw_voltage_event_log
-            String sqlVoltEvent =
-                "SELECT event_type, COUNT(*) AS cnt " +
-                "FROM vw_voltage_event_log " +
-                "WHERE meter_id = ? " +
-                "  AND triggered_at >= DATEADD(DAY, -7, GETDATE()) " +
-                "GROUP BY event_type";
-
-            sectionStartNs = System.nanoTime();
-            try (PreparedStatement ps = conn.prepareStatement(sqlVoltEvent)) {
-                ps.setString(1, meterId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        String etype = rs.getString("event_type");
-                        int cnt = rs.getInt("cnt");
-                        if ("sag".equalsIgnoreCase(etype)) {
-                            sagCount += cnt;
-                        } else if ("swell".equalsIgnoreCase(etype)) {
-                            swellCount += cnt;
-                        } else {
-                            otherVoltageEvents += cnt;
-                        }
-                    }
-                }
-            }
-            voltageEventQueryMs = (System.nanoTime() - sectionStartNs) / 1000000L;
 
             // 5) 최근 7일 알람 건수: vw_alarm_log
             String sqlAlarm =

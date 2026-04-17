@@ -100,11 +100,10 @@ SELECT
     (SELECT COUNT(*) FROM dbo.harmonic_measurements x WHERE x.meter_id = mp.drop_meter_id) AS harmonic_refs,
     (SELECT COUNT(*) FROM dbo.flicker_measurements x WHERE x.meter_id = mp.drop_meter_id) AS flicker_refs,
     (SELECT COUNT(*) FROM dbo.alarm_log x WHERE x.meter_id = mp.drop_meter_id) AS alarm_refs,
-    (SELECT COUNT(*) FROM dbo.device_events x WHERE x.device_id = mp.drop_meter_id) AS device_event_refs,
+    (SELECT COUNT(*) FROM dbo.device_events x WHERE COALESCE(x.meter_id, x.device_id) = mp.drop_meter_id) AS device_event_refs,
     (SELECT COUNT(*) FROM dbo.daily_measurements x WHERE x.meter_id = mp.drop_meter_id) AS daily_refs,
     (SELECT COUNT(*) FROM dbo.monthly_measurements x WHERE x.meter_id = mp.drop_meter_id) AS monthly_refs,
     (SELECT COUNT(*) FROM dbo.yearly_measurements x WHERE x.meter_id = mp.drop_meter_id) AS yearly_refs,
-    (SELECT COUNT(*) FROM dbo.voltage_events x WHERE x.meter_id = mp.drop_meter_id) AS voltage_event_refs,
     (SELECT COUNT(*) FROM dbo.plc_ai_samples x WHERE x.meter_id = mp.drop_meter_id) AS plc_ai_sample_refs,
     (SELECT COUNT(*) FROM dbo.plc_ai_write_task x WHERE x.meter_id = mp.drop_meter_id) AS plc_ai_write_task_refs,
     (SELECT COUNT(*) FROM dbo.plc_meter_map x WHERE x.meter_id = mp.drop_meter_id) AS plc_meter_map_refs,
@@ -165,6 +164,11 @@ BEGIN TRY
 
     UPDATE tgt
     SET tgt.meter_id = mp.keep_meter_id
+    FROM dbo.device_events tgt
+    JOIN @merge_pairs mp ON mp.drop_meter_id = tgt.meter_id;
+
+    UPDATE tgt
+    SET tgt.meter_id = mp.keep_meter_id
     FROM dbo.daily_measurements tgt
     JOIN @merge_pairs mp ON mp.drop_meter_id = tgt.meter_id;
 
@@ -176,11 +180,6 @@ BEGIN TRY
     UPDATE tgt
     SET tgt.meter_id = mp.keep_meter_id
     FROM dbo.yearly_measurements tgt
-    JOIN @merge_pairs mp ON mp.drop_meter_id = tgt.meter_id;
-
-    UPDATE tgt
-    SET tgt.meter_id = mp.keep_meter_id
-    FROM dbo.voltage_events tgt
     JOIN @merge_pairs mp ON mp.drop_meter_id = tgt.meter_id;
 
     UPDATE tgt

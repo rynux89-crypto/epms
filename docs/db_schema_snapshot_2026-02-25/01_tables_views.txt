@@ -1,4 +1,4 @@
-﻿TABLE_SCHEMA|TABLE_NAME|TABLE_TYPE
+TABLE_SCHEMA|TABLE_NAME|TABLE_TYPE
 ------------|----------|----------
 dbo|alarm_log|BASE TABLE
 dbo|daily_measurements|BASE TABLE
@@ -7,7 +7,6 @@ dbo|devices|BASE TABLE
 dbo|flicker_measurements|BASE TABLE
 dbo|harmonic_measurements|BASE TABLE
 dbo|measurements|BASE TABLE
-dbo|measurenets|BASE TABLE
 dbo|meters|BASE TABLE
 dbo|monthly_measurements|BASE TABLE
 dbo|plc_ai_measurements_match|BASE TABLE
@@ -20,11 +19,9 @@ dbo|plc_di_tag_map|BASE TABLE
 dbo|plc_meter_map|BASE TABLE
 dbo|plc_metric_random_range|BASE TABLE
 dbo|plc_write_control|BASE TABLE
-dbo|voltage_events|BASE TABLE
 dbo|yearly_measurements|BASE TABLE
 dbo|vw_alarm_log|VIEW
 dbo|vw_device_event_log|VIEW
 dbo|vw_flicker_with_meter|VIEW
 dbo|vw_harmonic_measurements|VIEW
 dbo|vw_meter_measurements|VIEW
-dbo|vw_voltage_event_log|VIEW

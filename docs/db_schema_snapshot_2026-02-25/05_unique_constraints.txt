@@ -1,4 +1,2 @@
-﻿TABLE_SCHEMA|TABLE_NAME|CONSTRAINT_NAME|COLUMN_NAME|ORDINAL_POSITION
+TABLE_SCHEMA|TABLE_NAME|CONSTRAINT_NAME|COLUMN_NAME|ORDINAL_POSITION
 ------------|----------|---------------|-----------|----------------
-dbo|measurenets|UQ_measurenets_ip_port|ip_address|1
-dbo|measurenets|UQ_measurenets_ip_port|port|2
