@@ -42,6 +42,26 @@
     <servlet-class>epms.agent.AgentApiServlet</servlet-class>
   </servlet>
 
+  <servlet>
+    <servlet-name>BillingManageServlet</servlet-name>
+    <servlet-class>epms.billing.BillingManageServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>TenantStoreManageServlet</servlet-name>
+    <servlet-class>epms.tenant.TenantStoreManageServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>TenantMeterMapManageServlet</servlet-name>
+    <servlet-class>epms.tenant.TenantMeterMapManageServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>PeakPolicyManageServlet</servlet-name>
+    <servlet-class>epms.peak.PeakPolicyManageServlet</servlet-class>
+  </servlet>
+
   <servlet-mapping>
     <servlet-name>AlarmApiServlet</servlet-name>
     <url-pattern>/api/alarm</url-pattern>
@@ -55,6 +75,26 @@
   <servlet-mapping>
     <servlet-name>AgentApiServlet</servlet-name>
     <url-pattern>/api/agent</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>BillingManageServlet</servlet-name>
+    <url-pattern>/tenant-billing-action</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>TenantStoreManageServlet</servlet-name>
+    <url-pattern>/tenant-store-action</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>TenantMeterMapManageServlet</servlet-name>
+    <url-pattern>/tenant-meter-map-action</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>PeakPolicyManageServlet</servlet-name>
+    <url-pattern>/peak-policy-action</url-pattern>
   </servlet-mapping>
 
 </web-app>

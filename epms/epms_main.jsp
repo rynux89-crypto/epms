@@ -5,25 +5,34 @@
     <title>EPMS 전력 품질 관리 메인</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
-        body{max-width:1400px;margin:20px auto;padding:0 16px}
+        body{max-width:1760px;margin:20px auto;padding:0 18px}
         .page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:18px}
         .page-head p{margin:0;color:var(--muted)}
-        .container{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:start;gap:18px}
+        .container{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));align-items:start;gap:14px}
         .section{position:relative;padding:18px 18px 20px;border-width:2px;box-shadow:0 16px 30px rgba(15,23,42,.08)}
         .section::before{content:"";position:absolute;left:0;top:0;right:0;height:12px;border-radius:14px 14px 0 0}
         .section.monitoring{background:linear-gradient(180deg,#ffffff 0%,#f4f9ff 100%);border-color:#cfe0ff}
         .section.quality{background:linear-gradient(180deg,#ffffff 0%,#f7fbf6 100%);border-color:#cfe9d6}
         .section.energy{background:linear-gradient(180deg,#ffffff 0%,#fff9f1 100%);border-color:#f2ddb1}
+        .section.remote{background:linear-gradient(180deg,#ffffff 0%,#fdf7ef 100%);border-color:#efcf9a}
+        .section.billing{background:linear-gradient(180deg,#ffffff 0%,#f8f4ec 100%);border-color:#e4c7a8}
+        .section.peak{background:linear-gradient(180deg,#ffffff 0%,#eefaf4 100%);border-color:#b9e0c7}
         .section.system{background:linear-gradient(180deg,#ffffff 0%,#f8f7ff 100%);border-color:#d8cef7}
         .section.plc{background:linear-gradient(180deg,#ffffff 0%,#f6fbfb 100%);border-color:#c8e9e8}
         .section.monitoring::before{background:linear-gradient(90deg,#7da7e8 0%,#bfd6fb 100%)}
         .section.quality::before{background:linear-gradient(90deg,#7fc48f 0%,#caead1 100%)}
         .section.energy::before{background:linear-gradient(90deg,#e7b85c 0%,#f6dfac 100%)}
+        .section.remote::before{background:linear-gradient(90deg,#da9c3d 0%,#f4d8a5 100%)}
+        .section.billing::before{background:linear-gradient(90deg,#b98445 0%,#e8cfaf 100%)}
+        .section.peak::before{background:linear-gradient(90deg,#4ba86b 0%,#c8ebd3 100%)}
         .section.system::before{background:linear-gradient(90deg,#9f8ae0 0%,#ddd4f8 100%)}
         .section.plc::before{background:linear-gradient(90deg,#6cc8c5 0%,#c8efed 100%)}
         .section.monitoring .section-eyebrow{background:#eaf2ff;border-color:#cfe0ff;color:#1f4f97}
         .section.quality .section-eyebrow{background:#ecf8ef;border-color:#cfe9d6;color:#1d6a43}
         .section.energy .section-eyebrow{background:#fff3dd;border-color:#f2ddb1;color:#9a6200}
+        .section.remote .section-eyebrow{background:#fff1da;border-color:#efcf9a;color:#8a5600}
+        .section.billing .section-eyebrow{background:#f8ecdf;border-color:#e4c7a8;color:#87521a}
+        .section.peak .section-eyebrow{background:#e9f8ee;border-color:#b9e0c7;color:#17633a}
         .section.system .section-eyebrow{background:#f0ecff;border-color:#d8cef7;color:#5d49a8}
         .section.plc .section-eyebrow{background:#e8f7f7;border-color:#c8e9e8;color:#126b6a}
         .section-eyebrow .eyebrow-icon{width:14px;height:14px;display:inline-block;vertical-align:middle}
@@ -40,6 +49,9 @@
         .section.monitoring .tile-icon{background:#eaf2ff}
         .section.quality .tile-icon{background:#ecf8ef}
         .section.energy .tile-icon{background:#fff3dd}
+        .section.remote .tile-icon{background:#fff1da}
+        .section.billing .tile-icon{background:#f8ecdf}
+        .section.peak .tile-icon{background:#e9f8ee}
         .section.system .tile-icon{background:#f0ecff}
         .section.plc .tile-icon{background:#e8f7f7}
         .app-card h3{font-size:15px;line-height:1.35;margin:0}
@@ -48,18 +60,21 @@
         .section.monitoring .app-card a.sub-card-link{border-top-color:#7da7e8}
         .section.quality .app-card a.sub-card-link{border-top-color:#7fc48f}
         .section.energy .app-card a.sub-card-link{border-top-color:#e7b85c}
+        .section.remote .app-card a.sub-card-link{border-top-color:#da9c3d}
+        .section.billing .app-card a.sub-card-link{border-top-color:#b98445}
+        .section.peak .app-card a.sub-card-link{border-top-color:#4ba86b}
         .section.system .app-card a.sub-card-link{border-top-color:#9f8ae0}
         .section.plc .app-card a.sub-card-link{border-top-color:#6cc8c5}
-        @media (max-width:1280px){.container{grid-template-columns:repeat(3,minmax(0,1fr))}}
-        @media (max-width:900px){.container{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media (max-width:1600px){.container{grid-template-columns:repeat(3,minmax(0,1fr))}}
+        @media (max-width:1100px){.container{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media (max-width:768px){.page-head{flex-direction:column;align-items:flex-start}.container{grid-template-columns:1fr;gap:18px}.section{padding:16px}}
     </style>
 </head>
 <body>
 <div class="page-head">
     <div>
-        <h1>EPMS 전력 품질 관리 시스템</h1>
-        <p>모니터링, 에너지 관리, 알람, PLC 운영 화면을 공통 대시보드 스타일로 제공합니다.</p>
+        <h1>EPMS 전력 관리 시스템</h1>
+        <p>모니터링, 에너지 분석, 원격검침 운영, 매장 정산, peak 관리, 알람, PLC 운영 화면을 공통 대시보드 스타일로 제공합니다.</p>
     </div>
     <div class="meta-info" style="width:auto;">Version <%= APP_VERSION %></div>
 </div>
@@ -171,11 +186,18 @@
 
     <div class="section energy">
         <div class="section-header">
-            <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M13 2L6 13h5l-1 9 8-12h-5l0-8z"/></svg></span>Energy</div>
+            <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M13 2L6 13h5l-1 9 8-12h-5l0-8z"/></svg></span>Energy Analysis</div>
             <h2>에너지 분석</h2>
-            <p>현황 확인부터 상세 분석, 흐름 추적까지 단계별로 확인합니다.</p>
+            <p>전체 에너지 흐름과 계측기 사용량을 분석해 운영 추세와 절감 포인트를 확인합니다.</p>
         </div>
         <div class="section-links">
+            <div class="app-card">
+                <a href="energy_meter_overview.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>계측기별 에너지 관리</h3></div>
+                    <p>각 계측기의 지난달 사용량과 현재 사용량을 빠르게 비교합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
             <div class="app-card">
                 <a href="energy_overview.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M5 19V9"/><path d="M12 19V5"/><path d="M19 19v-8"/><path d="M4 19h16"/></svg></span><h3>에너지 현황</h3></div>
@@ -185,8 +207,8 @@
             </div>
             <div class="app-card">
                 <a href="energy_manage.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="M6 8l4 4 3-3 5 5"/></svg></span><h3>에너지 상세분석</h3></div>
-                    <p>기간, 건물, 용도, 계측기를 좁혀 사용량과 이상 징후를 분석합니다.</p>
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="M6 8l4 4 3-3 5 5"/></svg></span><h3>에너지 통합 상세분석</h3></div>
+                    <p>기간, 건물, 용도, 계측기를 좁혀 사용량과 이상 징후를 통합 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
@@ -201,6 +223,78 @@
                 <a href="aggregated_measurements.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15V9"/><path d="M12 15V5"/><path d="M17 15v-3"/></svg></span><h3>일/월/년 집계 조회</h3></div>
                     <p>일간, 월간, 년간 집계 테이블을 뷰 기준으로 조회합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="section remote">
+        <div class="section-header">
+            <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M13 2L6 13h5l-1 9 8-12h-5l0-8z"/></svg></span>Remote Metering</div>
+            <h2>원격검침 운영</h2>
+            <p>매장 마스터, 계측기 귀속, 원격검침 조회와 매핑 현황을 운영합니다.</p>
+        </div>
+        <div class="section-links">
+            <div class="app-card">
+                <a href="tenant_store_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M6 19V7h12v12"/><path d="M9 11h2"/><path d="M13 11h2"/><path d="M9 15h2"/><path d="M13 15h2"/></svg></span><h3>매장 관리</h3></div>
+                    <p>매장 마스터 등록과 엑셀 일괄 업로드를 관리합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="tenant_meter_map_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M7 7h10"/><path d="M7 12h10"/><path d="M7 17h6"/><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span><h3>매장-계측기 연결</h3></div>
+                    <p>매장과 계측기의 정산 귀속, 비율, 적용기간을 설정합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="tenant_meter_store_tiles.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>계측기별 연결 매장</h3></div>
+                    <p>현재 연결된 매장을 계측기 기준 타일 화면으로 빠르게 확인합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="section billing">
+        <div class="section-header">
+            <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></span>Tenant Billing</div>
+            <h2>매장 정산</h2>
+            <p>요금제, 계약, 스냅샷 생성, 월 청구 흐름을 원격검침 운영과 분리해 관리합니다.</p>
+        </div>
+        <div class="section-links">
+            <div class="app-card">
+                <a href="tenant_billing_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></span><h3>매장 전력 정산</h3></div>
+                    <p>매장, 계약, 검침 스냅샷, 월 청구서를 한 흐름으로 관리합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="section peak">
+        <div class="section-header">
+            <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M5 19h14"/></svg></span>Peak Management</div>
+            <h2>Peak 관리</h2>
+            <p>매장 매핑 상태와 최근 피크 계측기를 기준으로 peak 운영 대상을 확인하고 다음 제어 단계를 준비합니다.</p>
+        </div>
+        <div class="section-links">
+            <div class="app-card">
+                <a href="peak_management.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15l3-3 3 2 4-5 2 2"/></svg></span><h3>Peak 운영 대시보드</h3></div>
+                    <p>최근 30일 피크 상위 계측기와 매핑 누락 매장을 빠르게 확인합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="peak_policy_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M6 7h12"/><path d="M8 12h8"/><path d="M10 17h4"/></svg></span><h3>Peak 정책 관리</h3></div>
+                    <p>매장별 피크 한도와 주의/제어 기준, 우선순위를 정책으로 등록합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
