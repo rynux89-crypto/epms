@@ -61,9 +61,13 @@ public final class AgentQueryRouterCompat {
         String m = normalize(userMessage);
         boolean meterScope = m.contains("각계측기") || m.contains("모든계측기") || m.contains("계측기별")
             || (m.contains("각") && m.contains("계측기")) || (m.contains("all") && m.contains("meter"));
+        boolean buildingSummaryScope =
+            m.contains("건물")
+            && (m.contains("전체") || m.contains("현황") || m.contains("요약") || m.contains("현재")
+                || m.contains("summary") || m.contains("current"));
         boolean powerWord = m.contains("전력량") || m.contains("전력") || m.contains("사용전력")
             || m.contains("kw") || m.contains("kwh") || m.contains("power");
-        return meterScope && powerWord;
+        return (meterScope || buildingSummaryScope) && powerWord;
     }
 
     public static boolean wantsHarmonicSummary(String userMessage) {
@@ -198,6 +202,9 @@ public final class AgentQueryRouterCompat {
             || m.contains("kw") || m.contains("kwh") || m.contains("power");
         boolean hasTop = m.contains("top") || m.contains("상위") || m.matches(".*[0-9]+개.*");
         boolean hasListIntent = m.contains("별") || m.contains("비교") || m.contains("목록") || m.contains("보여");
+        boolean hasSummaryIntent = m.contains("전체") || m.contains("현황") || m.contains("요약")
+            || m.contains("현재") || m.contains("summary") || m.contains("current");
+        if (hasSummaryIntent && !hasTop && !hasListIntent) return false;
         return hasBuilding && hasPower && (hasTop || hasListIntent || m.endsWith("은?") || m.endsWith("?"));
     }
 

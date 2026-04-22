@@ -124,9 +124,13 @@ public final class AgentQueryRouter {
         String m = normalize(userMessage);
         boolean meterScope = m.contains("\uAC01\uACC4\uCE21\uAE30") || m.contains("\uBAA8\uB4E0\uACC4\uCE21\uAE30") || m.contains("\uACC4\uCE21\uAE30\uBCC4")
             || (m.contains("\uAC01") && m.contains("\uACC4\uCE21\uAE30")) || (m.contains("all") && m.contains("meter"));
+        boolean buildingSummaryScope =
+            m.contains("\uAC74\uBB3C")
+            && (m.contains("\uC804\uCCB4") || m.contains("\uD604\uD669") || m.contains("\uC694\uC57D") || m.contains("\uD604\uC7AC")
+                || m.contains("summary") || m.contains("current"));
         boolean powerWord = m.contains("\uC804\uB825\uB7C9") || m.contains("\uC804\uB825") || m.contains("\uC0AC\uC6A9\uC804\uB825")
             || m.contains("kw") || m.contains("kwh") || m.contains("power");
-        return meterScope && powerWord;
+        return (meterScope || buildingSummaryScope) && powerWord;
     }
 
     public static boolean wantsHarmonicSummary(String userMessage) {
@@ -295,6 +299,9 @@ public final class AgentQueryRouter {
             || m.contains("kw") || m.contains("kwh") || m.contains("power");
         boolean hasTop = m.contains("top") || m.contains("\uC0C1\uC704") || m.matches(".*[0-9]+\uAC1C.*");
         boolean hasListIntent = m.contains("\uBCC4") || m.contains("\uBE44\uAD50") || m.contains("\uBAA9\uB85D") || m.contains("\uBCF4\uC5EC");
+        boolean hasSummaryIntent = m.contains("\uC804\uCCB4") || m.contains("\uD604\uD669") || m.contains("\uC694\uC57D")
+            || m.contains("\uD604\uC7AC") || m.contains("summary") || m.contains("current");
+        if (hasSummaryIntent && !hasTop && !hasListIntent) return false;
         return hasBuilding && hasPower && (hasTop || hasListIntent || m.endsWith("\uC740?") || m.endsWith("?"));
     }
 

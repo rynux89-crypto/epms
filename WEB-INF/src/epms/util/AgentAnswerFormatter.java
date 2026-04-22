@@ -624,11 +624,78 @@ public final class AgentAnswerFormatter {
         if (powerCtx == null || powerCtx.trim().isEmpty()) return "\uacc4\uce21\uae30\ubcc4 \uc804\ub825\ub7c9 \ub370\uc774\ud130\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.";
         if (powerCtx.contains("no data")) return "\uacc4\uce21\uae30\ubcc4 \uc804\ub825\ub7c9 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
         if (powerCtx.contains("unavailable")) return "\uacc4\uce21\uae30\ubcc4 \uc804\ub825\ub7c9 \uc870\ud68c\ub97c \ud604\uc7ac \uc218\ud589\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        Matcher m = Pattern.compile("total=([0-9]+)\\s+meters").matcher(powerCtx);
-        if (m.find()) {
-            return "\uac01 \uacc4\uce21\uae30\uc758 \ucd5c\uc2e0 \uc804\ub825\ub7c9\uc744 \uc870\ud68c\ud588\uc2b5\ub2c8\ub2e4. \ucd1d " + m.group(1) + "\uac1c \uacc4\uce21\uae30\uc774\uba70, \uc0c1\uc704 30\uac1c\ub97c \ud45c\uc2dc\ud569\ub2c8\ub2e4.";
+        Matcher totalMatcher = Pattern.compile("total=([0-9]+)\\s+meters").matcher(powerCtx);
+        int totalMeters = totalMatcher.find() ? Integer.parseInt(totalMatcher.group(1)) : 0;
+        Matcher row = Pattern.compile("\\s[0-9]+\\)meter_id=([0-9]+),\\s*([^,;]+),\\s*panel=([^,;]+),\\s*t=([^,;]+),\\s*kW=([0-9.\\-]+),\\s*kWh=([0-9.\\-]+);").matcher(powerCtx);
+        ArrayList<String> topItems = new ArrayList<String>();
+        double sumKw = 0.0;
+        double maxKw = Double.NEGATIVE_INFINITY;
+        String maxMeterLabel = null;
+        int listedMeters = 0;
+        while (row.find()) {
+            listedMeters++;
+            String meterId = trimToNull(row.group(1));
+            String meterName = trimToNull(row.group(2));
+            String kwText = trimToNull(row.group(5));
+            double kw = parseDoubleOrZero(kwText);
+            sumKw += kw;
+            String label = (meterName == null || "-".equals(meterName) ? (meterId + "\ubc88 \uacc4\uce21\uae30") : (meterName + "(" + meterId + ")"));
+            if (kw > maxKw) {
+                maxKw = kw;
+                maxMeterLabel = label;
+            }
+            if (topItems.size() < 3) {
+                topItems.add(label + " " + trimNumber(kwText) + "kW");
+            }
         }
-        return "\uac01 \uacc4\uce21\uae30\uc758 \ucd5c\uc2e0 \uc804\ub825\ub7c9(kW/kWh)\uc744 \uc870\ud68c\ud588\uc2b5\ub2c8\ub2e4.";
+        if (listedMeters == 0) {
+            return "\uac01 \uacc4\uce21\uae30\uc758 \ucd5c\uc2e0 \uc804\ub825\ub7c9(kW/kWh)\uc744 \uc870\ud68c\ud588\uc2b5\ub2c8\ub2e4.";
+        }
+        if (totalMeters <= 0) totalMeters = listedMeters;
+        StringBuilder out = new StringBuilder();
+        out.append("\uc804\uccb4 \uac74\ubb3c \ud604\uc7ac \uc804\ub825 \uc0ac\uc6a9 \ud604\ud669 \uc694\uc57d\uc785\ub2c8\ub2e4.\n\n")
+            .append("\ud575\uc2ec \uac12:\n")
+            .append("- \uc870\ud68c \uacc4\uce21\uae30 \uc218: ").append(totalMeters).append("\uac1c");
+        if (totalMeters > listedMeters) {
+            out.append(" (\ud45c\uc2dc ").append(listedMeters).append("\uac1c)");
+        }
+        out.append("\n- \ud45c\uc2dc \ubc94\uc704 \ud569\uacc4 \uc720\ud6a8\uc804\ub825: ").append(formatNumber(sumKw)).append("kW")
+            .append("\n- \ud45c\uc2dc \ubc94\uc704 \ud3c9\uade0 \uc720\ud6a8\uc804\ub825: ").append(formatNumber(sumKw / listedMeters)).append("kW");
+        if (maxMeterLabel != null) {
+            out.append("\n- \ud45c\uc2dc \ubc94\uc704 \ucd5c\ub300 \uc0ac\uc6a9 \uacc4\uce21\uae30: ")
+                .append(maxMeterLabel).append(" ").append(formatNumber(maxKw)).append("kW");
+        }
+        if (!topItems.isEmpty()) {
+            out.append("\n\n\uc0c1\uc704 \uacc4\uce21\uae30:\n- ")
+                .append(String.join("\n- ", topItems));
+        }
+        if (totalMeters > listedMeters) {
+            out.append("\n\n\uCC38\uACE0:\n- \ud604\uc7ac \uc751\ub2f5\uc740 \ucd5c\ub300 ").append(listedMeters)
+                .append("\uac1c \uacc4\uce21\uae30\ub97c \uae30\uc900\uc73c\ub85c \ud45c\uc2dc\ud55c \uc694\uc57d\uc785\ub2c8\ub2e4.");
+        }
+        return out.toString();
+    }
+
+    private static double parseDoubleOrZero(String value) {
+        if (value == null || value.trim().isEmpty() || "-".equals(value.trim())) return 0.0;
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private static String trimNumber(String value) {
+        if (value == null) return "-";
+        String v = value.trim();
+        if (v.endsWith(".00")) return v.substring(0, v.length() - 3);
+        if (v.endsWith(".0")) return v.substring(0, v.length() - 2);
+        return v;
+    }
+
+    private static String formatNumber(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) return "-";
+        return trimNumber(String.format(java.util.Locale.ROOT, "%.2f", value));
     }
 
     public static String buildHarmonicDirectAnswer(String harmonicCtx, Integer meterId) {
