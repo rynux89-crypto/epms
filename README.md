@@ -1,181 +1,281 @@
-﻿# EPMS (Electric Power Monitoring System)
+# EPMS (Electric Power Monitoring System)
 
-EPMS는 전력 품질/에너지/알람/이벤트/PLC 매핑을 JSP 기반으로 운영하는 웹 애플리케이션입니다.
+EPMS는 전력 품질, 에너지, 알람, 이벤트, PLC 연동을 JSP/Servlet 기반으로 운영하는 웹 애플리케이션입니다.
 
 ## 1. 개요
 
 - 런타임: Tomcat 9, JSP/Servlet
-- DB: SQL Server (JNDI 사용)
-- 주요 경로: `epms/`
+- DB: SQL Server
+- 기본 경로: `epms/`
 - 메인 화면: `epms/epms_main.jsp`
+- Agent UI 스크립트: `js/epms_agent.js`
 
-## 2. 주요 기능 화면
+## 2. 현재 폴더 구조
 
-`epms_main.jsp` 기준으로 다음 화면으로 이동합니다.
+메인 섹션 기준으로 화면을 아래처럼 정리해 두었습니다.
 
-- 전력 품질 통합: `pq_overview.jsp`
-- 계측기 상세: `meter_status.jsp`
-- 페이저 다이어그램: `phasor_diagram.jsp`
-- 불평형/변동률: `voltage_unbalance.jsp`, `variation_ves.jsp`, `variation_ces.jsp`
-- 주파수/전압 분석: `frequency_voltage.jsp`
-- 고조파 분석: `harmonics_v.jsp`, `harmonics_i.jsp`, `harmonic_detail.jsp`, `harmonic_sync.jsp`
-- 에너지 관리: `energy_overview.jsp`, `energy_manage.jsp`, `energy_sankey.jsp`
-- 알람: `alarm_view.jsp`, `alarm_detail.jsp`, `alarm_rule.jsp`, `alarm_rule_manage.jsp`, `metric_catalog_manage.jsp`
-- 이벤트: `event_view.jsp`, `event_detail.jsp`
-- 계측기/트리 관리: `meter_register.jsp`, `meter_tree_manage.jsp`
-- 데이터 보관/정리: `data_retention_manage.jsp`
-- PLC/매핑: `plc_register.jsp`, `plc_status.jsp`, `plc_write.jsp`, `plc_excel_import.jsp`, `ai_mapping.jsp`, `di_mapping.jsp`, `ai_measurements_verify.jsp`, `ai_measurements_mapping_manage.jsp`
+- `epms/epms_main.jsp`
+- `epms/agent/`
+- `epms/energy/`
+- `epms/monitoring/`
+- `epms/peak/`
+- `epms/plc/`
+- `epms/quality/`
+- `epms/remote/`
+- `epms/system/`
 
-## 3. AI Agent 구성
+참고:
 
-- API 엔드포인트: `epms/agent.jsp`
-- 관리 화면: `epms/agent_manage.jsp`
-- 설정 파일: `epms/agent_model.properties`
+- `epms/` 루트에는 메인 진입 화면인 `epms_main.jsp`만 남기고, 나머지 화면은 섹션 폴더로 이동한 상태입니다.
 
-### 3.1 Agent 동작 요약
+## 3. 주요 기능 화면
 
-- 입력 검증, rate limit 처리
-- 규칙 기반 즉답 가능한 질의는 DB 조회 후 응답
-- 그 외 질의는 Ollama 모델 호출로 분류/생성 응답
-- JSON 응답 반환
+### 3.1 Agent
 
-### 3.2 관리 화면에서 조정 가능한 항목
+- 관리 화면: `epms/agent/agent_manage.jsp`
+- 설정 파일: `epms/agent/agent_model.properties`
+
+### 3.2 Energy
+
+- `epms/energy/energy_overview.jsp`
+- `epms/energy/energy_manage.jsp`
+- `epms/energy/energy_sankey.jsp`
+- `epms/energy/energy_meter_overview.jsp`
+- `epms/energy/energy_meter_detail.jsp`
+- `epms/energy/aggregated_measurements.jsp`
+- `epms/energy/carbon_emissions.jsp`
+
+### 3.3 Monitoring
+
+- `epms/monitoring/pq_overview.jsp`
+- `epms/monitoring/meter_status.jsp`
+- `epms/monitoring/phasor_diagram.jsp`
+- `epms/monitoring/alarm_view.jsp`
+- `epms/monitoring/alarm_detail.jsp`
+- `epms/monitoring/event_view.jsp`
+- `epms/monitoring/event_detail.jsp`
+
+### 3.4 Peak
+
+- `epms/peak/peak_management.jsp`
+- `epms/peak/peak_policy_manage.jsp`
+
+### 3.5 PLC
+
+- `epms/plc/plc_register.jsp`
+- `epms/plc/plc_status.jsp`
+- `epms/plc/plc_write.jsp`
+- `epms/plc/plc_excel_import.jsp`
+- `epms/plc/ai_mapping.jsp`
+- `epms/plc/di_mapping.jsp`
+- `epms/plc/ai_measurements_verify.jsp`
+- `epms/plc/ai_measurements_mapping_manage.jsp`
+- `epms/plc/harmonic_sync.jsp`
+- `epms/plc/modbus_api.jsp`
+
+### 3.6 Quality
+
+- `epms/quality/voltage_unbalance.jsp`
+- `epms/quality/current_unbalance.jsp`
+- `epms/quality/variation_ves.jsp`
+- `epms/quality/variation_ces.jsp`
+- `epms/quality/frequency_voltage.jsp`
+- `epms/quality/harmonics_v.jsp`
+- `epms/quality/harmonics_i.jsp`
+- `epms/quality/harmonic_detail.jsp`
+
+### 3.7 Remote
+
+- `epms/remote/tenant_billing_manage.jsp`
+- `epms/remote/tenant_meter_map_manage.jsp`
+- `epms/remote/tenant_store_manage.jsp`
+- `epms/remote/tenant_store_energy_detail.jsp`
+- `epms/remote/tenant_store_excel_import.jsp`
+- `epms/remote/tenant_meter_store_tiles.jsp`
+
+### 3.8 System
+
+- `epms/system/setup.jsp`
+- `epms/system/meter_register.jsp`
+- `epms/system/meter_tree_manage.jsp`
+- `epms/system/meter_excel_import.jsp`
+- `epms/system/alarm_rule_manage.jsp`
+- `epms/system/metric_catalog_manage.jsp`
+- `epms/system/data_retention_manage.jsp`
+- `epms/system/di_group_manage.jsp`
+- `epms/system/alarm_diag.jsp`
+
+## 4. Agent 구성
+
+### 4.1 주요 경로
+
+- API 엔드포인트: `/api/agent`
+- Agent 관리 화면: `epms/agent/agent_manage.jsp`
+- Agent 설정 파일: `epms/agent/agent_model.properties`
+- UI 스크립트: `js/epms_agent.js`
+
+### 4.2 Agent 동작 요약
+
+- 입력 질의를 분석해서 규칙 기반 직접 응답 가능 여부를 먼저 판단합니다.
+- 알람/전력/계측기/전력품질 계열 질문은 DB 컨텍스트를 조회한 뒤 직접 응답하거나 LLM 응답에 보강합니다.
+- 설명형 질문은 Ollama 모델을 사용해 내러티브형 응답을 생성합니다.
+- 일부 질문은 특정 도메인 의도에 따라 PQ/Alarm 성격의 응답으로 유도됩니다.
+
+### 4.3 최근 반영된 Agent 동작
+
+- Agent 관리 화면은 `epms/agent/agent_manage.jsp`에서 한 화면으로 모델/채팅 UI를 관리합니다.
+- 채팅 첫 화면에 샘플 질문 목록이 표시됩니다.
+- `전체 건물의 현재 전력 사용 현황을 요약해줘` 같은 질문은 계측기별 최신 전력 데이터를 기반으로 요약 응답을 반환합니다.
+- 현재 전력 요약 응답은 전체 계측기 수를 표시하면서, 기본적으로 표시 가능한 최신 계측기 데이터 범위를 기준으로 합계/평균/상위 계측기를 요약합니다.
+
+### 4.4 관리 화면에서 조정 가능한 항목
 
 - Ollama URL
-- 대화 모델 (`model`)
+- 기본 대화 모델 (`model`)
 - 코더 모델 (`coder_model`)
+- AI 모델 (`ai_model`)
+- PQ 모델 (`pq_model`)
+- Alarm 모델 (`alarm_model`)
 - 스키마 캐시 시간 (`schema_cache_ttl_minutes`)
 - 연결 타임아웃 (`ollama_connect_timeout_seconds`)
 - 응답 타임아웃 (`ollama_read_timeout_seconds`)
 
-## 4. Ollama URL 반영 방식
+## 5. Ollama URL 반영 방식
 
-현재 코드는 다음 우선순위로 Ollama URL을 결정합니다.
+현재 코드는 아래 우선순위로 Ollama URL을 결정합니다.
 
-1. `agent_model.properties`의 `ollama_url` (관리 화면 저장값)
+1. `epms/agent/agent_model.properties`의 `ollama_url`
 2. 환경변수 `OLLAMA_URL`
 3. 기본값 `http://localhost:11434`
 
-즉, `agent_manage.jsp`에서 URL을 저장하면 `agent.jsp` 요청 시 즉시 해당 주소로 연결됩니다.
+즉, 관리 화면에서 URL을 저장하면 이후 `/api/agent` 요청부터 즉시 적용됩니다.
 
-## 5. 설정 파일 예시 (`epms/agent_model.properties`)
+## 6. 설정 파일 예시
+
+### 6.1 `epms/agent/agent_model.properties`
 
 ```properties
 ollama_url=http\://localhost\:11434
 model=exaone-db\:latest
 coder_model=qwen2.5-coder\:7b
+ai_model=exaone-db\:latest
+pq_model=exaone-db\:latest
+alarm_model=exaone-db\:latest
 schema_cache_ttl_minutes=60
 ollama_connect_timeout_seconds=60
 ollama_read_timeout_seconds=60
 updated_at=2026-03-08 20\:23\:55
 ```
 
-## 6. 실행 전제
-
-- Tomcat 9+
-- Java 8+
-- SQL Server 연결 가능한 JNDI 리소스: `java:comp/env/jdbc/epms`
-- Ollama 서버 접근 가능
-- 공통 운영 설정 파일: `WEB-INF/config.toml`
-
-## 6.1 `WEB-INF/config.toml`
+### 6.2 `WEB-INF/config.toml`
 
 EPMS 운영값을 한 곳에서 관리하기 위한 설정 파일입니다.
 
 - 위치: `WEB-INF/config.toml`
-- 현재 연결된 항목: `scripts/backup_epms_daily.ps1`
-- 현재 미연결 항목: JSP/Java 런타임 JNDI 자체는 아직 `config.toml`을 직접 읽지 않음
+- Agent 설정 파일 경로 등 공통 운영값을 관리합니다.
+- 백업 스크립트와 일부 운영 화면에서 함께 사용합니다.
 
-백업 스크립트 우선순위:
+## 7. 실행 전제
 
-1. 명시적 스크립트 인자
-2. 환경변수
-3. `WEB-INF/config.toml`
-4. 스크립트 기본값
+- Tomcat 9+
+- Java 8+
+- SQL Server 연결 가능
+- JNDI 리소스 또는 direct JDBC fallback 구성
+- Ollama 서버 접근 가능
+- 공통 운영 설정 파일: `WEB-INF/config.toml`
 
-## 6.2 최초 서버 설정
+## 8. 초기 설정
 
-Tomcat만 올라와 있고 SQL Server만 설치된 초기 서버라면, 먼저 아래 화면으로 접속해서 설정할 수 있습니다.
+초기 서버에서 아래 화면을 통해 기본 설정을 진행할 수 있습니다.
 
-- 진입 화면: `/epms/setup.jsp`
-- 주요 기능:
-  - `WEB-INF/config.toml` 저장
-  - SQL Server 직접 연결 테스트
-  - `create_epms_schema.sql` 기반 DB/스키마 초기화
-  - `create_plc_mapping_master.sql` 기반 PLC master 테이블 초기화
-  - 서버 맞춤형 백업 Job SQL 생성
-  - 최소 seed 데이터 생성/삭제
+- 진입 화면: `/epms/system/setup.jsp`
+
+주요 기능:
+
+- `WEB-INF/config.toml` 저장
+- SQL Server 직접 연결 테스트
+- 스키마 초기화
+- PLC master 테이블 초기화
+- 서버별 백업 Job SQL 생성
+- seed 데이터 생성/삭제
 
 권장 순서:
 
-1. `/epms/setup.jsp` 접속
+1. `/epms/system/setup.jsp` 접속
 2. DB 서버/DB명/계정 입력 후 `Save + Test DB`
 3. 정상 연결 확인 후 `Save + Initialize Schema`
-4. 이후 일반 화면(`/epms/epms_main.jsp`) 접속
+4. 이후 `/epms/epms_main.jsp` 접속
 
-참고:
+## 9. 운영 체크리스트
 
-- 현재 앱 공통 DB 연결은 `JNDI -> WEB-INF/config.toml direct JDBC fallback` 순서로 동작합니다.
-- 즉 초기에는 JNDI 없이도 setup 화면과 일반 화면을 띄울 수 있습니다.
+- `/epms/epms_main.jsp` 정상 로딩 확인
+- `epms/agent/agent_manage.jsp`에서 모델 저장 후 `/api/agent` 응답 확인
+- `epms/monitoring/alarm_view.jsp`, `epms/monitoring/event_view.jsp`, `epms/monitoring/meter_status.jsp` 스모크 테스트
+- `epms/energy/carbon_emissions.jsp` 및 에너지 관련 화면 확인
+- 모델 변경 시 `/api/tags` 확인
+- 타임아웃은 모델 크기와 응답 시간에 맞게 조정
+- JSP/클래스 수정 후 런타임 반영이 애매하면 Tomcat 재시작
 
-## 7. 운영 체크리스트
+## 10. 임시 파일 정리 정책
 
-- `agent_manage.jsp`에서 URL/모델 저장 후 `agent.jsp` 응답 확인
-- 모델 변경 시 `/api/tags` 조회가 정상인지 확인
-- 타임아웃은 모델 크기/응답시간에 맞게 조정
-- 스키마 변경이 잦으면 캐시 시간을 짧게 조정
-- DB 백업은 `scripts/backup_epms_daily.ps1`로 일일 전체 백업 + 보관 정리를 자동화 가능
-- 서버 이전 시 백업 Job은 자동 승계되지 않으므로 `docs/epms_backup_migration_checklist.md` 기준으로 재등록 필요
+루트에 생성되던 임시 JSON 테스트 파일은 정리했습니다.
 
-## 8. 참고
+- 작은 테스트 요청 파일 `tmp_*.json`은 삭제
+- 큰 스냅샷 파일은 `archive/tmp_json/`으로 이동
 
-- 일부 JSP 파일명에 과거 오타 파일(`event_detaul.jsp`)이 남아 있을 수 있습니다.
-- 메인에서 실제 사용하는 상세 화면은 `event_detail.jsp`입니다.
+현재 보관 위치:
 
-## 9. 배포 절차 (백업 -> 반영 -> 검증)
+- `archive/tmp_json/tmp_perf_snapshot.json`
+- `archive/tmp_json/tmp_plc_snapshot.json`
+- `archive/tmp_json/tmp_plc_snapshot2.json`
 
-### 9.1 백업
+원칙:
+
+- 루트에는 운영에 필요한 파일만 둡니다.
+- 디버깅/스냅샷 산출물은 `archive/` 또는 별도 임시 폴더로 이동합니다.
+
+## 11. 참고
+
+- 일부 과거 오타 파일이나 호환 목적 파일이 남아 있을 수 있습니다.
+  - 예: `epms/monitoring/event_detaul.jsp`
+- 실제 메인에서 사용하는 경로와 문서 경로가 다를 수 있으므로, 신규 작업 시에는 현재 폴더 구조를 우선 기준으로 확인하는 것이 좋습니다.
+
+## 12. 배포 절차
+
+### 12.1 백업
 
 1. 현재 운영 소스 백업
-   - 예: `ROOT` 또는 `epms` 디렉터리를 날짜 기준으로 복사
-2. DB 백업
-   - SQL Server 백업 작업 수행(전체 백업 또는 최소 차등 백업)
-3. 설정 파일 백업
-   - `epms/agent_model.properties` 별도 보관
+2. SQL Server 백업 수행
+3. 주요 설정 파일 백업
+   - `epms/agent/agent_model.properties`
+   - `WEB-INF/config.toml`
 
-### 9.2 반영
+### 12.2 반영
 
-1. 원격 최신 코드 동기화
-   - `git pull origin master`
-2. 배포 대상 반영
-   - Tomcat `webapps/ROOT` 기준 파일 업데이트
+1. 최신 코드 반영
+   - 예: `git pull origin master`
+2. Tomcat `webapps/ROOT` 기준 파일 업데이트
 3. 권한/경로 확인
-   - Tomcat 계정이 파일 읽기/쓰기 가능한지 확인
 4. 필요 시 Tomcat 재기동
-   - JSP 재컴파일/캐시 이슈가 있으면 재시작 수행
 
-### 9.3 검증
+### 12.3 검증
 
-1. 기본 접근 확인
-   - `/epms/epms_main.jsp` 정상 로딩
-2. 핵심 화면 스모크 테스트
-   - `meter_status.jsp`, `alarm_view.jsp`, `event_view.jsp`, `agent_manage.jsp`
-3. Agent 연동 확인
-   - `agent_manage.jsp`에서 Ollama URL/모델 저장
-   - `agent.jsp` 호출 시 정상 응답/오류 코드 확인
-4. DB 연동 확인
-   - 최근 데이터 조회, 필터 조회, 저장/수정 기능 점검
-5. 로그 확인
-   - Tomcat 로그(catalina), 앱 오류 로그, SQL 에러 여부 확인
+1. `/epms/epms_main.jsp` 접근 확인
+2. 주요 화면 접근 확인
+3. `/api/agent` 응답 확인
+4. 최근 데이터 조회/저장 기능 점검
+5. Tomcat 로그 확인
 
-### 9.4 롤백 기준
+### 12.4 롤백 기준
 
-- 아래 조건 중 하나라도 발생하면 즉시 롤백
-  - 메인/핵심 화면 접속 불가
-  - Agent 응답 불가(지속적 5xx)
-  - 주요 조회/저장 기능 실패
+아래 조건 중 하나라도 발생하면 즉시 롤백합니다.
 
-롤백 방법:
-1. 백업해둔 소스 복원
+- 메인/핵심 화면 접속 불가
+- Agent 응답 불가 또는 지속적 5xx
+- 주요 조회/저장 기능 실패
+
+롤백 절차:
+
+1. 백업 소스 복원
 2. 필요 시 DB 백업본 복구
 3. Tomcat 재기동 후 재검증
