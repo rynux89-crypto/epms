@@ -214,14 +214,28 @@ public final class AgentAnswerFormatter {
     }
 
     public static String buildAlarmMeterTopDirectAnswer(String ctx) {
-        if (ctx == null || ctx.trim().isEmpty()) return "\uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.";
-        if (ctx.contains("unavailable")) return "\uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4\ub97c \ud604\uc7ac \uc870\ud68c\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.";
-        if (ctx.contains("no data")) return "\uc870\uac74\uc5d0 \ub9de\ub294 \uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.";
-
         Matcher pm = Pattern.compile("period=([^;]+)").matcher(ctx);
         Matcher dm = Pattern.compile("days=([0-9]+)").matcher(ctx);
         String periodLabel = pm.find() ? trimToNull(pm.group(1)) : null;
         String daysLabel = dm.find() ? trimToNull(dm.group(1)) : null;
+        if (ctx == null || ctx.trim().isEmpty()) return "\uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc2b5\uB2C8\uB2E4.";
+        if (ctx.contains("unavailable")) return "\uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4\ub97c \ud604\uc7ac \uc870\ud68c\ud560 \uc218 \uc5c6\uc2b5\uB2C8\uB2E4.";
+        if (ctx.contains("no data")) {
+            StringBuilder empty = new StringBuilder();
+            if (periodLabel != null && !periodLabel.isEmpty() && !"-".equals(periodLabel)) {
+                empty.append(periodLabel).append(" \uae30\uc900\uc73c\ub85c\ub294 \uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\uB2C8\uB2E4.");
+            } else if (daysLabel != null && !daysLabel.isEmpty()) {
+                empty.append("\ucd5c\uadfc ").append(daysLabel).append("\uc77c \uae30\uc900\uc73c\ub85c\ub294 \uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\uB2C8\uB2E4.");
+            } else {
+                empty.append("\uc870\uac74\uc5d0 \ub9de\ub294 \uacc4\uce21\uae30\ubcc4 \uc54c\ub78c \uc9d1\uacc4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\uB2C8\uB2E4.");
+            }
+            empty.append("\n\n\ud655\uc778 \ud3ec\uc778\ud2b8:\n");
+            empty.append("- \uc870\ud68c \uae30\uac04\uc744 \ub113\ud600\uc11c \ub2e4\uc2dc \uc870\ud68c\n");
+            empty.append("- \uc54c\ub78c \ub85c\uadf8 \uc218\uc9d1 \uc5ec\ubd80 \ud655\uc778\n");
+            empty.append("- \ud2b9\uc815 \ud310\ub12c \ub610\ub294 \uacc4\uce21\uae30 \ubc94\uc704\ub85c \uc7ac\uc870\ud68c");
+            return empty.toString();
+        }
+
         Matcher row = Pattern.compile("\\s[0-9]+\\)([^=;]+)=([0-9]+);").matcher(ctx);
         ArrayList<String> parts = new ArrayList<String>();
         while (row.find()) {

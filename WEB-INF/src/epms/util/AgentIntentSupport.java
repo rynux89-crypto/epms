@@ -1,47 +1,68 @@
 package epms.util;
 
+import java.util.Locale;
+
 public final class AgentIntentSupport {
     private AgentIntentSupport() {
     }
 
+    private static String rawLower(String userMessage) {
+        return userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean containsAny(String text, String... tokens) {
+        if (text == null || text.isEmpty() || tokens == null) return false;
+        for (String token : tokens) {
+            if (token != null && !token.isEmpty() && text.contains(token)) return true;
+        }
+        return false;
+    }
+
     public static boolean hasAlarmIntent(String userMessage) {
-        String m = AgentTextUtil.normalizeForIntent(userMessage);
-        return m.contains("알람") || m.contains("경보") || m.contains("alarm");
+        String raw = rawLower(userMessage);
+        return containsAny(raw, "\uC54C\uB78C", "\uACBD\uBCF4", "alarm", "alert");
     }
 
     public static boolean hasMeasurementAnomalyIntent(String userMessage) {
-        String m = AgentTextUtil.normalizeForIntent(userMessage);
-        boolean hasHarmonic = m.contains("고조파") || m.contains("harmonic") || m.contains("thd") || m.contains("왜형률") || m.contains("허형율");
-        boolean hasFrequency = m.contains("주파수") || m.contains("frequency") || m.contains("hz");
-        boolean hasVoltageUnbalance = (m.contains("전압") || m.contains("voltage")) && (m.contains("불평형") || m.contains("불균형") || m.contains("unbalance") || m.contains("imbalance"));
-        boolean hasCurrentUnbalance = (m.contains("전류") || m.contains("current")) && (m.contains("불평형") || m.contains("불균형") || m.contains("unbalance") || m.contains("imbalance"));
-        boolean hasPowerFactor = m.contains("역률") || m.contains("pf") || m.contains("powerfactor");
-        boolean hasOutlier = m.contains("이상") || m.contains("이상치") || m.contains("초과") || m.contains("문제") || m.contains("비정상") || m.contains("미만");
+        String raw = rawLower(userMessage);
+        boolean hasHarmonic = containsAny(raw, "\uACE0\uC870\uD30C", "harmonic", "thd");
+        boolean hasFrequency = containsAny(raw, "\uC8FC\uD30C\uC218", "frequency", "hz");
+        boolean hasVoltageUnbalance = containsAny(raw, "\uC804\uC555 \uBD88\uD3C9\uD615", "\uC804\uC555 \uBD88\uADE0\uD615", "voltage unbalance", "voltage imbalance");
+        boolean hasCurrentUnbalance = containsAny(raw, "\uC804\uB958 \uBD88\uD3C9\uD615", "\uC804\uB958 \uBD88\uADE0\uD615", "current unbalance", "current imbalance");
+        boolean hasPowerFactor = containsAny(raw, "\uC5ED\uB960", "power factor", "powerfactor", "pf");
+        boolean hasOutlier = containsAny(raw, "\uC774\uC0C1", "\uCD08\uACFC", "\uBB38\uC81C", "\uBE44\uC815\uC0C1", "\uBBF8\uB9CC", "outlier", "over", "abnormal");
         return (hasHarmonic || hasFrequency || hasVoltageUnbalance || hasCurrentUnbalance || hasPowerFactor) && hasOutlier;
     }
 
     public static boolean prefersNarrativeLlm(String userMessage) {
-        String m = AgentTextUtil.normalizeForIntent(userMessage);
-        boolean hasNarrativeIntent =
-            m.contains("해석") || m.contains("설명") || m.contains("요약")
-            || m.contains("보고서") || m.contains("분석") || m.contains("평가")
-            || m.contains("추론") || m.contains("진단") || m.contains("브리핑")
-            || m.contains("알려") || m.contains("안내") || m.contains("체크리스트")
-            || m.contains("항목") || m.contains("순서") || m.contains("절차")
-            || m.contains("원인") || m.contains("점검");
-        boolean hasCombinedIntent =
-            (m.contains("계측") || m.contains("상태") || m.contains("측정"))
-            && (m.contains("알람") || m.contains("경보"));
-        boolean hasQualityOpsIntent =
-            (m.contains("역률") || m.contains("powerfactor") || m.contains("pf")
-                || m.contains("주파수") || m.contains("frequency")
-                || m.contains("고조파") || m.contains("harmonic")
-                || m.contains("불평형") || m.contains("unbalance"))
-            && (m.contains("운영자") || m.contains("담당자")
-                || m.contains("뭐부터") || m.contains("먼저")
-                || m.contains("항목") || m.contains("순서")
-                || m.contains("절차") || m.contains("점검")
-                || m.contains("원인") || m.contains("대응"));
-        return (hasNarrativeIntent && hasCombinedIntent) || (hasNarrativeIntent && hasQualityOpsIntent);
+        String raw = rawLower(userMessage);
+        boolean hasNarrativeIntent = containsAny(
+            raw,
+            "\uC124\uBA85", "\uD574\uC11D", "\uC694\uC57D", "\uBD84\uC11D", "\uD3C9\uAC00",
+            "\uC9C4\uB2E8", "\uC548\uB0B4", "\uCCB4\uD06C\uB9AC\uC2A4\uD2B8", "\uD56D\uBAA9",
+            "\uC21C\uC11C", "\uC810\uAC80", "\uC6D0\uC778", "\uC774\uC720", "\uC758\uBBF8",
+            "\uC601\uD5A5", "\uC870\uCE58", "\uB300\uC751", "\uBC29\uBC95", "\uC5B4\uB5BB\uAC8C",
+            "\uBB34\uC5C7", "\uCD94\uC815", "\uD310\uB2E8", "\uAD8C\uC7A5", "\uCD94\uCC9C",
+            "explain", "summary", "analyze", "analysis", "why", "reason", "meaning",
+            "impact", "guide", "checklist", "recommend", "recommended", "how"
+        );
+        if (!hasNarrativeIntent) return false;
+
+        boolean hasAlarmOrQualityIntent =
+            hasAlarmIntent(userMessage)
+            || hasMeasurementAnomalyIntent(userMessage)
+            || containsAny(raw, "pq", "power quality", "\uC804\uB825\uD488\uC9C8");
+
+        boolean hasOpsIntent = containsAny(
+            raw,
+            "\uC6B4\uC601", "\uB300\uCC98", "\uD56D\uBAA9", "\uC21C\uC11C", "\uC810\uAC80",
+            "\uAE30\uC900", "\uBC29\uBC95", "\uC5B4\uB5BB\uAC8C", "\uBB34\uC5C7",
+            "operations", "operate", "guide", "how", "reason", "cause", "check", "checklist"
+        );
+
+        boolean hasCombinedIntent = containsAny(raw, "\uACC4\uCE21", "\uC0C1\uD0DC", "\uCE21\uC815")
+            && hasAlarmIntent(userMessage);
+
+        return hasAlarmOrQualityIntent || (hasCombinedIntent && hasOpsIntent);
     }
 }

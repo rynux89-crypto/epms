@@ -175,13 +175,19 @@ public final class AgentRuntimeFlowSupport {
             models.pqModel,
             models.alarmModel
         );
+        boolean prefersNarrative = AgentIntentSupport.prefersNarrativeLlm(userMessage)
+            || AgentQueryRouter.prefersNarrativeLlm(userMessage);
+        int readTimeoutMs = models.ollamaReadTimeoutMs;
+        if (prefersNarrative && readTimeoutMs < 180000) {
+            readTimeoutMs = 180000;
+        }
         return AgentAnswerGuardSupport.sanitizeUngroundedJudgement(
             callOllamaOnce(
                 models.ollamaUrl,
                 finalModel,
                 finalPrompt,
                 models.ollamaConnectTimeoutMs,
-                models.ollamaReadTimeoutMs,
+                readTimeoutMs,
                 0.4d
             ),
             dbContext

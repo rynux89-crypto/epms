@@ -1,6 +1,9 @@
 package epms.util;
 
 import java.util.Collections;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
@@ -55,6 +58,12 @@ public final class AgentRuntimePageSupport {
         boolean forceAiNarrative = isAiDesignIntent(userMessage) && !forceLlmOnly && !forceRuleOnly;
         boolean bypassDirect = AgentResponseFlowHelper.shouldBypassDirect(forceLlmOnly, preferNarrativeLlm);
         boolean bypassSpecialized = AgentResponseFlowHelper.shouldBypassSpecialized(forceLlmOnly, preferNarrativeLlm);
+        debugLog("request.start"
+            + " msg=" + clipDebug(userMessage, 80)
+            + " preferHint=" + preferNarrativeHint
+            + " preferNarrative=" + preferNarrativeLlm
+            + " forceLlmOnly=" + forceLlmOnly
+            + " forceRuleOnly=" + forceRuleOnly);
         if (forceAiNarrative) {
             bypassDirect = true;
             bypassSpecialized = true;
@@ -193,6 +202,11 @@ public final class AgentRuntimePageSupport {
                 AgentQueryRouterCompat.wantsMonthlyFrequencySummary(userMessage),
                 plannerResult
             );
+            dbContext = enrichNarrativeDbContext(userMessage, dbContext, execCtx.requestedMeterId, reqCtx.panelTokens);
+            debugLog("context.ready"
+                + " needsDb=" + execCtx.needsDb
+                + " dbContextLen=" + safeLen(dbContext)
+                + " classifier=" + clipDebug(classifierRaw, 180));
 
             if (!bypassSpecialized) {
                 SpecializedAnswerResult specializedAnswer = new SpecializedAnswerResult();
@@ -241,6 +255,13 @@ public final class AgentRuntimePageSupport {
                 runtimeModels
             );
             String userDbContext = AgentUserContextHelper.buildUserContext(dbContext);
+            debugLog("answer.beforeFinalize"
+                + " finalLen=" + safeLen(finalAnswer)
+                + " userDbContextLen=" + safeLen(userDbContext));
+            finalAnswer = AgentResponseFlowHelper.finalizeNarrativeAnswer(userMessage, finalAnswer, userDbContext);
+            debugLog("answer.afterFinalize"
+                + " finalLen=" + safeLen(finalAnswer)
+                + " finalPreview=" + clipDebug(finalAnswer, 180));
             AgentOutputHelper.writeSuccessJson(out, response, finalAnswer, isAdmin ? dbContext : "", userDbContext, isAdmin);
 
         } catch (Exception e) {
@@ -253,6 +274,73 @@ public final class AgentRuntimePageSupport {
         result.answer = AgentResponseFlowHelper.finalizeDirectAnswer(result.answer, result.dbContext, meterCount);
         String userDbContext = AgentUserContextHelper.buildUserContext(result.dbContext);
         AgentOutputHelper.writeSuccessJson(out, response, result.answer, isAdmin ? result.dbContext : "", userDbContext, isAdmin);
+    }
+
+    private static String enrichNarrativeDbContext(
+        String userMessage,
+        String dbContext,
+        Integer requestedMeterId,
+        java.util.List<String> panelTokens
+    ) {
+        String current = dbContext == null ? "" : dbContext.trim();
+        if (!(AgentIntentSupport.prefersNarrativeLlm(userMessage)
+            || AgentQueryRouter.prefersNarrativeLlm(userMessage))) {
+            return current;
+        }
+
+        StringBuilder extra = new StringBuilder(current);
+        try {
+            boolean hasAlarm = AgentIntentSupport.hasAlarmIntent(userMessage);
+            boolean hasQuality = AgentIntentSupport.hasMeasurementAnomalyIntent(userMessage)
+                || AgentModelRouter.detectRoute(userMessage) == AgentModelRouter.Route.PQ;
+
+            if (hasAlarm && current.indexOf("Alarm:") < 0) {
+                appendNarrativeContext(extra, "Alarm", AgentDbTools.getRecentAlarmContext());
+            }
+
+            if ((hasAlarm || hasQuality) && current.indexOf("Meter:") < 0) {
+                String panelCsv = (panelTokens == null || panelTokens.isEmpty()) ? null : String.join(",", panelTokens);
+                appendNarrativeContext(extra, "Meter", AgentDbTools.getRecentMeterContext(requestedMeterId, panelCsv));
+            }
+        } catch (Exception ignore) {
+            return current;
+        }
+        return extra.toString();
+    }
+
+    private static void appendNarrativeContext(StringBuilder out, String label, String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return;
+        }
+        if (out.length() > 0) {
+            out.append("\n");
+        }
+        out.append(label).append(": ").append(value);
+    }
+
+    private static void debugLog(String message) {
+        try {
+            System.out.println("[EPMS_AGENT_DEBUG] " + message);
+        } catch (Exception ignore) {
+        }
+        try {
+            File logFile = new File("C:\\Tomcat 9.0\\logs\\epms-agent-debug.log");
+            try (PrintWriter pw = new PrintWriter(new FileWriter(logFile, true))) {
+                pw.println(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new java.util.Date())
+                    + " [EPMS_AGENT_DEBUG] " + message);
+            }
+        } catch (Exception ignore) {
+        }
+    }
+
+    private static int safeLen(String value) {
+        return value == null ? 0 : value.length();
+    }
+
+    private static String clipDebug(String value, int maxLen) {
+        if (value == null) return "";
+        String single = value.replace('\r', ' ').replace('\n', ' ');
+        return single.length() <= maxLen ? single : single.substring(0, maxLen);
     }
 
     private static boolean isAiDesignIntent(String userMessage) {

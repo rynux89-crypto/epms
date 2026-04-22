@@ -988,6 +988,22 @@ public final class AgentDbTools {
         if (n > 50) n = 50;
         boolean byRange = fromTs != null || toTs != null;
 
+        try (Connection conn = openDbConnection()) {
+            String scoped = queryAlarmMeterTopNContext(conn, n, d, fromTs, toTs, periodLabel, byRange);
+            if (scoped.indexOf("no data") < 0) return scoped;
+
+            // If the user did not specify a period, fall back from the default recent-7-days window
+            // to the full retained history so broad ranking questions still return a useful answer.
+            if (!byRange && days == null) {
+                return queryAlarmMeterTopNContext(conn, n, 0, null, null, "전체 기간", true);
+            }
+            return scoped;
+        } catch (Exception e) {
+            return "[Alarm meter TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
+        }
+    }
+
+    private static String queryAlarmMeterTopNContext(Connection conn, int n, int days, Timestamp fromTs, Timestamp toTs, String periodLabel, boolean byRange) throws Exception {
         StringBuilder where = new StringBuilder("WHERE 1=1 ");
         if (byRange) {
             if (fromTs != null) where.append("AND triggered_at >= ? ");
@@ -1002,19 +1018,19 @@ public final class AgentDbTools {
             "GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(meter_name)), ''), '(\uBBF8\uBD84\uB958 \uACC4\uCE21\uAE30)') " +
             "ORDER BY cnt DESC, meter_name ASC";
 
-        try (Connection conn = openDbConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             int pi = 1;
             if (byRange) {
                 if (fromTs != null) ps.setTimestamp(pi++, fromTs);
                 if (toTs != null) ps.setTimestamp(pi++, toTs);
             } else {
-                ps.setInt(pi++, d);
+                ps.setInt(pi++, days);
             }
             ps.setQueryTimeout(8);
             try (ResultSet rs = ps.executeQuery()) {
                 StringBuilder sb = new StringBuilder("[Alarm meter TOP] ");
                 if (byRange) sb.append("period=").append(periodLabel == null ? "-" : periodLabel).append(";");
-                else sb.append("days=").append(d).append(";");
+                else sb.append("days=").append(days).append(";");
                 int i = 0;
                 while (rs.next()) {
                     i++;
@@ -1024,11 +1040,12 @@ public final class AgentDbTools {
                         .append(rs.getLong("cnt"))
                         .append(";");
                 }
-                if (i == 0) return "[Alarm meter TOP] no data";
+                if (i == 0) {
+                    sb.append(" no data;");
+                    return sb.toString();
+                }
                 return sb.toString();
             }
-        } catch (Exception e) {
-            return "[Alarm meter TOP] unavailable: " + clip(e.getClass().getSimpleName(), 24);
         }
     }
 

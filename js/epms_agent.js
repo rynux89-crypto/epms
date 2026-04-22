@@ -102,11 +102,15 @@
       font-size:var(--epms-chat-font-size, 13px);
     }
     .epms-msg{
-      margin:6px 0; padding:8px; border-radius:8px; max-width:88%;
-      word-wrap:break-word; white-space:pre-wrap; line-height:1.4;
+      margin:6px 0; padding:10px 12px; border-radius:12px; max-width:92%;
+      word-wrap:break-word; white-space:pre-wrap; line-height:1.55;
+      box-shadow:0 1px 2px rgba(15,23,42,.04);
     }
     .epms-msg.user{ background:#e6f2ff; color:#1f2937; align-self:flex-end; }
     .epms-msg.bot{ background:#f3f4f6; color:#1f2937; align-self:flex-start; }
+    .epms-msg.bot.empty{
+      background:#fff8e8; color:#5f4b1b; border:1px solid #f0d99a;
+    }
     .epms-context{
       font-size:11px; color:#64748b; margin-top:4px; padding-top:4px; border-top:1px solid #dbe2ea;
     }
@@ -138,15 +142,15 @@
       <button type="button" class="epms-chat-close" id="epms-close" aria-label="닫기">x</button>
     </div>
     <div class="epms-chat-body" id="epms-chat-body" data-welcome-shown="true">
-      <div class="epms-msg bot">무엇을 도와드릴까요? 아래 처럼 질문해 보세요.
+      <div class="epms-msg bot">무엇을 도와드릴까요? 아래처럼 질문해 보세요.
 - 현재 알람 상태는?
 - 1번 계측기 현재 상태는?
-- 주파수가 이상한 것을 보여줘
-- 1번 계측기 이번 달 전력 사용량은?
-- 동관의 전력 사용량은?</div>
+- 주파수가 이상한 곳을 보여줘
+- 1번 계측기의 이번 달 전력 사용량은?
+- 층별 전력 사용량은?</div>
     </div>
     <div class="epms-chat-footer">
-      <input id="epms-input" placeholder="질문을 입력하세요" />
+      <input id="epms-input" placeholder="질문을 입력해 주세요." />
       <button id="epms-send" type="button">Send</button>
     </div>
   `;
@@ -221,12 +225,34 @@
     return text + "\n" + guide;
   }
 
+  function enrichEmptyAnswer(text) {
+    const normalized = String(text || "").trim();
+    if (!normalized) return normalized;
+    const emptyHints = [
+      "데이터가 없습니다.",
+      "조회 결과가 없습니다.",
+      "찾지 못했습니다.",
+      "없습니다."
+    ];
+    const matched = emptyHints.some((hint) => normalized.indexOf(hint) >= 0);
+    if (!matched) return normalized;
+    if (normalized.indexOf("다음 항목을 확인") >= 0) return normalized;
+    return normalized + "\n\n다음 항목을 확인해 보세요.\n- 조회 기간에 실제 알람 데이터가 있는지\n- 계측기명 또는 범위 조건이 너무 좁지 않은지\n- 알람 로그 수집이 정상 동작 중인지";
+  }
+
   function appendMsg(text, who, context) {
     const body = document.getElementById("epms-chat-body");
     if (!body) return;
     const box = el("div", "epms-msg " + (who === "user" ? "user" : "bot"));
-    if (who === "bot") box.innerHTML = formatText(enrichCurrentStatusAnswer(text));
-    else box.textContent = text;
+    if (who === "bot") {
+      const enriched = enrichEmptyAnswer(enrichCurrentStatusAnswer(text));
+      box.innerHTML = formatText(enriched);
+      if (enriched.indexOf("다음 항목을 확인해 보세요.") >= 0) {
+        box.classList.add("empty");
+      }
+    } else {
+      box.textContent = text;
+    }
 
     if (context) {
       const ctx = el("div", "epms-context", context);

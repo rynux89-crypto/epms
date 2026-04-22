@@ -345,7 +345,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             color: var(--text);
         }
         .wrap {
-            max-width: 840px;
+            max-width: 1180px;
             margin: 32px auto;
             padding: 0 16px;
         }
@@ -360,23 +360,63 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             margin: 0 0 8px 0;
             font-size: 24px;
         }
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .hero-copy {
+            flex: 1;
+            min-width: 0;
+        }
         .sub {
-            margin: 0 0 20px 0;
+            margin: 0;
             color: var(--muted);
             font-size: 14px;
+            line-height: 1.6;
+        }
+        .hero-stat {
+            min-width: 220px;
+            padding: 14px 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: linear-gradient(180deg, #f9fbff 0%, #eef4ff 100%);
+        }
+        .hero-stat-label {
+            color: var(--muted);
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+        .hero-stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #10233f;
+        }
+        .hero-stat-note {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 12px;
         }
         .grid {
             display: grid;
             grid-template-columns: 180px 1fr;
             gap: 10px 14px;
             align-items: center;
-            margin-bottom: 16px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
         }
         .label {
             color: var(--muted);
             font-size: 14px;
         }
-        select {
+        select,
+        input[type="text"],
+        input[type="number"] {
             width: 100%;
             padding: 9px 10px;
             border: 1px solid var(--border);
@@ -384,6 +424,13 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             font-size: 14px;
             background: #fff;
             color: var(--text);
+        }
+        select:focus,
+        input[type="text"]:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #7aa8e3;
+            box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.12);
         }
         .msg {
             margin: 14px 0;
@@ -400,7 +447,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
         }
         .split-panels {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1.35fr 0.95fr;
             gap: 14px;
             margin-bottom: 16px;
         }
@@ -417,11 +464,80 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             font-weight: 700;
             color: #22324a;
         }
+        .panel-desc {
+            margin: -2px 0 14px 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
         .section-title {
-            margin: 2px 0 8px 0;
+            margin: 0 0 10px 0;
             color: var(--muted);
             font-size: 13px;
             font-weight: 600;
+        }
+        .snapshot-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .snapshot-card {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        }
+        .snapshot-label {
+            color: var(--muted);
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        .snapshot-main {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1d2a3d;
+            word-break: break-all;
+        }
+        .snapshot-sub {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .field label {
+            color: #334258;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .field-hint {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .stack {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        .action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid #e8edf5;
+        }
+        .action-note {
+            color: var(--muted);
+            font-size: 13px;
         }
         button {
             border: 0;
@@ -440,19 +556,38 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             padding: 2px 6px;
             font-size: 13px;
         }
+        .reset-form {
+            margin-top: 8px;
+        }
         @media (max-width: 720px) {
+            .hero {
+                flex-direction: column;
+            }
+            .hero-stat {
+                width: 100%;
+                min-width: 0;
+            }
             .grid { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
             .split-panels { grid-template-columns: 1fr; }
+            .snapshot-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
 <div class="wrap">
     <div class="card">
-        <div class="title-bar">
-            <h1>🧠 Agent 모델 관리</h1>
+        <div class="hero">
+            <div class="hero-copy">
+                <h1>Agent 모델 관리</h1>
+                <p class="sub">Ollama 등록 모델을 역할별로 선택하고 저장하면 <code>/api/agent</code> 요청부터 즉시 적용됩니다. 일반 대화, 코더, AI, PQ, ALARM 모델과 채팅창 UI 설정을 한 화면에서 관리할 수 있습니다.</p>
+            </div>
+            <div class="hero-stat">
+                <div class="hero-stat-label">사용 가능 모델 수</div>
+                <div class="hero-stat-value"><%= state.models.size() %></div>
+                <div class="hero-stat-note">Ollama URL: <code><%= h(state.ollamaUrl) %></code></div>
+            </div>
         </div>
-        <p class="sub">Ollama 등록 모델에서 선택하면 저장 직후 <code>/api/agent</code> 요청부터 즉시 적용됩니다.</p>
 
         <% if (state.successMsg != null) { %>
         <div class="msg ok"><%= h(state.successMsg) %></div>
@@ -461,12 +596,31 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
         <div class="msg err"><%= h(state.errorMsg) %></div>
         <% } %>
 
+        <div class="snapshot-grid">
+            <div class="snapshot-card">
+                <div class="snapshot-label">현재 기본 응답 모델</div>
+                <div class="snapshot-main"><%= h(state.selectedModel) %></div>
+                <div class="snapshot-sub">일반 질의에 기본으로 사용되는 모델입니다.</div>
+            </div>
+            <div class="snapshot-card">
+                <div class="snapshot-label">현재 PQ 전용 모델</div>
+                <div class="snapshot-main"><%= h(state.selectedPqModel) %></div>
+                <div class="snapshot-sub">전력품질 키워드로 분류된 질의에 우선 적용됩니다.</div>
+            </div>
+            <div class="snapshot-card">
+                <div class="snapshot-label">채팅창 표시 설정</div>
+                <div class="snapshot-main"><%= state.selectedChatWidthPx %>px / <%= state.selectedChatMaxHeightVh %>vh</div>
+                <div class="snapshot-sub">글자 크기 <%= state.selectedChatFontSizePx %>px</div>
+            </div>
+        </div>
+
         <form method="post">
             <div class="split-panels">
                 <div class="panel-box">
                     <h3 class="panel-title">AI 모델 설정</h3>
+                    <p class="panel-desc">에이전트가 질문 성격에 따라 사용할 역할별 모델과 Ollama 연결 정보를 설정합니다.</p>
                     <div class="section-title">현재 적용값</div>
-                    <div class="grid">
+                    <div class="grid" style="margin-bottom:18px;">
                         <div class="label">Ollama URL</div>
                         <div><code><%= h(state.ollamaUrl) %></code></div>
                         <div class="label">대화 모델</div>
@@ -487,132 +641,171 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                         <div><code><%= state.selectedReadTimeoutSeconds %></code></div>
                     </div>
                     <div class="section-title">변경값 입력</div>
-                    <div class="grid">
-                        <label class="label" for="ollama_url">Ollama URL</label>
-                        <input id="ollama_url"
-                               name="ollama_url"
-                               type="text"
-                               value="<%= h(state.ollamaUrl) %>"
-                               required
-                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
-                        <label class="label" for="model">대화 모델</label>
-                        <select id="model" name="model" required>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="ollama_url">Ollama URL</label>
+                            <input id="ollama_url"
+                                   name="ollama_url"
+                                   type="text"
+                                   value="<%= h(state.ollamaUrl) %>"
+                                   required>
+                            <div class="field-hint">모델 목록 조회와 실제 응답 요청에 사용할 Ollama 서버 주소입니다.</div>
+                        </div>
+                        <div class="field">
+                            <label for="model">대화 모델</label>
+                            <select id="model" name="model" required>
                             <% for (String m : state.models) { %>
                             <option value="<%= h(m) %>" <%= m.equals(state.selectedModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
-                        </select>
+                            </select>
+                            <div class="field-hint">일반적인 대화와 기본 응답에 사용됩니다.</div>
+                        </div>
 
-                        <label class="label" for="coder_model">코더 모델</label>
-                        <select id="coder_model" name="coder_model" required>
+                        <div class="field">
+                            <label for="coder_model">코더 모델</label>
+                            <select id="coder_model" name="coder_model" required>
                             <% for (String m : state.models) { %>
                             <option value="<%= h(m) %>" <%= m.equals(state.selectedCoderModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
-                        </select>
+                            </select>
+                            <div class="field-hint">코드 생성이나 수정 요청에 우선 사용됩니다.</div>
+                        </div>
 
-                        <label class="label" for="ai_model">AI 전용 모델</label>
-                        <select id="ai_model" name="ai_model" required>
+                        <div class="field">
+                            <label for="ai_model">AI 전용 모델</label>
+                            <select id="ai_model" name="ai_model" required>
                             <% for (String m : state.models) { %>
                             <option value="<%= h(m) %>" <%= m.equals(state.selectedAiModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
-                        </select>
+                            </select>
+                            <div class="field-hint">분석형 일반 AI 질의에 사용할 별도 모델입니다.</div>
+                        </div>
 
-                        <label class="label" for="pq_model">PQ 전용 모델</label>
-                        <select id="pq_model" name="pq_model" required>
+                        <div class="field">
+                            <label for="pq_model">PQ 전용 모델</label>
+                            <select id="pq_model" name="pq_model" required>
                             <% for (String m : state.models) { %>
                             <option value="<%= h(m) %>" <%= m.equals(state.selectedPqModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
-                        </select>
+                            </select>
+                            <div class="field-hint">전력품질, 고조파, THD, sag/swell 등 PQ 질의에 사용됩니다.</div>
+                        </div>
 
-                        <label class="label" for="alarm_model">ALARM 전용 모델</label>
-                        <select id="alarm_model" name="alarm_model" required>
+                        <div class="field">
+                            <label for="alarm_model">ALARM 전용 모델</label>
+                            <select id="alarm_model" name="alarm_model" required>
                             <% for (String m : state.models) { %>
                             <option value="<%= h(m) %>" <%= m.equals(state.selectedAlarmModel) ? "selected" : "" %>><%= h(m) %></option>
                             <% } %>
-                        </select>
+                            </select>
+                            <div class="field-hint">알람 분석이나 장애 관련 응답에 사용됩니다.</div>
+                        </div>
 
-                        <label class="label" for="schema_cache_ttl_minutes">스키마 캐시 시간(분)</label>
-                        <input id="schema_cache_ttl_minutes"
-                               name="schema_cache_ttl_minutes"
-                               type="number"
-                               min="1"
-                               max="1440"
-                               value="<%= state.selectedSchemaCacheTtlMinutes %>"
-                               required
-                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <div class="field">
+                            <label for="schema_cache_ttl_minutes">스키마 캐시 시간(분)</label>
+                            <input id="schema_cache_ttl_minutes"
+                                   name="schema_cache_ttl_minutes"
+                                   type="number"
+                                   min="1"
+                                   max="1440"
+                                   value="<%= state.selectedSchemaCacheTtlMinutes %>"
+                                   required>
+                            <div class="field-hint">DB 스키마 캐시를 유지하는 시간입니다.</div>
+                        </div>
 
-                        <label class="label" for="ollama_connect_timeout_seconds">연결 타임아웃(초)</label>
-                        <input id="ollama_connect_timeout_seconds"
-                               name="ollama_connect_timeout_seconds"
-                               type="number"
-                               min="1"
-                               max="60"
-                               value="<%= state.selectedConnectTimeoutSeconds %>"
-                               required
-                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <div class="field">
+                            <label for="ollama_connect_timeout_seconds">연결 타임아웃(초)</label>
+                            <input id="ollama_connect_timeout_seconds"
+                                   name="ollama_connect_timeout_seconds"
+                                   type="number"
+                                   min="1"
+                                   max="60"
+                                   value="<%= state.selectedConnectTimeoutSeconds %>"
+                                   required>
+                            <div class="field-hint">Ollama 서버 연결 대기 시간입니다.</div>
+                        </div>
 
-                        <label class="label" for="ollama_read_timeout_seconds">응답 타임아웃(초)</label>
-                        <input id="ollama_read_timeout_seconds"
-                               name="ollama_read_timeout_seconds"
-                               type="number"
-                               min="3"
-                               max="600"
-                               value="<%= state.selectedReadTimeoutSeconds %>"
-                               required
-                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                        <div class="field">
+                            <label for="ollama_read_timeout_seconds">응답 타임아웃(초)</label>
+                            <input id="ollama_read_timeout_seconds"
+                                   name="ollama_read_timeout_seconds"
+                                   type="number"
+                                   min="3"
+                                   max="600"
+                                   value="<%= state.selectedReadTimeoutSeconds %>"
+                                   required>
+                            <div class="field-hint">모델 응답 본문을 기다리는 최대 시간입니다.</div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="panel-box">
                     <h3 class="panel-title">채팅창 설정</h3>
-                    <div class="section-title">현재 적용값</div>
-                    <div class="grid">
-                        <div class="label">채팅창 폭(px)</div>
-                        <div><code><%= state.selectedChatWidthPx %></code></div>
-                        <div class="label">채팅창 최대 높이(vh)</div>
-                        <div><code><%= state.selectedChatMaxHeightVh %></code></div>
-                        <div class="label">채팅 글자 크기(px)</div>
-                        <div><code><%= state.selectedChatFontSizePx %></code></div>
-                    </div>
-                    <div class="section-title">변경값 입력</div>
-                    <div class="grid">
-                        <label class="label" for="chat_width_px">채팅창 폭(px)</label>
-                        <input id="chat_width_px"
-                               name="chat_width_px"
-                               type="number"
-                               min="300"
-                               max="560"
-                               value="<%= state.selectedChatWidthPx %>"
-                               required
-                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                    <p class="panel-desc">우측 챗 패널 크기와 가독성을 조정합니다. 운영자가 가장 자주 바꾸는 값만 따로 모았습니다.</p>
+                    <div class="stack">
+                        <div>
+                            <div class="section-title">현재 적용값</div>
+                            <div class="grid">
+                                <div class="label">채팅창 폭(px)</div>
+                                <div><code><%= state.selectedChatWidthPx %></code></div>
+                                <div class="label">채팅창 최대 높이(vh)</div>
+                                <div><code><%= state.selectedChatMaxHeightVh %></code></div>
+                                <div class="label">채팅 글자 크기(px)</div>
+                                <div><code><%= state.selectedChatFontSizePx %></code></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="section-title">변경값 입력</div>
+                            <div class="stack">
+                                <div class="field">
+                                    <label for="chat_width_px">채팅창 폭(px)</label>
+                                    <input id="chat_width_px"
+                                           name="chat_width_px"
+                                           type="number"
+                                           min="300"
+                                           max="560"
+                                           value="<%= state.selectedChatWidthPx %>"
+                                           required>
+                                    <div class="field-hint">화면 우측 챗 패널의 가로 폭입니다.</div>
+                                </div>
 
-                        <label class="label" for="chat_max_height_vh">채팅창 최대 높이(vh)</label>
-                        <input id="chat_max_height_vh"
-                               name="chat_max_height_vh"
-                               type="number"
-                               min="40"
-                               max="90"
-                               value="<%= state.selectedChatMaxHeightVh %>"
-                               required
-                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                                <div class="field">
+                                    <label for="chat_max_height_vh">채팅창 최대 높이(vh)</label>
+                                    <input id="chat_max_height_vh"
+                                           name="chat_max_height_vh"
+                                           type="number"
+                                           min="40"
+                                           max="90"
+                                           value="<%= state.selectedChatMaxHeightVh %>"
+                                           required>
+                                    <div class="field-hint">브라우저 높이를 기준으로 최대 높이를 지정합니다.</div>
+                                </div>
 
-                        <label class="label" for="chat_font_size_px">채팅 글자 크기(px)</label>
-                        <input id="chat_font_size_px"
-                               name="chat_font_size_px"
-                               type="number"
-                               min="12"
-                               max="20"
-                               value="<%= state.selectedChatFontSizePx %>"
-                               required
-                               style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);">
+                                <div class="field">
+                                    <label for="chat_font_size_px">채팅 글자 크기(px)</label>
+                                    <input id="chat_font_size_px"
+                                           name="chat_font_size_px"
+                                           type="number"
+                                           min="12"
+                                           max="20"
+                                           value="<%= state.selectedChatFontSizePx %>"
+                                           required>
+                                    <div class="field-hint">운영 화면 가독성에 직접 영향을 주는 값입니다.</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="row">
-                <button class="primary" type="submit">저장하고 즉시 적용</button>
+            <div class="action-bar">
+                <div class="action-note">저장하면 설정 파일이 갱신되고 이후 Agent 요청부터 새 값이 적용됩니다.</div>
+                <div class="row">
+                    <button class="primary" type="submit">저장하고 즉시 적용</button>
+                </div>
             </div>
         </form>
 
-        <form method="post" style="margin-top:8px;">
+        <form method="post" class="reset-form">
             <input type="hidden" name="action" value="reset">
             <div class="row">
                 <button class="ghost" type="submit">기본값(환경변수)으로 복원</button>

@@ -4,7 +4,16 @@ public final class AgentQueryIntentSupport {
     private AgentQueryIntentSupport() {}
 
     public static boolean wantsAlarmSummary(String userMessage) {
-        return AgentQueryRouterCompat.wantsAlarmSummary(userMessage) || AgentScopedIntentSupport.wantsAlarmSummary(userMessage);
+        boolean base = AgentQueryRouterCompat.wantsAlarmSummary(userMessage) || AgentScopedIntentSupport.wantsAlarmSummary(userMessage);
+        if (!base) return false;
+        if (AgentIntentSupport.prefersNarrativeLlm(userMessage)) return false;
+        if (wantsAlarmMeterTopN(userMessage)) return false;
+        if (wantsAlarmCountSummary(userMessage)) return false;
+        if (wantsOpenAlarms(userMessage)) return false;
+        if (wantsOpenAlarmCountSummary(userMessage)) return false;
+        if (AgentQueryRouterCompat.wantsAlarmTypeSummary(userMessage)) return false;
+        if (AgentQueryRouterCompat.wantsAlarmSeveritySummary(userMessage)) return false;
+        return true;
     }
 
     public static boolean wantsMonthlyPeakPower(String userMessage) {
