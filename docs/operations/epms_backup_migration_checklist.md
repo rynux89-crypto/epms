@@ -1,4 +1,4 @@
-# EPMS Backup Migration Checklist
+﻿# EPMS Backup Migration Checklist
 
 새 서버로 EPMS를 옮길 때 일일 백업 자동화는 자동으로 따라가지 않습니다.
 프로젝트 파일은 복사되더라도 SQL Server Agent Job, 서비스 상태, 서버별 경로는 새 서버에서 다시 적용해야 합니다.
@@ -7,11 +7,11 @@
 
 ### 신규 서버
 
-1. [create_epms_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_schema.sql) 실행
+1. [create_epms_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_schema.sql) 실행
 2. EPMS 웹앱 배포
 3. `C:\backup` 폴더 생성
 4. [backup_epms_daily.ps1](/c:/Tomcat%209.0/webapps/ROOT/scripts/backup_epms_daily.ps1) 수동 테스트 실행
-5. [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_daily_backup_job.sql) 변수 수정 후 실행
+5. [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_daily_backup_job.sql) 변수 수정 후 실행
 6. SQL Server Agent 시작
 
 ### 백업 복원 서버
@@ -20,14 +20,14 @@
 2. EPMS 웹앱 배포
 3. `C:\backup` 폴더 생성
 4. [backup_epms_daily.ps1](/c:/Tomcat%209.0/webapps/ROOT/scripts/backup_epms_daily.ps1) 수동 테스트 실행
-5. [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_daily_backup_job.sql) 변수 수정 후 실행
+5. [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_daily_backup_job.sql) 변수 수정 후 실행
 6. SQL Server Agent 시작
 
 ## 1. 파일 배포
 
 - 프로젝트를 새 서버의 웹 루트로 배포
 - 백업 스크립트 확인: [backup_epms_daily.ps1](/c:/Tomcat%209.0/webapps/ROOT/scripts/backup_epms_daily.ps1)
-- Job 생성 SQL 확인: [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_daily_backup_job.sql)
+- Job 생성 SQL 확인: [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_daily_backup_job.sql)
 
 ## 2. 서버별 값 확인
 
@@ -56,7 +56,7 @@
 
 ## 4. Job 재등록
 
-- [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_daily_backup_job.sql) 상단 변수 수정
+- [create_epms_daily_backup_job.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_daily_backup_job.sql) 상단 변수 수정
 - 수정할 대표 값:
   - `@scriptPath`
   - `@dbServer`

@@ -1,4 +1,4 @@
-# EPMS Project Architecture Review
+﻿# EPMS Project Architecture Review
 
 ## 1. Overview
 
@@ -208,7 +208,7 @@ Current alarm behavior is transitional:
 
 Schema source:
 
-- `docs/sql/create_epms_schema.sql`
+- `docs/sql/src/create_epms_schema.sql`
 
 Broad table groups:
 

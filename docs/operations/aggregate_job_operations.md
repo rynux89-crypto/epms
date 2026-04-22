@@ -1,4 +1,4 @@
-# Aggregate Job Operations
+﻿# Aggregate Job Operations
 
 ## Standard
 
@@ -20,14 +20,14 @@ Use SQL Agent on the new DB server if the service is available.
 
 Run:
 
-- [create_epms_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_schema.sql)
-- or [update_aggregate_measurements_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/update_aggregate_measurements_schema.sql)
+- [create_epms_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_schema.sql)
+- or [update_aggregate_measurements_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/update_aggregate_measurements_schema.sql)
 
 ### 2. Create SQL Agent jobs
 
 Run in SSMS against `msdb`:
 
-- [create_aggregate_agent_jobs.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_aggregate_agent_jobs.sql)
+- [create_aggregate_agent_jobs.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_aggregate_agent_jobs.sql)
 
 Adjust `@TargetDb` if the database name is not `EPMS`.
 

@@ -1,4 +1,4 @@
-# EPMS 원격검침 리팩토링 TODO
+﻿# EPMS 원격검침 리팩토링 TODO
 
 ## 1. 목표
 
@@ -38,8 +38,8 @@
 - [tenant_billing_manage.jsp](/c:/Tomcat%209.0/webapps/ROOT/epms/tenant_billing_manage.jsp:1)
 - [tenant_store_energy_detail.jsp](/c:/Tomcat%209.0/webapps/ROOT/epms/tenant_store_energy_detail.jsp:1)
 - [epms_main.jsp](/c:/Tomcat%209.0/webapps/ROOT/epms/epms_main.jsp:1)
-- [alter_epms_tenant_billing_for_store_open_close.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/alter_epms_tenant_billing_for_store_open_close.sql:1)
-- [create_epms_tenant_billing_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_tenant_billing_schema.sql:1)
+- [alter_epms_tenant_billing_for_store_open_close.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/alter_epms_tenant_billing_for_store_open_close.sql:1)
+- [create_epms_tenant_billing_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_tenant_billing_schema.sql:1)
 
 ## 4. 최종 목표 구조
 

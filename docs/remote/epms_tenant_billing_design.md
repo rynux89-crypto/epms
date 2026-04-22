@@ -1,4 +1,4 @@
-# EPMS Tenant Billing Design
+﻿# EPMS Tenant Billing Design
 
 ## 목적
 
@@ -207,6 +207,6 @@ billing_statement
 
 정산 서브스키마 생성 스크립트:
 
-- [create_epms_tenant_billing_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/create_epms_tenant_billing_schema.sql)
+- [create_epms_tenant_billing_schema.sql](/c:/Tomcat%209.0/webapps/ROOT/docs/sql/src/create_epms_tenant_billing_schema.sql)
 
 이 스크립트는 기존 계측 스키마를 건드리지 않고 정산용 테이블/뷰/프로시저만 추가합니다.

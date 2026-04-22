@@ -1,7 +1,7 @@
-SET NOCOUNT ON;
+﻿SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
--- Follow with docs/sql/seed_di_virtual_meters.sql to create DI-only
+-- Follow with docs/sql/src/seed_di_virtual_meters.sql to create DI-only
 -- representative meters for any logical DI groups that still cannot map
 -- to an existing physical power meter after this first-pass migration.
 
