@@ -11,8 +11,12 @@ SELECT
 PRINT '--- 1. Core object existence ---';
 
 SELECT
-    'dbo.peak_policy' AS object_name,
-    CASE WHEN OBJECT_ID('dbo.peak_policy', 'U') IS NOT NULL THEN 'OK' ELSE 'MISSING' END AS status
+    'dbo.peak_policy_master' AS object_name,
+    CASE WHEN OBJECT_ID('dbo.peak_policy_master', 'U') IS NOT NULL THEN 'OK' ELSE 'MISSING' END AS status
+UNION ALL
+SELECT
+    'dbo.peak_policy_store_map',
+    CASE WHEN OBJECT_ID('dbo.peak_policy_store_map', 'U') IS NOT NULL THEN 'OK' ELSE 'MISSING' END
 UNION ALL
 SELECT
     'dbo.peak_15min_summary',
@@ -68,30 +72,36 @@ ORDER BY latest_measured_at DESC;
 
 PRINT '--- 4. Peak policy status ---';
 
-IF OBJECT_ID('dbo.peak_policy', 'U') IS NOT NULL
+IF OBJECT_ID('dbo.peak_policy_master', 'U') IS NOT NULL
+AND OBJECT_ID('dbo.peak_policy_store_map', 'U') IS NOT NULL
 BEGIN
     SELECT
         COUNT(*) AS policy_count,
-        SUM(CASE WHEN valid_to IS NULL OR valid_to >= CAST(@now AS DATE) THEN 1 ELSE 0 END) AS active_or_open_ended_policy_count
-    FROM dbo.peak_policy;
+        SUM(CASE WHEN p.effective_to IS NULL OR p.effective_to >= CAST(@now AS DATE) THEN 1 ELSE 0 END) AS active_or_open_ended_policy_count
+    FROM dbo.peak_policy_master AS p;
 
     SELECT TOP 20
-        policy_id,
-        store_id,
-        peak_limit_kw,
-        warning_threshold_pct,
-        control_threshold_pct,
-        priority,
-        auto_control_enabled,
-        valid_from,
-        valid_to
-    FROM dbo.peak_policy
-    ORDER BY priority ASC, store_id ASC;
+        p.policy_id,
+        p.policy_name,
+        p.peak_limit_kw,
+        p.warning_threshold_pct,
+        p.control_threshold_pct,
+        p.priority_level,
+        p.control_enabled,
+        p.effective_from,
+        p.effective_to,
+        COUNT(m.store_id) AS assigned_store_count
+    FROM dbo.peak_policy_master AS p
+    LEFT JOIN dbo.peak_policy_store_map AS m
+        ON m.policy_id = p.policy_id
+    GROUP BY p.policy_id, p.policy_name, p.peak_limit_kw, p.warning_threshold_pct, p.control_threshold_pct,
+             p.priority_level, p.control_enabled, p.effective_from, p.effective_to
+    ORDER BY p.priority_level ASC, p.policy_id ASC;
 END
 ELSE
 BEGIN
     SELECT
-        'dbo.peak_policy' AS object_name,
+        'dbo.peak_policy_master / dbo.peak_policy_store_map' AS object_name,
         'SKIPPED' AS status;
 END;
 

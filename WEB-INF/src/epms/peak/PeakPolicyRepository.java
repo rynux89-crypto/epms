@@ -5,10 +5,11 @@ import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Timestamp;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public final class PeakPolicyRepository {
@@ -53,7 +54,9 @@ public final class PeakPolicyRepository {
 
     public boolean peakPolicyTableExists(Connection conn) throws Exception {
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT CASE WHEN OBJECT_ID('dbo.peak_policy', 'U') IS NOT NULL THEN 1 ELSE 0 END");
+                "SELECT CASE " +
+                "WHEN OBJECT_ID('dbo.peak_policy_master', 'U') IS NOT NULL " +
+                " AND OBJECT_ID('dbo.peak_policy_store_map', 'U') IS NOT NULL THEN 1 ELSE 0 END");
              ResultSet rs = ps.executeQuery()) {
             return rs.next() && rs.getInt(1) == 1;
         }
@@ -73,6 +76,32 @@ public final class PeakPolicyRepository {
                 "SELECT MAX(updated_at) AS latest_updated_at FROM dbo.peak_15min_summary");
              ResultSet rs = ps.executeQuery()) {
             return rs.next() ? rs.getTimestamp("latest_updated_at") : null;
+        }
+    }
+
+    public boolean peak15MinSummaryProcedureExists(Connection conn) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT CASE WHEN OBJECT_ID('dbo.sp_refresh_peak_15min_summary', 'P') IS NOT NULL THEN 1 ELSE 0 END");
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() && rs.getInt(1) == 1;
+        }
+    }
+
+    public Timestamp findLatestMeasurementAt(Connection conn) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT MAX(measured_at) AS latest_measured_at FROM dbo.measurements");
+             ResultSet rs = ps.executeQuery()) {
+            return rs.next() ? rs.getTimestamp("latest_measured_at") : null;
+        }
+    }
+
+    public void refreshPeak15MinSummary(Connection conn, int daysBack) throws Exception {
+        if (!peak15MinSummaryProcedureExists(conn)) {
+            throw new IllegalStateException("15분 집계 갱신 프로시저가 아직 없습니다.");
+        }
+        try (PreparedStatement ps = conn.prepareStatement("EXEC dbo.sp_refresh_peak_15min_summary @days_back = ?")) {
+            ps.setInt(1, Math.abs(daysBack));
+            ps.executeUpdate();
         }
     }
 
@@ -107,7 +136,7 @@ public final class PeakPolicyRepository {
             "FROM ranked_demand rd " +
             "INNER JOIN ranked_peak rp ON rp.meter_id = rd.meter_id AND rp.rn = 1 " +
             "INNER JOIN dbo.meters m ON m.meter_id = rd.meter_id " +
-            "LEFT JOIN active_map am ON am.meter_id = rd.meter_id AND am.rn = 1 " +
+            "INNER JOIN active_map am ON am.meter_id = rd.meter_id AND am.rn = 1 " +
             "WHERE rd.rn = 1 " +
             "ORDER BY rd.demand_peak_kw DESC, rd.bucket_at DESC";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -147,10 +176,13 @@ public final class PeakPolicyRepository {
     }
 
     public int countActivePolicies(Connection conn) throws Exception {
+        if (!peakPolicyTableExists(conn)) return 0;
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT COUNT(*) FROM dbo.peak_policy " +
-                "WHERE effective_from <= CAST(GETDATE() AS date) " +
-                "AND (effective_to IS NULL OR effective_to >= CAST(GETDATE() AS date))");
+                "SELECT COUNT(DISTINCT m.store_id) " +
+                "FROM dbo.peak_policy_master p " +
+                "INNER JOIN dbo.peak_policy_store_map m ON m.policy_id = p.policy_id " +
+                "WHERE p.effective_from <= CAST(GETDATE() AS date) " +
+                "AND (p.effective_to IS NULL OR p.effective_to >= CAST(GETDATE() AS date))");
              ResultSet rs = ps.executeQuery()) {
             return rs.next() ? rs.getInt(1) : 0;
         }
@@ -158,12 +190,14 @@ public final class PeakPolicyRepository {
 
     public List<PeakPolicyStatusRow> listPolicyStatusRows(Connection conn, int limitDays, int limitRows) throws Exception {
         List<PeakPolicyStatusRow> rows = new ArrayList<PeakPolicyStatusRow>();
+        if (!peakPolicyTableExists(conn)) return rows;
         boolean useSummaryTable = peak15MinSummaryTableExists(conn);
         String sql =
             "WITH active_policy AS ( " +
-            "    SELECT p.policy_id, p.store_id, p.peak_limit_kw, p.warning_threshold_pct, p.control_threshold_pct, " +
-            "           ROW_NUMBER() OVER (PARTITION BY p.store_id ORDER BY p.effective_from DESC, p.policy_id DESC) AS rn " +
-            "    FROM dbo.peak_policy p " +
+            "    SELECT p.policy_id, m.store_id, p.peak_limit_kw, p.warning_threshold_pct, p.control_threshold_pct, " +
+            "           ROW_NUMBER() OVER (PARTITION BY m.store_id ORDER BY p.effective_from DESC, p.policy_id DESC) AS rn " +
+            "    FROM dbo.peak_policy_master p " +
+            "    INNER JOIN dbo.peak_policy_store_map m ON m.policy_id = p.policy_id " +
             "    WHERE p.effective_from <= CAST(GETDATE() AS date) " +
             "      AND (p.effective_to IS NULL OR p.effective_to >= CAST(GETDATE() AS date)) " +
             "), mapped_meter AS ( " +
@@ -260,21 +294,24 @@ public final class PeakPolicyRepository {
     }
 
     public List<PeakPolicyRow> listPolicies(Connection conn) throws Exception {
+        if (!peakPolicyTableExists(conn)) return Collections.<PeakPolicyRow>emptyList();
         List<PeakPolicyRow> rows = new ArrayList<PeakPolicyRow>();
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT p.policy_id, p.store_id, ts.store_code, ts.store_name, p.peak_limit_kw, " +
-                "p.warning_threshold_pct, p.control_threshold_pct, p.priority_level, p.control_enabled, " +
-                "p.effective_from, p.effective_to, p.notes " +
-                "FROM dbo.peak_policy p " +
-                "INNER JOIN dbo.tenant_store ts ON ts.store_id = p.store_id " +
-                "ORDER BY ts.store_code ASC, p.effective_from DESC, p.policy_id DESC");
+                "SELECT p.policy_id, p.policy_name, p.peak_limit_kw, p.warning_threshold_pct, p.control_threshold_pct, " +
+                "p.priority_level, p.control_enabled, p.effective_from, p.effective_to, p.notes, " +
+                "COUNT(m.store_id) AS assigned_store_count, " +
+                "STRING_AGG(ts.store_code + ' - ' + ts.store_name, ', ') WITHIN GROUP (ORDER BY ts.store_code) AS assigned_store_summary " +
+                "FROM dbo.peak_policy_master p " +
+                "LEFT JOIN dbo.peak_policy_store_map m ON m.policy_id = p.policy_id " +
+                "LEFT JOIN dbo.tenant_store ts ON ts.store_id = m.store_id " +
+                "GROUP BY p.policy_id, p.policy_name, p.peak_limit_kw, p.warning_threshold_pct, p.control_threshold_pct, " +
+                "p.priority_level, p.control_enabled, p.effective_from, p.effective_to, p.notes " +
+                "ORDER BY p.policy_name ASC, p.effective_from DESC, p.policy_id DESC");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 rows.add(new PeakPolicyRow(
-                        rs.getLong("policy_id"),
-                        Integer.valueOf(rs.getInt("store_id")),
-                        rs.getString("store_code"),
-                        rs.getString("store_name"),
+                        Long.valueOf(rs.getLong("policy_id")),
+                        rs.getString("policy_name"),
                         getNullableDouble(rs, "peak_limit_kw"),
                         getNullableDouble(rs, "warning_threshold_pct"),
                         getNullableDouble(rs, "control_threshold_pct"),
@@ -282,44 +319,149 @@ public final class PeakPolicyRepository {
                         rs.getBoolean("control_enabled"),
                         rs.getDate("effective_from"),
                         rs.getDate("effective_to"),
-                        rs.getString("notes")));
+                        rs.getString("notes"),
+                        rs.getString("assigned_store_summary"),
+                        rs.getObject("assigned_store_count") == null ? Integer.valueOf(0) : Integer.valueOf(rs.getInt("assigned_store_count")),
+                        Collections.<Integer>emptyList()));
             }
         }
         return rows;
     }
 
-    public Long addPolicy(Connection conn, PeakPolicyRow row) throws Exception {
+    public PeakPolicyRow findPolicyById(Connection conn, Long policyId) throws Exception {
+        if (policyId == null || policyId.longValue() <= 0L || !peakPolicyTableExists(conn)) return null;
         try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO dbo.peak_policy (store_id, peak_limit_kw, warning_threshold_pct, control_threshold_pct, priority_level, control_enabled, effective_from, effective_to, notes) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
-            bindPolicy(ps, row, false);
-            ps.executeUpdate();
-            try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) return Long.valueOf(rs.getLong(1));
+                "SELECT p.policy_id, p.policy_name, p.peak_limit_kw, p.warning_threshold_pct, p.control_threshold_pct, " +
+                "p.priority_level, p.control_enabled, p.effective_from, p.effective_to, p.notes, " +
+                "COUNT(m.store_id) AS assigned_store_count, " +
+                "STRING_AGG(ts.store_code + ' - ' + ts.store_name, ', ') WITHIN GROUP (ORDER BY ts.store_code) AS assigned_store_summary " +
+                "FROM dbo.peak_policy_master p " +
+                "LEFT JOIN dbo.peak_policy_store_map m ON m.policy_id = p.policy_id " +
+                "LEFT JOIN dbo.tenant_store ts ON ts.store_id = m.store_id " +
+                "WHERE p.policy_id = ? " +
+                "GROUP BY p.policy_id, p.policy_name, p.peak_limit_kw, p.warning_threshold_pct, p.control_threshold_pct, " +
+                "p.priority_level, p.control_enabled, p.effective_from, p.effective_to, p.notes")) {
+            ps.setLong(1, policyId.longValue());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return new PeakPolicyRow(
+                        Long.valueOf(rs.getLong("policy_id")),
+                        rs.getString("policy_name"),
+                        getNullableDouble(rs, "peak_limit_kw"),
+                        getNullableDouble(rs, "warning_threshold_pct"),
+                        getNullableDouble(rs, "control_threshold_pct"),
+                        rs.getObject("priority_level") == null ? null : Integer.valueOf(rs.getInt("priority_level")),
+                        rs.getBoolean("control_enabled"),
+                        rs.getDate("effective_from"),
+                        rs.getDate("effective_to"),
+                        rs.getString("notes"),
+                        rs.getString("assigned_store_summary"),
+                        rs.getObject("assigned_store_count") == null ? Integer.valueOf(0) : Integer.valueOf(rs.getInt("assigned_store_count")),
+                        listAssignedStoreIds(conn, policyId));
             }
         }
-        return null;
+    }
+
+    public Long addPolicy(Connection conn, PeakPolicyRow row) throws Exception {
+        Long policyId = null;
+        boolean autoCommit = conn.getAutoCommit();
+        conn.setAutoCommit(false);
+        try {
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "INSERT INTO dbo.peak_policy_master (policy_name, peak_limit_kw, warning_threshold_pct, control_threshold_pct, priority_level, control_enabled, effective_from, effective_to, notes) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                bindPolicyMaster(ps, row, false);
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) policyId = Long.valueOf(rs.getLong(1));
+                }
+            }
+            syncPolicyStores(conn, policyId, row.getAssignedStoreIds());
+            conn.commit();
+            return policyId;
+        } catch (Exception e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(autoCommit);
+        }
     }
 
     public void updatePolicy(Connection conn, PeakPolicyRow row) throws Exception {
-        try (PreparedStatement ps = conn.prepareStatement(
-                "UPDATE dbo.peak_policy SET store_id=?, peak_limit_kw=?, warning_threshold_pct=?, control_threshold_pct=?, " +
-                "priority_level=?, control_enabled=?, effective_from=?, effective_to=?, notes=?, updated_at=sysdatetime() " +
-                "WHERE policy_id=?")) {
-            bindPolicy(ps, row, true);
-            ps.executeUpdate();
+        boolean autoCommit = conn.getAutoCommit();
+        conn.setAutoCommit(false);
+        try {
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE dbo.peak_policy_master SET policy_name=?, peak_limit_kw=?, warning_threshold_pct=?, control_threshold_pct=?, " +
+                    "priority_level=?, control_enabled=?, effective_from=?, effective_to=?, notes=?, updated_at=sysdatetime() " +
+                    "WHERE policy_id=?")) {
+                bindPolicyMaster(ps, row, true);
+                ps.executeUpdate();
+            }
+            syncPolicyStores(conn, row.getPolicyId(), row.getAssignedStoreIds());
+            conn.commit();
+        } catch (Exception e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(autoCommit);
         }
     }
 
     public void deletePolicy(Connection conn, Long policyId) throws Exception {
-        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.peak_policy WHERE policy_id=?")) {
-            ps.setLong(1, policyId.longValue());
-            ps.executeUpdate();
+        boolean autoCommit = conn.getAutoCommit();
+        conn.setAutoCommit(false);
+        try {
+            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.peak_policy_store_map WHERE policy_id=?")) {
+                ps.setLong(1, policyId.longValue());
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.peak_policy_master WHERE policy_id=?")) {
+                ps.setLong(1, policyId.longValue());
+                ps.executeUpdate();
+            }
+            conn.commit();
+        } catch (Exception e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(autoCommit);
         }
     }
 
-    private static void bindPolicy(PreparedStatement ps, PeakPolicyRow row, boolean includePolicyId) throws Exception {
-        ps.setInt(1, row.getStoreId().intValue());
+    private List<Integer> listAssignedStoreIds(Connection conn, Long policyId) throws Exception {
+        List<Integer> rows = new ArrayList<Integer>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT store_id FROM dbo.peak_policy_store_map WHERE policy_id=? ORDER BY store_id")) {
+            ps.setLong(1, policyId.longValue());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(Integer.valueOf(rs.getInt("store_id")));
+                }
+            }
+        }
+        return rows;
+    }
+
+    private void syncPolicyStores(Connection conn, Long policyId, List<Integer> storeIds) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.peak_policy_store_map WHERE policy_id=?")) {
+            ps.setLong(1, policyId.longValue());
+            ps.executeUpdate();
+        }
+        if (storeIds == null || storeIds.isEmpty()) return;
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO dbo.peak_policy_store_map (policy_id, store_id) VALUES (?, ?)")) {
+            for (Integer storeId : storeIds) {
+                ps.setLong(1, policyId.longValue());
+                ps.setInt(2, storeId.intValue());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    private static void bindPolicyMaster(PreparedStatement ps, PeakPolicyRow row, boolean includePolicyId) throws Exception {
+        ps.setString(1, row.getPolicyName());
         if (row.getPeakLimitKw() == null) ps.setNull(2, Types.DOUBLE); else ps.setDouble(2, row.getPeakLimitKw().doubleValue());
         if (row.getWarningThresholdPct() == null) ps.setNull(3, Types.DOUBLE); else ps.setDouble(3, row.getWarningThresholdPct().doubleValue());
         if (row.getControlThresholdPct() == null) ps.setNull(4, Types.DOUBLE); else ps.setDouble(4, row.getControlThresholdPct().doubleValue());

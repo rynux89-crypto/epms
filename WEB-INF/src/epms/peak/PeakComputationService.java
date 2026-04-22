@@ -8,6 +8,7 @@ public final class PeakComputationService {
     public PeakDashboardData loadDashboard() throws Exception {
         try (Connection conn = repository.openConnection()) {
             boolean peakSummaryTableReady = repository.peak15MinSummaryTableExists(conn);
+            boolean peakSummaryProcedureReady = repository.peak15MinSummaryProcedureExists(conn);
             java.util.List<PeakMeterRow> rows = repository.listTopPeakMeters(conn, 30, 12);
             boolean policyTableReady = repository.peakPolicyTableExists(conn);
             int activePolicyCount = 0;
@@ -27,9 +28,17 @@ public final class PeakComputationService {
                     topInstantPeakKw,
                     topDemandPeakKw,
                     peakSummaryTableReady,
+                    peakSummaryProcedureReady,
                     repository.findPeak15MinSummaryUpdatedAt(conn),
+                    repository.findLatestMeasurementAt(conn),
                     rows,
                     policyRows);
+        }
+    }
+
+    public void refreshPeakSummary(int daysBack) throws Exception {
+        try (Connection conn = repository.openConnection()) {
+            repository.refreshPeak15MinSummary(conn, daysBack <= 0 ? 35 : daysBack);
         }
     }
 }

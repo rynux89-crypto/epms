@@ -17,8 +17,10 @@ public final class TenantStoreManageServlet extends HttpServlet {
         req.setCharacterEncoding(StandardCharsets.UTF_8.name());
 
         String action = trimToNull(req.getParameter("action"));
+        String deleteMode = trimToNull(req.getParameter("delete_mode"));
         String searchQ = trimToNull(req.getParameter("q"));
         String statusQ = trimToNull(req.getParameter("status"));
+        Integer requestedEditId = parsePositiveInt(req.getParameter("edit_id"));
         String redirectBase = req.getContextPath() + "/epms/tenant_store_manage.jsp";
 
         Integer storeId = parsePositiveInt(req.getParameter("store_id"));
@@ -47,7 +49,14 @@ public final class TenantStoreManageServlet extends HttpServlet {
                         categoryName, contactName, contactPhone, status, openedOn, closedOn, notes);
                 redirectEditId = storeId;
             } else if ("delete".equals(action)) {
-                message = storeService.deleteStore(storeId);
+                if ("cascade".equalsIgnoreCase(deleteMode)) {
+                    message = storeService.deleteStoreCascade(storeId);
+                } else if ("disable".equalsIgnoreCase(deleteMode)) {
+                    message = storeService.disableStore(storeId);
+                    redirectEditId = requestedEditId;
+                } else {
+                    message = storeService.deleteStore(storeId);
+                }
             } else {
                 throw new IllegalArgumentException("지원하지 않는 요청입니다.");
             }

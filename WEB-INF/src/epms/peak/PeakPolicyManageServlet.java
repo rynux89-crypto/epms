@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.sql.Date;
+import java.util.ArrayList;
+import java.util.List;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -27,7 +29,7 @@ public final class PeakPolicyManageServlet extends HttpServlet {
         try {
             if ("add".equals(action)) {
                 redirectEditId = service.addPolicy(
-                        parsePositiveInt(req.getParameter("store_id")),
+                        trimToNull(req.getParameter("policy_name")),
                         parseNullableDouble(req.getParameter("peak_limit_kw")),
                         parseNullableDouble(req.getParameter("warning_threshold_pct")),
                         parseNullableDouble(req.getParameter("control_threshold_pct")),
@@ -35,24 +37,17 @@ public final class PeakPolicyManageServlet extends HttpServlet {
                         parseBoolSafe(req.getParameter("control_enabled")),
                         parseDateNullable(req.getParameter("effective_from")),
                         parseDateNullable(req.getParameter("effective_to")),
-                        trimToNull(req.getParameter("notes")));
+                        trimToNull(req.getParameter("notes")),
+                        parseStoreIds(req.getParameterValues("store_ids")));
                 resp.sendRedirect(redirectToDashboard
                         ? buildDashboardRedirectUrl(req, "Peak policy has been added.", returnFloor, returnCategory, returnStatus, returnSection)
-                        : buildRedirectUrl(
-                                redirectBase,
-                                redirectEditId,
-                                "msg",
-                                "Peak policy has been added.",
-                                returnFloor,
-                                returnCategory,
-                                returnStatus,
-                                returnSection));
+                        : buildRedirectUrl(redirectBase, redirectEditId, "msg", "Peak policy has been added.", returnFloor, returnCategory, returnStatus, returnSection));
                 return;
             }
             if ("update".equals(action)) {
                 service.updatePolicy(
                         policyId,
-                        parsePositiveInt(req.getParameter("store_id")),
+                        trimToNull(req.getParameter("policy_name")),
                         parseNullableDouble(req.getParameter("peak_limit_kw")),
                         parseNullableDouble(req.getParameter("warning_threshold_pct")),
                         parseNullableDouble(req.getParameter("control_threshold_pct")),
@@ -60,45 +55,32 @@ public final class PeakPolicyManageServlet extends HttpServlet {
                         parseBoolSafe(req.getParameter("control_enabled")),
                         parseDateNullable(req.getParameter("effective_from")),
                         parseDateNullable(req.getParameter("effective_to")),
-                        trimToNull(req.getParameter("notes")));
+                        trimToNull(req.getParameter("notes")),
+                        parseStoreIds(req.getParameterValues("store_ids")));
                 resp.sendRedirect(redirectToDashboard
                         ? buildDashboardRedirectUrl(req, "Peak policy has been updated.", returnFloor, returnCategory, returnStatus, returnSection)
-                        : buildRedirectUrl(
-                                redirectBase,
-                                policyId,
-                                "msg",
-                                "Peak policy has been updated.",
-                                returnFloor,
-                                returnCategory,
-                                returnStatus,
-                                returnSection));
+                        : buildRedirectUrl(redirectBase, policyId, "msg", "Peak policy has been updated.", returnFloor, returnCategory, returnStatus, returnSection));
                 return;
             }
             if ("delete".equals(action)) {
                 service.deletePolicy(policyId);
-                resp.sendRedirect(buildRedirectUrl(
-                        redirectBase,
-                        null,
-                        "msg",
-                        "Peak policy has been deleted.",
-                        returnFloor,
-                        returnCategory,
-                        returnStatus,
-                        returnSection));
+                resp.sendRedirect(buildRedirectUrl(redirectBase, null, "msg", "Peak policy has been deleted.", returnFloor, returnCategory, returnStatus, returnSection));
                 return;
             }
             throw new IllegalArgumentException("Unsupported request.");
         } catch (Exception e) {
-            resp.sendRedirect(buildRedirectUrl(
-                    redirectBase,
-                    policyId,
-                    "err",
-                    e.getMessage(),
-                    returnFloor,
-                    returnCategory,
-                    returnStatus,
-                    returnSection));
+            resp.sendRedirect(buildRedirectUrl(redirectBase, policyId, "err", e.getMessage(), returnFloor, returnCategory, returnStatus, returnSection));
         }
+    }
+
+    private static List<Integer> parseStoreIds(String[] values) {
+        List<Integer> rows = new ArrayList<Integer>();
+        if (values == null) return rows;
+        for (String value : values) {
+            Integer storeId = parsePositiveInt(value);
+            if (storeId != null) rows.add(storeId);
+        }
+        return rows;
     }
 
     private static String buildDashboardRedirectUrl(HttpServletRequest req, String message,

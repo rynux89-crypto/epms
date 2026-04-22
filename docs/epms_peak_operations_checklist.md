@@ -42,7 +42,8 @@ Run in this order:
 
 Validation after execution:
 
-- Confirm that `dbo.peak_policy` exists.
+- Confirm that `dbo.peak_policy_master` exists.
+- Confirm that `dbo.peak_policy_store_map` exists.
 - Confirm that `dbo.peak_15min_summary` exists.
 - Confirm that `dbo.sp_refresh_peak_15min_summary` exists.
 - Confirm that SQL Agent job `EPMS Peak 15min Summary Refresh` exists.
@@ -151,7 +152,8 @@ If `summary lag warning` persists:
 
 If `policy status` looks empty:
 
-- Verify `dbo.peak_policy` rows exist.
+- Verify `dbo.peak_policy_master` rows exist.
+- Verify `dbo.peak_policy_store_map` rows exist.
 - Verify tenant/store mapping is valid for the current date.
 - Verify stores are linked to meters with measurement data.
 
@@ -160,14 +162,14 @@ If `policy status` looks empty:
 - Share this checklist with operations and facility teams.
 - Share policy ownership by store or floor.
 - Define who reviews repeated exceed targets daily.
-- Define who adjusts `peak_policy` thresholds.
+- Define who adjusts `peak_policy_master` thresholds and store assignments.
 - Define who monitors SQL Agent job failures.
 
 ## 12. Done Criteria
 
 Peak management is considered operational when all items below are true:
 
-- `peak_policy` table is created and populated.
+- `peak_policy_master` and `peak_policy_store_map` tables are created and populated.
 - `peak_15min_summary` table is created and refreshing on schedule.
 - Dashboard shows summary usage and recent refresh time.
 - Warning/control targets are visible and understandable to operators.

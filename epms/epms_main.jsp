@@ -252,7 +252,7 @@
             </div>
             <div class="app-card">
                 <a href="tenant_meter_store_tiles.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>계측기별 연결 매장</h3></div>
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>매장 전력사용량 조회</h3></div>
                     <p>현재 연결된 매장을 계측기 기준 타일 화면으로 빠르게 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>

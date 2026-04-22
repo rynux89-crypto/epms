@@ -82,4 +82,20 @@ public final class TenantStoreService {
         }
         return "매장을 삭제했습니다.";
     }
+
+    public String deleteStoreCascade(Integer storeId) throws Exception {
+        validationService.requireStoreId(storeId);
+        try (Connection conn = repository.openConnection()) {
+            repository.deleteStoreCascade(conn, storeId.intValue());
+        }
+        return "관련 데이터를 정리하고 매장을 완전 삭제했습니다.";
+    }
+
+    public String disableStore(Integer storeId) throws Exception {
+        validationService.requireStoreId(storeId);
+        try (Connection conn = repository.openConnection()) {
+            repository.disableStore(conn, storeId.intValue());
+        }
+        return "매장을 비활성화했습니다.";
+    }
 }

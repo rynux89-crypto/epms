@@ -76,6 +76,7 @@ String runBlockMessage = pageData == null ? null : pageData.getRunBlockMessage()
         .notice{padding:12px 14px;border-radius:10px;font-weight:700}
         .ok{background:#ecfdf3;border:1px solid #b7ebc6;color:#166534}
         .err{background:#fff1f1;border:1px solid #fecaca;color:#b42318}
+        .page-footer{margin-top:18px;text-align:center;color:#6d8298;font-size:12px}
         .table-wrap{overflow-x:auto}
         table{min-width:1060px}
         .mini-form{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -116,7 +117,7 @@ String runBlockMessage = pageData == null ? null : pageData.getRunBlockMessage()
         <div class="top-links">
             <a class="btn" href="tenant_store_manage.jsp">매장 관리</a>
             <a class="btn" href="tenant_meter_map_manage.jsp">매장-계측기 연결</a>
-            <a class="btn" href="tenant_meter_store_tiles.jsp">계측기별 연결 매장</a>
+            <a class="btn" href="tenant_meter_store_tiles.jsp">매장 전력사용량 조회</a>
             <a class="btn" href="epms_main.jsp">EPMS홈</a>
         </div>
     </div>
@@ -267,5 +268,6 @@ String runBlockMessage = pageData == null ? null : pageData.getRunBlockMessage()
         </tbody></table></div>
     </div>
 </div>
+<footer class="page-footer">EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>

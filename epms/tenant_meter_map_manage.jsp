@@ -92,6 +92,7 @@ int primaryCnt = pageData == null ? 0 : pageData.getPrimaryCount();
         .edit-form textarea{grid-column:1 / -1}
         .edit-form-actions{grid-column:1 / -1;justify-content:flex-end;margin-top:8px}
         .empty-note{padding:18px 14px;border:1px dashed #d9dfe8;border-radius:8px;color:var(--muted);background:#fafcff}
+        .page-footer{margin-top:18px;text-align:center;color:#6d8298;font-size:12px}
         h1,h2{margin-bottom:10px}
         @media (max-width:1100px){.stats,.filter-row,.form-grid,.content-grid,.edit-form{grid-template-columns:1fr}.edit-panel{position:static}}
     </style>
@@ -105,7 +106,7 @@ int primaryCnt = pageData == null ? 0 : pageData.getPrimaryCount();
         </div>
         <div class="top-links">
             <a class="btn" href="tenant_store_manage.jsp">&#47588;&#51109; &#44288;&#47532;</a>
-            <a class="btn" href="tenant_meter_store_tiles.jsp">&#44228;&#52769;&#44592;&#48324; &#50672;&#44208; &#47588;&#51109;</a>
+            <a class="btn" href="tenant_meter_store_tiles.jsp">&#47588;&#51109; &#51204;&#47141;&#49324;&#50857;&#47049; &#51312;&#54924;</a>
             <a class="btn" href="tenant_billing_manage.jsp">&#50900; &#51221;&#49328;</a>
             <a class="btn" href="epms_main.jsp">EPMS &#54856;</a>
         </div>
@@ -334,5 +335,6 @@ int primaryCnt = pageData == null ? 0 : pageData.getPrimaryCount();
         </div>
     </div>
 </div>
+<footer class="page-footer">EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>

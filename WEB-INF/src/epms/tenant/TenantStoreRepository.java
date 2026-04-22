@@ -6,6 +6,7 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Types;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -72,6 +73,37 @@ public final class TenantStoreRepository {
     public void deleteStore(Connection conn, int storeId) throws Exception {
         try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.tenant_store WHERE store_id = ?")) {
             ps.setInt(1, storeId);
+            ps.executeUpdate();
+        }
+    }
+
+    public void deleteStoreCascade(Connection conn, int storeId) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "IF OBJECT_ID('dbo.peak_policy_store_map', 'U') IS NOT NULL DELETE FROM dbo.peak_policy_store_map WHERE store_id = ?;" +
+                "DELETE FROM dbo.billing_statement WHERE store_id = ?;" +
+                "DELETE FROM dbo.billing_meter_snapshot WHERE store_id = ?;" +
+                "DELETE FROM dbo.tenant_billing_contract WHERE store_id = ?;" +
+                "DELETE FROM dbo.tenant_meter_map WHERE store_id = ?;" +
+                "DELETE FROM dbo.tenant_store WHERE store_id = ?;")) {
+            ps.setInt(1, storeId);
+            ps.setInt(2, storeId);
+            ps.setInt(3, storeId);
+            ps.setInt(4, storeId);
+            ps.setInt(5, storeId);
+            ps.setInt(6, storeId);
+            ps.executeUpdate();
+        }
+    }
+
+    public void disableStore(Connection conn, int storeId) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE dbo.tenant_store " +
+                "SET status = 'CLOSED', " +
+                "    closed_on = COALESCE(closed_on, ?), " +
+                "    updated_at = sysdatetime() " +
+                "WHERE store_id = ?")) {
+            ps.setDate(1, Date.valueOf(LocalDate.now()));
+            ps.setInt(2, storeId);
             ps.executeUpdate();
         }
     }

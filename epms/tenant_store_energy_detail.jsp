@@ -1,4 +1,4 @@
-<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
+﻿<%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ page import="java.util.*" %>
 <%@ page import="epms.remote.*" %>
 <%@ include file="../includes/epms_html.jspf" %>
@@ -29,6 +29,7 @@ if (storeId == null || meterId == null) {
 </head>
 <body>
 <div class="err-box">store_id and meter_id are required.</div>
+<footer class="page-footer">EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
 <%
@@ -77,6 +78,7 @@ EnergyDetailPageData pageData = remoteReadingService.loadEnergyDetailPage(storeI
         .chart-panel{background:#fff;border:1px solid #d9dfe8;border-radius:8px;padding:10px}
         .chart-box{height:330px}
         .err-box{margin:0;padding:12px 14px;border-radius:8px;background:#fff1f1;border:1px solid #ffc9c9;color:#b42318;font-weight:700}
+        .page-footer{margin-top:18px;text-align:center;color:#6d8298;font-size:12px}
         @media (max-width:1280px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media (max-width:1080px){.hero,.chart-grid{grid-template-columns:1fr}}
         @media (max-width:760px){.page-head{flex-direction:column}.stats-grid,.info-grid{grid-template-columns:1fr}}
@@ -90,7 +92,7 @@ EnergyDetailPageData pageData = remoteReadingService.loadEnergyDetailPage(storeI
             <p>&#47588;&#51109; &#50724;&#54532;&#51068;&#44284; &#44228;&#52769;&#44592; &#51201;&#50857;&#51068;&#51012; &#44592;&#51456;&#51004;&#47196; &#49324;&#50857;&#47049;&#51012; &#54869;&#51064;&#54633;&#45768;&#45796;.</p>
         </div>
         <div class="top-links">
-            <a class="btn" href="tenant_meter_store_tiles.jsp">&#44228;&#52769;&#44592;&#48324; &#50672;&#44208; &#47588;&#51109;</a>
+            <a class="btn" href="tenant_meter_store_tiles.jsp">&#47588;&#51109; &#51204;&#47141;&#49324;&#50857;&#47049; &#51312;&#54924;</a>
             <a class="btn" href="tenant_billing_manage.jsp">&#50900; &#51221;&#49328;</a>
             <a class="btn" href="epms_main.jsp">EPMS &#54856;</a>
         </div>
@@ -161,7 +163,7 @@ EnergyDetailPageData pageData = remoteReadingService.loadEnergyDetailPage(storeI
         </div>
     </div>
 </div>
-<footer>짤 EPMS Dashboard | SNUT CNT</footer>
+
 
 <script>
 const dailyLabels = [<%
@@ -220,5 +222,7 @@ window.addEventListener('resize', function () {
   monthlyChart.resize();
 });
 </script>
+<footer class="page-footer">EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
+

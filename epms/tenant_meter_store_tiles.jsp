@@ -40,7 +40,7 @@ List<MeterStoreTileRow> tiles = pageData == null ? Collections.<MeterStoreTileRo
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>&#44228;&#52769;&#44592;&#48324; &#50672;&#44208; &#47588;&#51109; &#51312;&#54924;</title>
+    <title>&#47588;&#51109; &#51204;&#47141;&#49324;&#50857;&#47049; &#51312;&#54924;</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         body{max-width:1680px;margin:14px auto;padding:0 10px}
@@ -71,6 +71,7 @@ List<MeterStoreTileRow> tiles = pageData == null ? Collections.<MeterStoreTileRo
         .store-chip:hover{color:var(--primary);border-color:#bfd3f2;background:#f8fbff}
         .empty-note{padding:16px;border:1px dashed #cbd5e1;border-radius:8px;color:var(--muted);text-align:center;background:#fff}
         .err-box{margin:0;padding:12px 14px;border-radius:8px;background:#fff1f1;border:1px solid #ffc9c9;color:#b42318;font-weight:700}
+        .page-footer{margin-top:18px;text-align:center;color:#6d8298;font-size:12px}
         @media (max-width:1500px){.tile-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.filter-row{grid-template-columns:repeat(3,minmax(0,1fr)) auto}}
         @media (max-width:1200px){.tile-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.filter-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media (max-width:900px){.tile-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.filter-row{grid-template-columns:1fr}}
@@ -81,8 +82,8 @@ List<MeterStoreTileRow> tiles = pageData == null ? Collections.<MeterStoreTileRo
 <div class="page-wrap">
     <div class="page-head">
         <div>
-            <h1>&#44228;&#52769;&#44592;&#48324; &#50672;&#44208; &#47588;&#51109; &#51312;&#54924;</h1>
-            <p>&#54788;&#51116; &#50976;&#54952;&#54620; &#47588;&#51109;-&#44228;&#52769;&#44592; &#50672;&#44208;&#51012; &#44228;&#52769;&#44592; &#44592;&#51456; &#53440;&#51068;&#47196; &#54869;&#51064;&#54633;&#45768;&#45796;.</p>
+            <h1>&#47588;&#51109; &#51204;&#47141;&#49324;&#50857;&#47049; &#51312;&#54924;</h1>
+            <p>&#54788;&#51116; &#50976;&#54952;&#54620; &#47588;&#51109;-&#44228;&#52769;&#44592; &#50672;&#44208;&#51012; &#44592;&#51456;&#51004;&#47196; &#47588;&#51109;&#51032; &#51204;&#47141; &#49324;&#50857; &#54788;&#54889;&#51012; &#54869;&#51064;&#54633;&#45768;&#45796;.</p>
         </div>
         <div class="top-links">
             <a class="btn" href="tenant_meter_map_manage.jsp">&#47588;&#51109;-&#44228;&#52769;&#44592; &#50672;&#44208; &#44288;&#47532;</a>
@@ -175,5 +176,6 @@ List<MeterStoreTileRow> tiles = pageData == null ? Collections.<MeterStoreTileRo
     </div>
     <% } %>
 </div>
+<footer class="page-footer">EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>

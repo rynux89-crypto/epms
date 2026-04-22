@@ -13,13 +13,16 @@ public final class PeakDashboardData {
     private final double topInstantPeakKw;
     private final double topDemandPeakKw;
     private final boolean peakSummaryTableReady;
+    private final boolean peakSummaryProcedureReady;
     private final Timestamp peakSummaryUpdatedAt;
+    private final Timestamp latestMeasurementAt;
     private final List<PeakMeterRow> topPeakMeters;
     private final List<PeakPolicyStatusRow> policyStatusRows;
 
     public PeakDashboardData(int activeStoreCount, int activeMappedMeterCount, int unmappedActiveStoreCount,
              boolean policyTableReady, int activePolicyCount, double topInstantPeakKw, double topDemandPeakKw,
-             boolean peakSummaryTableReady, Timestamp peakSummaryUpdatedAt,
+             boolean peakSummaryTableReady, boolean peakSummaryProcedureReady, Timestamp peakSummaryUpdatedAt,
+             Timestamp latestMeasurementAt,
              List<PeakMeterRow> topPeakMeters, List<PeakPolicyStatusRow> policyStatusRows) {
         this.activeStoreCount = activeStoreCount;
         this.activeMappedMeterCount = activeMappedMeterCount;
@@ -29,7 +32,9 @@ public final class PeakDashboardData {
         this.topInstantPeakKw = topInstantPeakKw;
         this.topDemandPeakKw = topDemandPeakKw;
         this.peakSummaryTableReady = peakSummaryTableReady;
+        this.peakSummaryProcedureReady = peakSummaryProcedureReady;
         this.peakSummaryUpdatedAt = peakSummaryUpdatedAt;
+        this.latestMeasurementAt = latestMeasurementAt;
         this.topPeakMeters = topPeakMeters == null ? Collections.<PeakMeterRow>emptyList() : topPeakMeters;
         this.policyStatusRows = policyStatusRows == null ? Collections.<PeakPolicyStatusRow>emptyList() : policyStatusRows;
     }
@@ -42,7 +47,9 @@ public final class PeakDashboardData {
     public double getTopInstantPeakKw() { return topInstantPeakKw; }
     public double getTopDemandPeakKw() { return topDemandPeakKw; }
     public boolean isPeakSummaryTableReady() { return peakSummaryTableReady; }
+    public boolean isPeakSummaryProcedureReady() { return peakSummaryProcedureReady; }
     public Timestamp getPeakSummaryUpdatedAt() { return peakSummaryUpdatedAt; }
+    public Timestamp getLatestMeasurementAt() { return latestMeasurementAt; }
     public List<PeakMeterRow> getTopPeakMeters() { return topPeakMeters; }
     public List<PeakPolicyStatusRow> getPolicyStatusRows() { return policyStatusRows; }
 
@@ -54,6 +61,23 @@ public final class PeakDashboardData {
 
     public boolean isPeakSummaryStale() {
         return peakSummaryTableReady && getPeakSummaryLagMinutes() > 30L;
+    }
+
+    public long getMeasurementLagMinutes() {
+        if (latestMeasurementAt == null) return Long.MAX_VALUE;
+        long diffMillis = System.currentTimeMillis() - latestMeasurementAt.getTime();
+        return diffMillis <= 0L ? 0L : diffMillis / 60000L;
+    }
+
+    public boolean isMeasurementStale() {
+        return latestMeasurementAt == null || getMeasurementLagMinutes() > 30L;
+    }
+
+    public boolean isPeakOperationsReady() {
+        return peakSummaryTableReady
+                && peakSummaryProcedureReady
+                && latestMeasurementAt != null
+                && activePolicyCount > 0;
     }
 
     public int getWarningTargetCount() {
