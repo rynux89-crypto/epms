@@ -2,7 +2,7 @@
 <%@ page import="java.time.*, java.time.format.*" %>
 <%@ page import="com.fasterxml.jackson.databind.ObjectMapper" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconfig.jspf" %>
+<%@ include file="../../includes/dbconfig.jspf" %>
 
 <%
 try (Connection conn = openDbConnection()) {
@@ -81,7 +81,7 @@ try (Connection conn = openDbConnection()) {
 <html>
 <head>
     <title>전류 고조파 분석</title>
-    <script src="../js/echarts.js"></script>
+    <script src="../../js/echarts.js"></script>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
       .no-data-banner {
@@ -337,6 +337,7 @@ window.addEventListener('resize', () => myChart.resize());
 %>
 </body>
 </html>
+
 
 
 

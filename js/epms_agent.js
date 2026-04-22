@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const UI_STORAGE_KEY = "epms_chat_ui_prefs_v1";
 
   function clamp(n, min, max) {
@@ -287,7 +287,7 @@
   async function send(msg) {
     appendMsg(msg, "user");
     try {
-      const endpoint = window.EPMS_AGENT_ENDPOINT || "/epms/agent.jsp";
+      const endpoint = window.EPMS_AGENT_ENDPOINT || "/api/agent";
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

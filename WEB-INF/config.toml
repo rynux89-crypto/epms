@@ -21,4 +21,4 @@ default_polling_ms = 3000
 default_write_interval_sec = 3
 
 [agent]
-properties_path = "epms/agent_model.properties"
+properties_path = "epms/agent/agent_model.properties"

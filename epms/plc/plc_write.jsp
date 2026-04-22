@@ -86,7 +86,7 @@ private static class ModbusTcpClient implements AutoCloseable {
     public void close(){ try{socket.close();}catch(Exception ignore){} }
 }
 
-private static Connection createConn() throws Exception { return openDbConnection(); }
+private static Connection createConn() throws Exception { return resolveDataSource().getConnection(); }
 private static WriteState getWriteState(int plcId){ return WRITE_STATES.computeIfAbsent(plcId, k -> new WriteState()); }
 private static int toU16(byte hi, byte lo){ return PlcWriteSupport.toU16(hi, lo); }
 private static boolean isCacheValid(CacheEntry<?> ce, long ttlMs){

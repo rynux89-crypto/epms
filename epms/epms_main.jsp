@@ -88,35 +88,35 @@
         </div>
         <div class="section-links">
             <div class="app-card">
-                <a href="meter_status.jsp?meter_id=0" class="sub-card-link">
+                <a href="monitoring/meter_status.jsp?meter_id=0" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M10 17h4"/></svg></span><h3>계측기 상세 모니터링</h3></div>
                     <p>계측기의 현재 상태와 파형을 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="pq_overview.jsp" class="sub-card-link">
+                <a href="monitoring/pq_overview.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M6 15l3-3 3 2 5-6 1 1"/></svg></span><h3>통합 품질 모니터링</h3></div>
                     <p>주파수, 역률, 전압, 전류를 한 화면에서 봅니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="phasor_diagram.jsp?meter=0" class="sub-card-link">
+                <a href="monitoring/phasor_diagram.jsp?meter=0" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 12l4-4"/><path d="M12 12V7"/></svg></span><h3>페이저 다이어그램</h3></div>
                     <p>전압과 전류의 위상 관계를 시각적으로 점검합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="event_view.jsp" class="sub-card-link">
+                <a href="monitoring/event_view.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/><rect x="5" y="3" width="14" height="18" rx="2"/></svg></span><h3>이벤트 목록</h3></div>
                     <p>계측 및 PLC 이벤트 이력을 조회합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="alarm_view.jsp" class="sub-card-link">
+                <a href="monitoring/alarm_view.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 4v8"/><path d="M9 20h6"/><path d="M5 15a7 7 0 0 0 14 0"/><path d="M7 9a5 5 0 0 1 10 0"/></svg></span><h3>알람 목록</h3></div>
                     <p>현재 및 과거 알람을 조건별로 조회합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
@@ -133,49 +133,49 @@
         </div>
         <div class="section-links">
             <div class="app-card">
-                <a href="voltage_unbalance.jsp" class="sub-card-link">
+                <a href="quality/voltage_unbalance.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M6 9h12"/><path d="M7 9l-3 5h6l-3-5z"/><path d="M17 9l-3 5h6l-3-5z"/></svg></span><h3>전압 불평형 분석</h3></div>
                     <p>전압 불평형을 상시 계측값 기준으로 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="current_unbalance.jsp" class="sub-card-link">
+                <a href="quality/current_unbalance.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M7 6v8"/><path d="M12 6v12"/><path d="M17 6v10"/><path d="M5 18h14"/></svg></span><h3>전류 불평형 분석</h3></div>
                     <p>전류 불평형을 상시 계측값 기준으로 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="variation_ves.jsp" class="sub-card-link">
+                <a href="quality/variation_ves.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="12" height="10" rx="2"/><path d="M19 10v4"/><path d="M8 13l2-2 2 2 2-2"/></svg></span><h3>전압 변동율 분석</h3></div>
                     <p>전압 평균값 대비 변동 특성을 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="variation_ces.jsp" class="sub-card-link">
+                <a href="quality/variation_ces.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M9 7v5"/><path d="M15 7v5"/><path d="M8 12h8"/><path d="M12 12v7"/></svg></span><h3>전류 변동율 분석</h3></div>
                     <p>전류 변동 추세와 기준 초과 여부를 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="frequency_voltage.jsp" class="sub-card-link">
+                <a href="quality/frequency_voltage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M7 16a5 5 0 0 1 10 0"/><path d="M10 16a2 2 0 0 1 4 0"/></svg></span><h3>주파수 & 전압변동율</h3></div>
                     <p>주파수와 전압 변동의 상관을 봅니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="harmonics_v.jsp" class="sub-card-link">
+                <a href="quality/harmonics_v.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M3 13c2-6 4 6 6 0s4-6 6 0 4 6 6 0"/></svg></span><h3>전압 고조파 분석</h3></div>
                     <p>THD와 주요 전압 고조파 성분을 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="harmonics_i.jsp" class="sub-card-link">
+                <a href="quality/harmonics_i.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M3 12c2-4 4 4 6 0s4-4 6 0 4 4 6 0"/></svg></span><h3>전류 고조파 분석</h3></div>
                     <p>전류 고조파와 전력 품질 저하 요인을 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
@@ -192,42 +192,42 @@
         </div>
         <div class="section-links">
             <div class="app-card">
-                <a href="energy_meter_overview.jsp" class="sub-card-link">
+                <a href="energy/energy_meter_overview.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>계측기별 에너지 관리</h3></div>
                     <p>각 계측기의 지난달 사용량과 현재 사용량을 빠르게 비교합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="energy_overview.jsp" class="sub-card-link">
+                <a href="energy/energy_overview.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M5 19V9"/><path d="M12 19V5"/><path d="M19 19v-8"/><path d="M4 19h16"/></svg></span><h3>에너지 현황</h3></div>
                     <p>전사 에너지와 알람 상태를 한 화면에서 빠르게 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="energy_manage.jsp" class="sub-card-link">
+                <a href="energy/energy_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="M6 8l4 4 3-3 5 5"/></svg></span><h3>에너지 통합 상세분석</h3></div>
                     <p>기간, 건물, 용도, 계측기를 좁혀 사용량과 이상 징후를 통합 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="carbon_emissions.jsp" class="sub-card-link">
+                <a href="energy/carbon_emissions.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 18h8"/><path d="M8 14c0-3 2-5 5-5 2.8 0 5 2.2 5 5 0 2.2-1.4 3.6-3.4 4.3"/><path d="M8 14c0 2.2 1.4 3.6 3.4 4.3"/><path d="M5 8c1.2-1.7 3.1-3 5.3-3"/></svg></span><h3>건물 탄소배출량 조회</h3></div>
                     <p>건물 단위 전력사용량을 기준으로 CO2 배출량을 계산하고 배출계수를 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="energy_sankey.jsp" class="sub-card-link">
+                <a href="energy/energy_sankey.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 7h8a4 4 0 1 1 0 8H6"/><path d="M14 7l3-3"/><path d="M14 7l3 3"/><path d="M10 15l-3-3"/><path d="M10 15l-3 3"/></svg></span><h3>에너지 흐름 분석</h3></div>
                     <p>트리 구조 기준으로 에너지 흐름을 추적합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="aggregated_measurements.jsp" class="sub-card-link">
+                <a href="energy/aggregated_measurements.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15V9"/><path d="M12 15V5"/><path d="M17 15v-3"/></svg></span><h3>일/월/년 집계 조회</h3></div>
                     <p>일간, 월간, 년간 집계 테이블을 뷰 기준으로 조회합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
@@ -244,28 +244,28 @@
         </div>
         <div class="section-links">
             <div class="app-card">
-                <a href="tenant_store_manage.jsp" class="sub-card-link">
+                <a href="remote/tenant_store_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M6 19V7h12v12"/><path d="M9 11h2"/><path d="M13 11h2"/><path d="M9 15h2"/><path d="M13 15h2"/></svg></span><h3>매장 관리</h3></div>
                     <p>매장 마스터 등록과 엑셀 일괄 업로드를 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="tenant_meter_map_manage.jsp" class="sub-card-link">
+                <a href="remote/tenant_meter_map_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M7 7h10"/><path d="M7 12h10"/><path d="M7 17h6"/><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span><h3>매장-계측기 연결</h3></div>
                     <p>매장과 계측기의 정산 귀속, 비율, 적용기간을 설정합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="tenant_meter_store_tiles.jsp" class="sub-card-link">
+                <a href="remote/tenant_meter_store_tiles.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>매장 전력사용량 조회</h3></div>
                     <p>현재 연결된 매장을 계측기 기준 타일 화면으로 빠르게 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="tenant_billing_manage.jsp" class="sub-card-link">
+                <a href="remote/tenant_billing_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></span><h3>매장 전력 정산</h3></div>
                     <p>매장, 계약, 검침 스냅샷, 월 청구서를 한 흐름으로 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
@@ -282,14 +282,14 @@
         </div>
         <div class="section-links">
             <div class="app-card">
-                <a href="peak_management.jsp" class="sub-card-link">
+                <a href="peak/peak_management.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15l3-3 3 2 4-5 2 2"/></svg></span><h3>Peak 운영 대시보드</h3></div>
                     <p>최근 30일 피크 상위 계측기와 매핑 누락 매장을 빠르게 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="peak_policy_manage.jsp" class="sub-card-link">
+                <a href="peak/peak_policy_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M6 7h12"/><path d="M8 12h8"/><path d="M10 17h4"/></svg></span><h3>Peak 정책 관리</h3></div>
                     <p>매장별 피크 한도와 주의/제어 기준, 우선순위를 정책으로 등록합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
@@ -306,44 +306,51 @@
         </div>
         <div class="section-links">
             <div class="app-card">
-                <a href="alarm_rule_manage.jsp" class="sub-card-link">
+                <a href="system/alarm_rule_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 9h6"/><path d="M9 13h6"/></svg></span><h3>알람 규칙 관리 / 등록</h3></div>
                     <p>알람 규칙을 등록하고 조회, 수정, 활성화 관리까지 한 화면에서 처리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="alarm_diag.jsp" class="sub-card-link">
+                <a href="system/alarm_diag.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15l3-3 3 2 4-5 2 2"/></svg></span><h3>알람 런타임 진단</h3></div>
                     <p>알람 큐 압력, 캐시 상태, write-op 누적 현황을 실시간으로 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="metric_catalog_manage.jsp" class="sub-card-link">
+                <a href="system/metric_catalog_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16v10H4z"/><path d="M9 7V5h6v2"/></svg></span><h3>지표키 카탈로그</h3></div>
                     <p>알람 및 품질 지표 키를 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="meter_register.jsp" class="sub-card-link">
+                <a href="system/meter_register.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M20 10l-8 8-8-8V4h6l10 6z"/><circle cx="7.5" cy="7.5" r="1"/></svg></span><h3>계측기 등록 화면</h3></div>
                     <p>건물/패널/계측기 정보를 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="meter_tree_manage.jsp" class="sub-card-link">
+                <a href="system/meter_tree_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 20V8"/><path d="M6 8h12"/><path d="M8 12h8"/><path d="M10 16h4"/></svg></span><h3>단선 계층 관리</h3></div>
                     <p>부모-자식 계측기 트리를 유지합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="data_retention_manage.jsp" class="sub-card-link">
+                <a href="system/data_retention_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg></span><h3>DB 및 Data 관리</h3></div>
                     <p>백업과 이력 데이터 보관 정책을 관리합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="agent/agent_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M9 8a3 3 0 1 1 6 0c1.7 0 3 1.3 3 3 0 1.3-.8 2.3-2 2.8V16a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.2A3 3 0 0 1 6 11c0-1.7 1.3-3 3-3z"/><path d="M10 18v2"/><path d="M14 18v2"/></svg></span><h3>Agent 모델 관리</h3></div>
+                    <p>챗봇과 분석용 모델, 타임아웃, UI 기본값을 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
@@ -379,14 +386,14 @@
                 </a>
             </div>
             <div class="app-card">
-                <a href="ai_mapping.jsp" class="sub-card-link">
+                <a href="plc/ai_mapping.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M9 8a3 3 0 1 1 6 0c1.7 0 3 1.3 3 3 0 1.3-.8 2.3-2 2.8V16a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.2A3 3 0 0 1 6 11c0-1.7 1.3-3 3-3z"/><path d="M10 18v2"/><path d="M14 18v2"/></svg></span><h3>AI 매핑 화면</h3></div>
                     <p>AI 기반 태그 매핑을 수행합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="di_mapping.jsp" class="sub-card-link">
+                <a href="plc/di_mapping.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 1 0-7l1-1a5 5 0 0 1 7 7l-1 1"/><path d="M14 11a5 5 0 0 1 0 7l-1 1a5 5 0 0 1-7-7l1-1"/></svg></span><h3>DI 매핑 화면</h3></div>
                     <p>디지털 입력 매핑을 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
@@ -400,21 +407,21 @@
                 </a>
             </div>
             <div class="app-card">
-                <a href="ai_measurements_verify.jsp" class="sub-card-link">
+                <a href="plc/ai_measurements_verify.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M10 3v5l-4 7a3 3 0 0 0 2.6 4.5h6.8A3 3 0 0 0 18 15l-4-7V3"/><path d="M9 11h6"/></svg></span><h3>AI 적재 검증</h3></div>
                     <p>PLC 샘플값과 DB 적재값이 올바르게 연결됐는지 검증합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="ai_measurements_mapping_manage.jsp" class="sub-card-link">
+                <a href="plc/ai_measurements_mapping_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="4" rx="1"/><rect x="4" y="14" width="16" height="4" rx="1"/><path d="M9 8h6"/><path d="M9 16h6"/></svg></span><h3>AI 매핑 정의 관리</h3></div>
                     <p>AI token과 적재 컬럼/테이블 매핑 정의를 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
             <div class="app-card">
-                <a href="harmonic_sync.jsp" class="sub-card-link">
+                <a href="plc/harmonic_sync.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M8 18V6l10-2v12"/><circle cx="8" cy="18" r="2"/><circle cx="18" cy="16" r="2"/></svg></span><h3>고조파 동기화</h3></div>
                     <p>고조파 관련 데이터 연계를 실행합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
@@ -427,3 +434,4 @@
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
+

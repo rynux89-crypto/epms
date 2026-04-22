@@ -1,4 +1,4 @@
-﻿<%@ page import="java.sql.*, java.util.*" %>
+<%@ page import="java.sql.*, java.util.*" %>
 <%@ page import="java.time.*, java.time.format.*" %>
 <%@ page import="com.fasterxml.jackson.databind.ObjectMapper" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
@@ -217,7 +217,7 @@ function buildHarmonicsUrl(targetPath) {
 }
 
 function goToHarmonics(mode) {
-  const targetPath = mode === 'i' ? '/epms/harmonics_i.jsp' : '/epms/harmonics_v.jsp';
+  const targetPath = mode === 'i' ? '/epms/quality/harmonics_i.jsp' : '/epms/quality/harmonics_v.jsp';
   window.location.href = buildHarmonicsUrl(targetPath);
 }
 

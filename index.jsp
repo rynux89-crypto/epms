@@ -1,4 +1,4 @@
-﻿<%@ page import="java.io.*,java.util.*" contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="java.io.*,java.util.*" contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ include file="/WEB-INF/include/app_version.jspf" %>
 <%!
 private int parseIntOrDefault(String v, int defVal, int min, int max) {
@@ -17,7 +17,7 @@ int chatWidthPx = 360;
 int chatMaxHeightVh = 60;
 int chatFontSizePx = 13;
 try {
-    String epmsPath = application.getRealPath("/epms");
+    String epmsPath = application.getRealPath("/epms/agent");
     if (epmsPath != null && !epmsPath.isEmpty()) {
         File f = new File(epmsPath, "agent_model.properties");
         if (f.exists() && f.isFile()) {
@@ -63,7 +63,7 @@ try {
       maxHeightVh: <%= chatMaxHeightVh %>,
       fontSizePx: <%= chatFontSizePx %>
     };
-    window.EPMS_AGENT_ENDPOINT = "<%= request.getContextPath() %>/epms/agent.jsp";
+    window.EPMS_AGENT_ENDPOINT = "<%= request.getContextPath() %>/api/agent";
   </script>
   <script src="<%= request.getContextPath() %>/js/epms_agent.js?v=<%= ASSET_VERSION %>"></script>
 </body>

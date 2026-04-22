@@ -2,13 +2,14 @@
 <%@ page import="java.time.*, java.time.format.*" %>
 <%@ page import="com.fasterxml.jackson.databind.ObjectMapper" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/dbconfig.jspf" %>
+<%@ include file="../../includes/dbconfig.jspf" %>
 
 <%
 try (Connection conn = openDbConnection()) {
     // 湲곌컙 珥덇린??
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today;
+
 
     // 1. ?뚮씪誘명꽣 ?섏떊 (?곷떒?쇰줈 ?대룞?섏뿬 ?쇱뿉???좏깮媛??좎????ъ슜)
     String startDate = request.getParameter("startDate");
@@ -21,7 +22,7 @@ try (Connection conn = openDbConnection()) {
     if (endDate == null || endDate.trim().isEmpty()) { endDate = today.toString(); }
     if (startTime == null || startTime.isEmpty()) { startTime = "00:00:00"; }
     if (endTime == null || endTime.isEmpty()) {  endTime = "23:59:59"; }
-
+     
     // meter 異붽?
     String meter = "1";   // 湲곕낯媛믪? "1"
     String paramMeter = request.getParameter("meter");
@@ -29,8 +30,9 @@ try (Connection conn = openDbConnection()) {
     if (paramMeter != null && !paramMeter.trim().isEmpty()) {
         meter = paramMeter;
     }
+
     String building = request.getParameter("building");
-    String usage = request.getParameter("usage");
+    String usage = request.getParameter("usage"); 
 
     List<String> buildingOptions = new ArrayList<>();
     List<String> usageOptions = new ArrayList<>();
@@ -80,8 +82,8 @@ try (Connection conn = openDbConnection()) {
 %>
 <html>
 <head>
-    <title>전류 고조파 분석</title>
-    <script src="../js/echarts.js"></script>
+    <title>전압 고조파 분석</title>
+    <script src="../../js/echarts.js"></script>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
       .no-data-banner {
@@ -96,45 +98,45 @@ try (Connection conn = openDbConnection()) {
     </style>
 </head>
 <body>
-        <div class="title-bar">
-            <h2>🎵 전류 고조파 분석</h2>
-            <div class="inline-actions">
-                <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'" >EPMS 홈</button>
-                <button class="back-btn" onclick="goToHarmonics('v')" >전압 고조파 분석</button>
-            </div>
+    <div class="title-bar">
+        <h2>🎵 전압 고조파 분석</h2>
+        <div class="inline-actions">
+            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'" >EPMS 홈</button>
+            <button class="back-btn" onclick="goToHarmonics('i')" >전류 고조파 분석</button>
         </div>
-<form method="GET">
-    건물: 
-    <select name="building" onchange="this.form.meter.value=''; this.form.submit();">
-        <option value="">전체</option>
-        <% for(String opt : buildingOptions) { %>
-            <option value="<%= opt %>" <%= opt.equals(building) ? "selected" : "" %>><%= opt %></option>
-        <% } %>
-    </select>
+    </div>
+    <form method="GET">
+        건물: 
+        <select name="building" onchange="this.form.meter.value=''; this.form.submit();">
+            <option value="">전체</option>
+            <% for(String opt : buildingOptions) { %>
+                <option value="<%= opt %>" <%= opt.equals(building) ? "selected" : "" %>><%= opt %></option>
+            <% } %>
+        </select>
 
-    용도: 
-    <select name="usage" onchange="this.form.meter.value=''; this.form.submit();">
-        <option value="">전체</option>
-        <% for(String opt : usageOptions) { %>
-            <option value="<%= opt %>" <%= opt.equals(usage) ? "selected" : "" %>><%= opt %></option>
-        <% } %>
-    </select>
+        용도: 
+        <select name="usage" onchange="this.form.meter.value=''; this.form.submit();">
+            <option value="">전체</option>
+            <% for(String opt : usageOptions) { %>
+                <option value="<%= opt %>" <%= opt.equals(usage) ? "selected" : "" %>><%= opt %></option>
+            <% } %>
+        </select>
 
-    Meter:
-    <select name="meter">
-        <option value="">전체</option>
-        <% for(String[] opt : meterOptions) { %>
-            <option value="<%= opt[0] %>" <%= opt[0].equals(meter) ? "selected" : "" %>><%= opt[1] %></option>
-        <% } %>
-    </select>
+        Meter:
+        <select name="meter">
+            <option value="">전체</option>
+            <% for(String[] opt : meterOptions) { %>
+                <option value="<%= opt[0] %>" <%= opt[0].equals(meter) ? "selected" : "" %>><%= opt[1] %></option>
+            <% } %>
+        </select>
 
-    기간: <input type="date" name="startDate" value="<%= startDate %>"> 
-         <input type="time" name="startTime" step="1" value="<%= startTime %>"> ~ 
-         <input type="date" name="endDate" value="<%= endDate %>">
-         <input type="time" name="endTime" step="1" value="<%= endTime %>">
+        기간: <input type="date" name="startDate" value="<%= startDate %>"> 
+            <input type="time" name="startTime" step="1" value="<%= startTime %>"> ~ 
+            <input type="date" name="endDate" value="<%= endDate %>">
+            <input type="time" name="endTime" step="1" value="<%= endTime %>">
 
-    <button type="submit">조회</button>
-</form>
+        <button type="submit">조회</button>
+    </form>
 
 <%
     List<String> labels = new ArrayList<>();
@@ -143,9 +145,9 @@ try (Connection conn = openDbConnection()) {
     List<String> harmonics = new ArrayList<>();
 
     try {
-        String sql = "SELECT meter_id, harmonic_id, measured_at, thd_current_a, thd_current_b, thd_current_c FROM vw_harmonic_measurements" +
-                    " WHERE measured_at BETWEEN '" + startDate + " " + startTime +  "' AND '" + endDate + " " + endTime + "'";        
-
+        String sql = "SELECT meter_id, harmonic_id, measured_at, thd_voltage_a, thd_voltage_b, thd_voltage_c FROM vw_harmonic_measurements" +
+                    " WHERE measured_at BETWEEN '" + startDate + " " + startTime +  "' AND '" + endDate + " " + endTime + "'";
+    
         if (building != null && !building.isEmpty()) sql += " AND building_name = '" + building + "'";
         if (usage != null && !usage.isEmpty()) sql += " AND usage_type = '" + usage + "'";
         if (meter != null && !meter.isEmpty()) sql += " AND meter_id = '" + meter + "'";
@@ -156,20 +158,19 @@ try (Connection conn = openDbConnection()) {
         //out.println(sql);
 
         ResultSet rs = ps.executeQuery();
+
         while (rs.next()) {
             if (startDate.equals(endDate) ) {
                 labels.add(rs.getTimestamp("measured_at").toString().substring(11,16));
             }else {
                 labels.add(rs.getTimestamp("measured_at").toString().substring(0,16));
             }
-
-            thdA.add(rs.getFloat("thd_current_a"));
-            thdB.add(rs.getFloat("thd_current_b"));
-            thdC.add(rs.getFloat("thd_current_c"));
+            thdA.add(rs.getFloat("thd_voltage_a"));
+            thdB.add(rs.getFloat("thd_voltage_b"));
+            thdC.add(rs.getFloat("thd_voltage_c"));
 
             meters.add(rs.getString("meter_id"));
             harmonics.add(rs.getString("harmonic_id"));
-
         }
     } catch (Exception e) { 
         if(startDate != null) out.println("DB 오류: " + e.getMessage()); 
@@ -183,13 +184,11 @@ try (Connection conn = openDbConnection()) {
     String jsonMeters = mapper.writeValueAsString(meters);
     String jsonHarmonics = mapper.writeValueAsString(harmonics);
     boolean noData = labels.isEmpty();
-
+    
 %>
-
 <% if (noData) { %>
 <div class="no-data-banner">데이터가 없습니다</div>
 <% } %>
-
 <div class="chart-container">
   <!-- ECharts??canvas ???div -->
   <div id="thdChart" style="width:100%; height:100%;"></div>
@@ -253,7 +252,7 @@ const thdBPlot = pickByIndex(thdB, sampleIdx);
 const thdCPlot = pickByIndex(thdC, sampleIdx);
 const meterIdsPlot = pickByIndex(meterIds, sampleIdx);
 const harmonicIdsPlot = pickByIndex(harmonicIds, sampleIdx);
-const limit20 = Array(labelsPlot.length).fill(20);
+const limit5 = Array(labelsPlot.length).fill(5);
 
 const chartDom = document.getElementById('thdChart');
 const myChart = echarts.init(chartDom);
@@ -275,7 +274,7 @@ function createLargeAreaSeries(name, data, color){
 const option = {
   tooltip: {
     trigger: 'axis',
-    valueFormatter: v => v + ' %'
+    valueFormatter: value => value + ' %'
   },
   legend: { top: 0 },
   grid: { left: 50, right: 20, top: 40, bottom: 80, containLabel: true },
@@ -286,22 +285,28 @@ const option = {
   yAxis: {
     type: 'value',
     scale: true,
-    axisLabel: { formatter: '{value} %' }
+    axisLabel: {
+      formatter: '{value} %'
+    }
   },
   dataZoom: [
     { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
     { type: 'slider', xAxisIndex: 0, filterMode: 'none', height: 24, bottom: 16 }
   ],
   series: [
-    createLargeAreaSeries('THD_i A', thdAPlot, 'orange'),
-    createLargeAreaSeries('THD_i B', thdBPlot, 'purple'),
-    createLargeAreaSeries('THD_i C', thdCPlot, 'gray'),
+    createLargeAreaSeries('THD_v A', thdAPlot, 'orange'),
+    createLargeAreaSeries('THD_v B', thdBPlot, 'purple'),
+    createLargeAreaSeries('THD_v C', thdCPlot, 'gray'),
     {
-      name: '기준값 20%',
+      name: '기준값 5%',
       type: 'line',
-      data: limit20,
+      data: limit5,
       showSymbol: false,
-      lineStyle: { color: 'red', type: 'dashed', width: 1 }
+      lineStyle: {
+        color: 'red',
+        type: 'dashed',
+        width: 1
+      }
     }
   ]
 };
@@ -322,7 +327,7 @@ myChart.on('click', function (params) {
         + "&meter=" + encodeURIComponent(meter)
         + "&meter_id=" + encodeURIComponent(meterId)
         + "&harmonic_id=" + encodeURIComponent(harmonicId)
-        + "&mode=current";
+        + "&mode=voltage";
 
   window.location.href = url;
 });
@@ -337,6 +342,7 @@ window.addEventListener('resize', () => myChart.resize());
 %>
 </body>
 </html>
+
 
 
 
