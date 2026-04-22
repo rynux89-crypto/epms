@@ -585,6 +585,7 @@ try (Connection conn = openDbConnection()) {
     <h2>📊 에너지 상세분석</h2>
     <div style="display:flex; gap:8px; align-items:center;">
         <button class="back-btn" onclick="location.href='/epms/energy_overview.jsp'">에너지 현황</button>
+        <button class="back-btn" onclick="location.href='/epms/carbon_emissions.jsp'">탄소배출량</button>
         <button class="back-btn" onclick="location.href='/epms/energy_sankey.jsp' + location.search">에너지 흐름 분석</button>
         <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
     </div>

@@ -501,6 +501,7 @@
     <h2>🔀 에너지 흐름 분석</h2>
     <div class="inline-actions">
         <button class="back-btn" onclick="location.href='/epms/energy_manage.jsp<%= request.getQueryString()==null?"":"?"+request.getQueryString() %>'">에너지 관리</button>
+        <button class="back-btn" onclick="location.href='/epms/carbon_emissions.jsp'">탄소배출량</button>
         <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
     </div>
 </div>

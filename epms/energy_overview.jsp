@@ -209,6 +209,7 @@ try (Connection conn = openDbConnection()) {
     <label style="font-size:12px;color:#334155;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="autoRefreshOn"> 자동갱신</label>
     <select id="autoRefreshSec" style="font-size:12px;padding:4px 6px;"><option value="30">30초</option><option value="60" selected>60초</option></select>
     <button class="back-btn" onclick="location.href='/epms/energy_manage.jsp'">상세 분석</button>
+    <button class="back-btn" onclick="location.href='/epms/carbon_emissions.jsp'">탄소배출량</button>
     <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
   </div>
 </div>

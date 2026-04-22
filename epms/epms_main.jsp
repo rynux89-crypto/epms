@@ -74,7 +74,7 @@
 <div class="page-head">
     <div>
         <h1>EPMS 전력 관리 시스템</h1>
-        <p>모니터링, 에너지 분석, 원격검침 운영, 매장 정산, peak 관리, 알람, PLC 운영 화면을 공통 대시보드 스타일로 제공합니다.</p>
+        <p>모니터링, 에너지 분석, 원격검침 운영, peak 관리, 알람, PLC 운영 화면을 공통 대시보드 스타일로 제공합니다.</p>
     </div>
     <div class="meta-info" style="width:auto;">Version <%= APP_VERSION %></div>
 </div>
@@ -213,6 +213,13 @@
                 </a>
             </div>
             <div class="app-card">
+                <a href="carbon_emissions.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 18h8"/><path d="M8 14c0-3 2-5 5-5 2.8 0 5 2.2 5 5 0 2.2-1.4 3.6-3.4 4.3"/><path d="M8 14c0 2.2 1.4 3.6 3.4 4.3"/><path d="M5 8c1.2-1.7 3.1-3 5.3-3"/></svg></span><h3>건물 탄소배출량 조회</h3></div>
+                    <p>건물 단위 전력사용량을 기준으로 CO2 배출량을 계산하고 배출계수를 관리합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
                 <a href="energy_sankey.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 7h8a4 4 0 1 1 0 8H6"/><path d="M14 7l3-3"/><path d="M14 7l3 3"/><path d="M10 15l-3-3"/><path d="M10 15l-3 3"/></svg></span><h3>에너지 흐름 분석</h3></div>
                     <p>트리 구조 기준으로 에너지 흐름을 추적합니다.</p>
@@ -233,7 +240,7 @@
         <div class="section-header">
             <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M13 2L6 13h5l-1 9 8-12h-5l0-8z"/></svg></span>Remote Metering</div>
             <h2>원격검침 운영</h2>
-            <p>매장 마스터, 계측기 귀속, 원격검침 조회와 매핑 현황을 운영합니다.</p>
+            <p>매장 마스터, 계측기 귀속, 원격검침 조회, 매핑 현황과 매장 정산 흐름을 함께 운영합니다.</p>
         </div>
         <div class="section-links">
             <div class="app-card">
@@ -257,16 +264,6 @@
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
-        </div>
-    </div>
-
-    <div class="section billing">
-        <div class="section-header">
-            <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></span>Tenant Billing</div>
-            <h2>매장 정산</h2>
-            <p>요금제, 계약, 스냅샷 생성, 월 청구 흐름을 원격검침 운영과 분리해 관리합니다.</p>
-        </div>
-        <div class="section-links">
             <div class="app-card">
                 <a href="tenant_billing_manage.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></span><h3>매장 전력 정산</h3></div>

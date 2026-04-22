@@ -67,6 +67,11 @@
     <servlet-class>epms.peak.PeakManagementServlet</servlet-class>
   </servlet>
 
+  <servlet>
+    <servlet-name>CarbonEmissionManageServlet</servlet-name>
+    <servlet-class>epms.carbon.CarbonEmissionManageServlet</servlet-class>
+  </servlet>
+
   <servlet-mapping>
     <servlet-name>AlarmApiServlet</servlet-name>
     <url-pattern>/api/alarm</url-pattern>
@@ -105,6 +110,11 @@
   <servlet-mapping>
     <servlet-name>PeakManagementServlet</servlet-name>
     <url-pattern>/peak-management-action</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>CarbonEmissionManageServlet</servlet-name>
+    <url-pattern>/carbon-emission-action</url-pattern>
   </servlet-mapping>
 
 </web-app>
