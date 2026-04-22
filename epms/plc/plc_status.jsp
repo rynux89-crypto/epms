@@ -95,8 +95,8 @@
         PLC 선택 없이 각 행에서 개별 제어합니다.<br/>
         사용 여부는 PLC 설정 활성화 상태이고, 실제 통신 상태는 운영상태 컬럼에서 확인합니다.<br/>
         DI/AI 읽기 횟수는 현재 상태가 아니라 서버 시작 후 누적 읽기 횟수입니다.<br/>
-        시작: 서버 백그라운드에서 자동 읽기 주기(ms) 기준으로 연속 읽기(화면 닫힘 후에도 지속), 중지: 해당 PLC 연속 읽기 중단<br/>
-        이 화면은 상태만 조회하며 PLC 연속 읽기를 자동 시작하지 않습니다. AI 읽기 주기는 각 PLC의 자동 읽기 주기(ms)와 동일합니다.
+        시작: 서버 백그라운드에서 자동 읽기 주기(sec) 기준으로 연속 읽기(화면 닫힘 후에도 지속), 중지: 해당 PLC 연속 읽기 중단<br/>
+        이 화면은 상태만 조회하며 PLC 연속 읽기를 자동 시작하지 않습니다. AI 읽기 주기는 각 PLC의 자동 읽기 주기(sec)와 동일합니다.
     </div>
 
     <div id="okBox" class="ok-box" style="display:none;"></div>
@@ -111,7 +111,7 @@
             <th>PLC IP</th>
             <th>포트</th>
             <th>Unit ID</th>
-            <th>자동 읽기 주기(ms)</th>
+            <th>자동 읽기 주기(sec)</th>
             <th>사용 여부</th>
             <th class="ctrl-col">제어</th>
             <th>운영상태</th>
@@ -134,7 +134,7 @@
                 <td class="mono"><%= p.get("plc_ip") %></td>
                 <td><%= p.get("plc_port") %></td>
                 <td><%= p.get("unit_id") %></td>
-                <td><%= p.get("polling_ms") %></td>
+                <td><%= Math.max(1, (int)Math.round(((Number)p.get("polling_ms")).doubleValue() / 1000.0d)) %></td>
                 <td>
                     <% if (enabled) { %><span class="badge b-on">사용</span><% } else { %><span class="badge b-off">미사용</span><% } %>
                 </td>
