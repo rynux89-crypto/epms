@@ -14,8 +14,14 @@ DECLARE @jobName sysname = N'EPMS Daily Full Backup';
 DECLARE @scriptPath nvarchar(4000) = N'C:\Tomcat 9.0\webapps\ROOT\scripts\backup_epms_daily.ps1';
 DECLARE @dbServer nvarchar(4000) = N'localhost,1433';
 DECLARE @dbName nvarchar(4000) = N'EPMS';
-DECLARE @dbUser nvarchar(4000) = N'sa';
-DECLARE @dbPassword nvarchar(4000) = N'1234';
+DECLARE @dbUser nvarchar(4000) = N'';
+DECLARE @dbPassword nvarchar(4000) = N'';
+
+IF NULLIF(LTRIM(RTRIM(@dbUser)), N'') IS NULL
+   OR NULLIF(LTRIM(RTRIM(@dbPassword)), N'') IS NULL
+BEGIN
+    THROW 51000, 'Set @dbUser and @dbPassword before creating the backup job.', 1;
+END;
 DECLARE @backupDir nvarchar(4000) = N'C:\backup';
 DECLARE @retainDays int = 7;
 DECLARE @startTime int = 020000;

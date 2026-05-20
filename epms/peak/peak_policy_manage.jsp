@@ -184,12 +184,11 @@ List<String> policyNameExamples = Arrays.asList(
 <div class="page-wrap">
     <div class="page-head">
         <div>
-            <h1>Peak Policy Management</h1>
+            <h1>Peak 정책 관리</h1>
             <p>&#44592;&#48376; &#51221;&#52293;&#51012; &#47700;&#51060;&#51200;&#47196; &#44288;&#47532;&#54616;&#44256;, &#44033; &#51221;&#52293;&#51060; &#51201;&#50857;&#46112; &#47588;&#51109;&#51012; &#49440;&#53469;&#54633;&#45768;&#45796;.</p>
         </div>
         <div class="top-links">
             <a class="btn" href="<%= h(peakDashboardHref) %>">Peak Dashboard</a>
-            <a class="btn" href="tenant_meter_store_tiles.jsp">&#50896;&#44201;&#44160;&#52840; &#50868;&#50689;</a>
             <a class="btn" href="../epms_main.jsp">EPMS Home</a>
         </div>
     </div>

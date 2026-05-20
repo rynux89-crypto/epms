@@ -5,6 +5,7 @@
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_html.jspf" %>
 <%@ include file="../../includes/epms_parse.jspf" %>
+<%@ include file="../../includes/epms_admin_guard.jspf" %>
 <%!
     private static boolean tableExists(Connection conn, String tableName) throws SQLException {
         DatabaseMetaData meta = conn.getMetaData();

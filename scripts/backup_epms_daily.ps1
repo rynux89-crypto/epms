@@ -109,7 +109,10 @@ $script:LogPath = Join-Path $logDir 'db_backup.log'
 $script:DbServer = Resolve-Value -Explicit $Server -EnvNames @('EPMS_DB_SERVER','EPMS_IMPORT_DB_SERVER') -ConfigValue $config['database.server'] -Default 'localhost,1433'
 $script:DbName = Resolve-Value -Explicit $Database -EnvNames @('EPMS_DB_NAME','EPMS_IMPORT_DB_NAME') -ConfigValue $config['database.name'] -Default 'EPMS'
 $script:DbUser = Resolve-Value -Explicit $User -EnvNames @('EPMS_DB_USER','EPMS_IMPORT_DB_USER') -ConfigValue $config['database.user'] -Default 'sa'
-$script:DbPassword = Resolve-Value -Explicit $Password -EnvNames @('EPMS_DB_PASSWORD','EPMS_IMPORT_DB_PASSWORD') -ConfigValue $config['database.password'] -Default '1234'
+$script:DbPassword = Resolve-Value -Explicit $Password -EnvNames @('EPMS_DB_PASSWORD','EPMS_IMPORT_DB_PASSWORD') -ConfigValue $config['database.password'] -Default ''
+if ([string]::IsNullOrWhiteSpace($script:DbPassword)) {
+    throw 'Database password is required. Set -Password or EPMS_DB_PASSWORD.'
+}
 $BackupDir = Resolve-Value -Explicit $BackupDir -EnvNames @('EPMS_BACKUP_DIR') -ConfigValue $config['backup.dir'] -Default 'C:\backup'
 
 $retainValue = if ($PSBoundParameters.ContainsKey('RetainDays')) {

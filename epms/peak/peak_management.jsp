@@ -135,14 +135,11 @@ for (PeakPolicyStatusRow row : repeatedExceededRows) {
 <div class="page-wrap">
     <div class="page-head">
         <div>
-            <h1>Peak 관리</h1>
+            <h1>Peak Dash Board</h1>
             <p>최근 30일 기준으로 `순간 최대 kW`와 `15분 수요전력 peak`를 함께 보여주어 peak 운영 대상을 빠르게 판단합니다.</p>
         </div>
         <div class="top-links">
-            <a class="btn" href="peak_policy_manage.jsp">Peak 정책</a>
-            <a class="btn" href="tenant_meter_store_tiles.jsp">원격검침 운영</a>
-            <a class="btn" href="tenant_billing_manage.jsp">매장 정산</a>
-            <a class="btn" href="energy_manage.jsp">에너지 분석</a>
+            <a class="btn" href="peak_policy_manage.jsp">Peak 정책 관리</a>
             <a class="btn" href="../epms_main.jsp">EPMS 홈</a>
         </div>
     </div>

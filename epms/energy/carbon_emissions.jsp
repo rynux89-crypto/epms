@@ -37,12 +37,42 @@
     private static String fmtDateTime(Timestamp ts) {
         return ts == null ? "-" : ts.toString();
     }
+
+    private static String normalizeFactorCode(String value) {
+        String code = trimToEmpty(value).toUpperCase(java.util.Locale.US).replaceAll("[^A-Z0-9_\\-]", "_");
+        return code.isEmpty() ? DEFAULT_FACTOR_CODE : code;
+    }
+
+    private static String generateFactorCode() {
+        return "FACTOR_" + LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"));
+    }
+
+    private static final class FactorOption {
+        final String code;
+        final String name;
+        final double value;
+        final String source;
+        final String note;
+        final Timestamp updatedAt;
+
+        FactorOption(String code, String name, double value, String source, String note, Timestamp updatedAt) {
+            this.code = code;
+            this.name = name;
+            this.value = value;
+            this.source = source;
+            this.note = note;
+            this.updatedAt = updatedAt;
+        }
+    }
 %>
 <%
 request.setCharacterEncoding("UTF-8");
 
 String building = trimToEmpty(request.getParameter("building"));
+String selectedFactorCode = normalizeFactorCode(request.getParameter("factor_code"));
 String action = trimToEmpty(request.getParameter("action"));
+String factorCodeInput = trimToEmpty(request.getParameter("factor_code_input"));
+String factorNameInput = trimToEmpty(request.getParameter("factor_name"));
 String factorInput = trimToEmpty(request.getParameter("factor_value"));
 String factorSourceInput = trimToEmpty(request.getParameter("factor_source"));
 String factorNoteInput = trimToEmpty(request.getParameter("factor_note"));
@@ -65,6 +95,7 @@ int yearlyStartYear = currentYear - 4;
 LocalDate yearStart = LocalDate.of(today.getYear(), 1, 1);
 
 List<String> buildingOptions = new ArrayList<String>();
+List<FactorOption> factorOptions = new ArrayList<FactorOption>();
 LinkedHashMap<String, Double> dailyTotals = new LinkedHashMap<String, Double>();
 LinkedHashMap<String, Double> monthlyTotals = new LinkedHashMap<String, Double>();
 LinkedHashMap<Integer, Double> yearlyTotals = new LinkedHashMap<Integer, Double>();
@@ -93,6 +124,7 @@ String scopeCode = building.isEmpty() ? DEFAULT_SCOPE_ALL : building;
 String scopeLabel = building.isEmpty() ? "전체 건물" : building;
 
 try (Connection conn = openDbConnection()) {
+    if ("save_factor".equals(action)) {
     try (Statement st = conn.createStatement()) {
         st.setQueryTimeout(QUERY_TIMEOUT_SEC);
         st.execute(
@@ -100,13 +132,21 @@ try (Connection conn = openDbConnection()) {
             "BEGIN " +
             "  CREATE TABLE dbo.epms_carbon_factor ( " +
             "    factor_code varchar(50) NOT NULL PRIMARY KEY, " +
+            "    factor_name nvarchar(120) NULL, " +
             "    factor_value decimal(12,6) NOT NULL, " +
             "    factor_unit varchar(32) NOT NULL CONSTRAINT DF_epms_carbon_factor_unit DEFAULT ('kgCO2_per_kWh'), " +
             "    factor_source nvarchar(200) NULL, " +
             "    factor_note nvarchar(500) NULL, " +
+            "    is_active bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_active DEFAULT (1), " +
+            "    is_default bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_default DEFAULT (0), " +
+            "    created_at datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_created_at DEFAULT (sysdatetime()), " +
             "    updated_at datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_updated_at DEFAULT (sysdatetime()) " +
             "  ) " +
             "END");
+        st.execute("IF COL_LENGTH('dbo.epms_carbon_factor', 'factor_name') IS NULL ALTER TABLE dbo.epms_carbon_factor ADD factor_name nvarchar(120) NULL");
+        st.execute("IF COL_LENGTH('dbo.epms_carbon_factor', 'is_active') IS NULL ALTER TABLE dbo.epms_carbon_factor ADD is_active bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_active DEFAULT (1)");
+        st.execute("IF COL_LENGTH('dbo.epms_carbon_factor', 'is_default') IS NULL ALTER TABLE dbo.epms_carbon_factor ADD is_default bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_default DEFAULT (0)");
+        st.execute("IF COL_LENGTH('dbo.epms_carbon_factor', 'created_at') IS NULL ALTER TABLE dbo.epms_carbon_factor ADD created_at datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_created_at DEFAULT (sysdatetime())");
         st.execute(
             "IF OBJECT_ID('dbo.epms_building_carbon_daily', 'U') IS NULL " +
             "BEGIN " +
@@ -114,6 +154,7 @@ try (Connection conn = openDbConnection()) {
             "    scope_code varchar(120) NOT NULL, " +
             "    building_name nvarchar(200) NULL, " +
             "    emission_date date NOT NULL, " +
+            "    factor_code varchar(50) NULL, " +
             "    usage_kwh decimal(18,6) NOT NULL, " +
             "    emission_factor decimal(12,6) NOT NULL, " +
             "    co2_kg decimal(18,6) NOT NULL, " +
@@ -123,58 +164,130 @@ try (Connection conn = openDbConnection()) {
             "    CONSTRAINT PK_epms_building_carbon_daily PRIMARY KEY (scope_code, emission_date) " +
             "  ) " +
             "END");
+        st.execute("IF COL_LENGTH('dbo.epms_building_carbon_daily', 'factor_code') IS NULL ALTER TABLE dbo.epms_building_carbon_daily ADD factor_code varchar(50) NULL");
+        st.execute(
+            "IF OBJECT_ID('dbo.epms_carbon_factor_history', 'U') IS NULL " +
+            "BEGIN " +
+            "  CREATE TABLE dbo.epms_carbon_factor_history ( " +
+            "    history_id bigint IDENTITY(1,1) NOT NULL PRIMARY KEY, " +
+            "    factor_code varchar(50) NOT NULL, " +
+            "    factor_name nvarchar(120) NULL, " +
+            "    factor_value decimal(12,6) NOT NULL, " +
+            "    factor_unit varchar(32) NOT NULL, " +
+            "    factor_source nvarchar(200) NULL, " +
+            "    factor_note nvarchar(500) NULL, " +
+            "    change_action varchar(20) NOT NULL, " +
+            "    changed_at datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_history_changed_at DEFAULT (sysdatetime()) " +
+            "  ) " +
+            "END");
+    }
     }
 
     if ("save_factor".equals(action)) {
         Double parsedFactor = parsePositiveDouble(factorInput);
+        String actualFactorCode = factorCodeInput.isEmpty() ? generateFactorCode() : normalizeFactorCode(factorCodeInput);
+        String actualFactorName = factorNameInput.isEmpty() ? actualFactorCode : factorNameInput;
         if (parsedFactor == null) {
             flashErr = "배출계수는 0보다 큰 숫자로 입력해 주세요.";
         } else {
             String actualSource = factorSourceInput.isEmpty() ? DEFAULT_FACTOR_SOURCE : factorSourceInput;
             String actualNote = factorNoteInput.isEmpty() ? DEFAULT_FACTOR_NOTE : factorNoteInput;
+            boolean existed = false;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT 1 FROM dbo.epms_carbon_factor WHERE factor_code = ?")) {
+                ps.setString(1, actualFactorCode);
+                try (ResultSet rs = ps.executeQuery()) {
+                    existed = rs.next();
+                }
+            }
             try (PreparedStatement ps = conn.prepareStatement(
                     "MERGE dbo.epms_carbon_factor AS target " +
                     "USING (SELECT ? AS factor_code) AS source " +
                     "ON target.factor_code = source.factor_code " +
                     "WHEN MATCHED THEN " +
-                    "  UPDATE SET factor_value = ?, factor_source = ?, factor_note = ?, updated_at = sysdatetime() " +
+                    "  UPDATE SET factor_name = ?, factor_value = ?, factor_source = ?, factor_note = ?, is_active = 1, updated_at = sysdatetime() " +
                     "WHEN NOT MATCHED THEN " +
-                    "  INSERT (factor_code, factor_value, factor_unit, factor_source, factor_note, updated_at) " +
-                    "  VALUES (?, ?, 'kgCO2_per_kWh', ?, ?, sysdatetime());")) {
-                ps.setString(1, DEFAULT_FACTOR_CODE);
-                ps.setBigDecimal(2, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", parsedFactor.doubleValue())));
-                ps.setString(3, actualSource);
-                ps.setString(4, actualNote);
-                ps.setString(5, DEFAULT_FACTOR_CODE);
-                ps.setBigDecimal(6, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", parsedFactor.doubleValue())));
-                ps.setString(7, actualSource);
-                ps.setString(8, actualNote);
+                    "  INSERT (factor_code, factor_name, factor_value, factor_unit, factor_source, factor_note, is_active, is_default, created_at, updated_at) " +
+                    "  VALUES (?, ?, ?, 'kgCO2_per_kWh', ?, ?, 1, 0, sysdatetime(), sysdatetime());")) {
+                ps.setString(1, actualFactorCode);
+                ps.setString(2, actualFactorName);
+                ps.setBigDecimal(3, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", parsedFactor.doubleValue())));
+                ps.setString(4, actualSource);
+                ps.setString(5, actualNote);
+                ps.setString(6, actualFactorCode);
+                ps.setString(7, actualFactorName);
+                ps.setBigDecimal(8, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", parsedFactor.doubleValue())));
+                ps.setString(9, actualSource);
+                ps.setString(10, actualNote);
                 ps.executeUpdate();
-                flashOk = "배출계수를 저장했습니다.";
             }
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "INSERT INTO dbo.epms_carbon_factor_history " +
+                    "(factor_code, factor_name, factor_value, factor_unit, factor_source, factor_note, change_action) " +
+                    "VALUES (?, ?, ?, 'kgCO2_per_kWh', ?, ?, ?)")) {
+                ps.setString(1, actualFactorCode);
+                ps.setString(2, actualFactorName);
+                ps.setBigDecimal(3, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", parsedFactor.doubleValue())));
+                ps.setString(4, actualSource);
+                ps.setString(5, actualNote);
+                ps.setString(6, existed ? "UPDATE" : "CREATE");
+                ps.executeUpdate();
+            }
+            selectedFactorCode = actualFactorCode;
+            flashOk = existed ? "배출계수를 수정하고 이력을 저장했습니다." : "배출계수를 추가하고 이력을 저장했습니다.";
         }
     }
 
-    try (PreparedStatement ps = conn.prepareStatement(
-            "IF NOT EXISTS (SELECT 1 FROM dbo.epms_carbon_factor WHERE factor_code = ?) " +
-            "BEGIN " +
-            "  INSERT INTO dbo.epms_carbon_factor (factor_code, factor_value, factor_unit, factor_source, factor_note) " +
-            "  VALUES (?, ?, 'kgCO2_per_kWh', ?, ?) " +
-            "END")) {
-        ps.setString(1, DEFAULT_FACTOR_CODE);
-        ps.setString(2, DEFAULT_FACTOR_CODE);
-        ps.setBigDecimal(3, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", DEFAULT_FACTOR_VALUE)));
-        ps.setString(4, DEFAULT_FACTOR_SOURCE);
-        ps.setString(5, DEFAULT_FACTOR_NOTE);
-        ps.executeUpdate();
+    boolean factorTableExists = false;
+    boolean carbonDailyTableExists = false;
+    try (Statement st = conn.createStatement()) {
+        st.setQueryTimeout(QUERY_TIMEOUT_SEC);
+        try (ResultSet rs = st.executeQuery("SELECT CASE WHEN OBJECT_ID('dbo.epms_carbon_factor', 'U') IS NULL THEN 0 ELSE 1 END")) {
+            if (rs.next()) factorTableExists = rs.getInt(1) == 1;
+        }
+        try (ResultSet rs = st.executeQuery("SELECT CASE WHEN OBJECT_ID('dbo.epms_building_carbon_daily', 'U') IS NULL THEN 0 ELSE 1 END")) {
+            if (rs.next()) carbonDailyTableExists = rs.getInt(1) == 1;
+        }
     }
 
+    if (factorTableExists) {
     try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT factor_value, factor_source, factor_note, updated_at " +
-            "FROM dbo.epms_carbon_factor WHERE factor_code = ?")) {
-        ps.setString(1, DEFAULT_FACTOR_CODE);
+            "SELECT factor_code, ISNULL(factor_name, factor_code) AS factor_name, factor_value, factor_source, factor_note, updated_at " +
+            "FROM dbo.epms_carbon_factor WHERE ISNULL(is_active, 1) = 1 ORDER BY is_default DESC, factor_code")) {
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                factorOptions.add(new FactorOption(
+                    rs.getString("factor_code"),
+                    rs.getString("factor_name"),
+                    rs.getBigDecimal("factor_value").doubleValue(),
+                    trimToEmpty(rs.getString("factor_source")),
+                    trimToEmpty(rs.getString("factor_note")),
+                    rs.getTimestamp("updated_at")));
+            }
+        }
+    }
+    }
+
+    if (factorOptions.isEmpty()) {
+        factorOptions.add(new FactorOption(DEFAULT_FACTOR_CODE, "Default electricity factor", DEFAULT_FACTOR_VALUE, DEFAULT_FACTOR_SOURCE, DEFAULT_FACTOR_NOTE, null));
+    }
+    boolean selectedFactorExists = false;
+    for (FactorOption opt : factorOptions) {
+        if (opt.code.equals(selectedFactorCode)) {
+            selectedFactorExists = true;
+            break;
+        }
+    }
+    if (!selectedFactorExists) selectedFactorCode = DEFAULT_FACTOR_CODE;
+
+    if (factorTableExists) {
+    try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT factor_code, factor_value, factor_source, factor_note, updated_at " +
+            "FROM dbo.epms_carbon_factor WHERE factor_code = ? AND ISNULL(is_active, 1) = 1")) {
+        ps.setString(1, selectedFactorCode);
         try (ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
+                selectedFactorCode = rs.getString("factor_code");
                 appliedFactor = rs.getBigDecimal("factor_value").doubleValue();
                 appliedFactorSource = trimToEmpty(rs.getString("factor_source"));
                 if (appliedFactorSource.isEmpty()) appliedFactorSource = DEFAULT_FACTOR_SOURCE;
@@ -183,6 +296,7 @@ try (Connection conn = openDbConnection()) {
                 factorUpdatedAt = rs.getTimestamp("updated_at");
             }
         }
+    }
     }
 
     try (PreparedStatement ps = conn.prepareStatement(
@@ -194,88 +308,7 @@ try (Connection conn = openDbConnection()) {
         while (rs.next()) buildingOptions.add(rs.getString(1));
     }
 
-    try (Statement st = conn.createStatement()) {
-        st.setQueryTimeout(QUERY_TIMEOUT_SEC);
-        st.execute("IF OBJECT_ID('tempdb..#carbon_day_diff') IS NOT NULL DROP TABLE #carbon_day_diff");
-        st.execute("CREATE TABLE #carbon_day_diff (meter_id INT NOT NULL, d DATE NOT NULL, day_kwh FLOAT NULL)");
-    }
-
-    LinkedHashMap<LocalDate, Double> computedDailyUsage = new LinkedHashMap<LocalDate, Double>();
-    for (LocalDate d = LocalDate.of(yearlyStartYear, 1, 1); !d.isAfter(today); d = d.plusDays(1)) {
-        computedDailyUsage.put(d, Double.valueOf(0.0d));
-    }
-
-    String populateSql =
-        "WITH day_diff AS ( " +
-        "  SELECT dm.meter_id, dm.measured_date AS d, CAST(dm.energy_consumed_kwh AS float) AS day_kwh " +
-        "  FROM dbo.daily_measurements dm " +
-        "  INNER JOIN dbo.meters m ON m.meter_id = dm.meter_id " +
-        "  WHERE dm.measured_date BETWEEN ? AND ? " +
-        "    AND (? = '' OR ISNULL(m.building_name, '') = ?) " +
-        "    AND dm.energy_consumed_kwh IS NOT NULL " +
-        ") " +
-        "INSERT INTO #carbon_day_diff (meter_id, d, day_kwh) " +
-        "SELECT meter_id, d, day_kwh FROM day_diff";
-
-    try (PreparedStatement ps = conn.prepareStatement(populateSql)) {
-        ps.setQueryTimeout(QUERY_TIMEOUT_SEC);
-        ps.setDate(1, java.sql.Date.valueOf(LocalDate.of(yearlyStartYear, 1, 1)));
-        ps.setDate(2, java.sql.Date.valueOf(today));
-        ps.setString(3, building);
-        ps.setString(4, building);
-        ps.executeUpdate();
-    }
-
-    try (Statement st = conn.createStatement()) {
-        st.setQueryTimeout(QUERY_TIMEOUT_SEC);
-        st.execute("CREATE CLUSTERED INDEX IX_carbon_day_diff_d_meter ON #carbon_day_diff (d, meter_id)");
-    }
-
-    try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT d, SUM(CASE WHEN day_kwh >= 0 THEN day_kwh ELSE 0 END) AS sum_kwh " +
-            "FROM #carbon_day_diff WHERE d BETWEEN ? AND ? GROUP BY d ORDER BY d")) {
-        ps.setQueryTimeout(QUERY_TIMEOUT_SEC);
-        ps.setDate(1, java.sql.Date.valueOf(dailyStart));
-        ps.setDate(2, java.sql.Date.valueOf(today));
-        try (ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                java.sql.Date dObj = rs.getDate("d");
-                if (dObj == null) continue;
-                LocalDate keyDate = dObj.toLocalDate();
-                if (computedDailyUsage.containsKey(keyDate)) computedDailyUsage.put(keyDate, Double.valueOf(rs.getDouble("sum_kwh")));
-            }
-        }
-    }
-
-    Timestamp calculatedAt = new Timestamp(System.currentTimeMillis());
-    try (PreparedStatement deletePs = conn.prepareStatement(
-            "DELETE FROM dbo.epms_building_carbon_daily WHERE scope_code = ? AND emission_date BETWEEN ? AND ?");
-         PreparedStatement insertPs = conn.prepareStatement(
-            "INSERT INTO dbo.epms_building_carbon_daily " +
-            "(scope_code, building_name, emission_date, usage_kwh, emission_factor, co2_kg, factor_source, factor_note, calculated_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
-        deletePs.setString(1, scopeCode);
-        deletePs.setDate(2, java.sql.Date.valueOf(LocalDate.of(yearlyStartYear, 1, 1)));
-        deletePs.setDate(3, java.sql.Date.valueOf(today));
-        deletePs.executeUpdate();
-
-        for (Map.Entry<LocalDate, Double> entry : computedDailyUsage.entrySet()) {
-            double usageKwh = nz(entry.getValue());
-            insertPs.setString(1, scopeCode);
-            if (building.isEmpty()) insertPs.setNull(2, Types.NVARCHAR); else insertPs.setString(2, building);
-            insertPs.setDate(3, java.sql.Date.valueOf(entry.getKey()));
-            insertPs.setBigDecimal(4, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", usageKwh)));
-            insertPs.setBigDecimal(5, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", appliedFactor)));
-            insertPs.setBigDecimal(6, new java.math.BigDecimal(String.format(java.util.Locale.US, "%.6f", usageKwh * appliedFactor)));
-            insertPs.setString(7, appliedFactorSource);
-            insertPs.setString(8, appliedFactorNote);
-            insertPs.setTimestamp(9, calculatedAt);
-            insertPs.addBatch();
-        }
-        insertPs.executeBatch();
-    }
-    lastCalculatedAt = calculatedAt;
-
+    if (carbonDailyTableExists) {
     try (PreparedStatement ps = conn.prepareStatement(
             "SELECT emission_date, usage_kwh, co2_kg " +
             "FROM dbo.epms_building_carbon_daily " +
@@ -292,6 +325,16 @@ try (Connection conn = openDbConnection()) {
                 if (dailyTotals.containsKey(key)) dailyTotals.put(key, Double.valueOf(rs.getDouble("co2_kg") / 1000.0d));
                 if (dailyUsageTotals.containsKey(key)) dailyUsageTotals.put(key, Double.valueOf(rs.getDouble("usage_kwh")));
             }
+        }
+    }
+
+    try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT MAX(calculated_at) AS last_calculated_at " +
+            "FROM dbo.epms_building_carbon_daily WHERE scope_code = ?")) {
+        ps.setQueryTimeout(QUERY_TIMEOUT_SEC);
+        ps.setString(1, scopeCode);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) lastCalculatedAt = rs.getTimestamp("last_calculated_at");
         }
     }
 
@@ -369,6 +412,7 @@ try (Connection conn = openDbConnection()) {
             }
         }
     }
+    }
 } catch (Exception e) {
     queryError = e.getMessage();
 }
@@ -394,12 +438,21 @@ try (Connection conn = openDbConnection()) {
         .notice{padding:10px 12px;border-radius:10px;font-weight:700}
         .ok{background:#ecfdf3;border:1px solid #b7ebc6;color:#166534}
         .err{background:#fff1f1;border:1px solid #fecaca;color:#b42318}
-        .toolbar{display:grid;grid-template-columns:1.2fr 1.1fr;gap:12px}
+        .toolbar{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
         .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+        .filter-form{display:grid;grid-template-columns:minmax(160px,1fr) minmax(220px,1.4fr) auto;gap:8px;align-items:end}
+        .factor-form{display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(130px,.7fr) minmax(180px,1.1fr) auto;gap:8px;align-items:end}
         .field{display:grid;gap:4px}
         .field label{font-size:11px;color:var(--muted);font-weight:700}
         .field input,.field select{width:100%;min-width:0}
+        .toolbar .field input,.toolbar .field select,.toolbar .btn{height:36px;box-sizing:border-box}
+        .toolbar .field input,.toolbar .field select{padding:0 10px;line-height:34px}
+        .toolbar .btn{display:inline-flex;align-items:center;justify-content:center;padding:0 14px;line-height:1}
         .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+        .inline-action{align-self:end;white-space:nowrap}
+        .selected-summary{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:11px;color:#1f3347;font-weight:700}
+        .selected-summary span{display:inline-flex;align-items:center;min-height:24px;padding:4px 8px;border:1px solid #dbe5ef;border-radius:999px;background:#f8fbfd}
+        .form-note{grid-column:1 / -1;margin-top:-2px}
         .kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
         .kpi-card{padding:10px;border:1px solid #d9e2ec;border-radius:10px;background:linear-gradient(180deg,#fff 0%,#f8fbfd 100%)}
         .kpi-label{font-size:11px;color:#5b7188;font-weight:700}
@@ -412,7 +465,7 @@ try (Connection conn = openDbConnection()) {
         .chart-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
         .chart-panel{padding:8px;border:1px solid #d9dfe8;border-radius:8px;background:#fff}
         .chart-panel h3{margin:0 0 6px;color:#1f3347;font-size:14px}
-        .chart-box{height:250px}
+        .chart-box{height:310px}
         .hint{font-size:11px;color:#64748b;line-height:1.35}
         .page-footer{margin-top:10px;text-align:center;color:#6d8298;font-size:11px}
         @media (min-width:1280px){
@@ -420,13 +473,13 @@ try (Connection conn = openDbConnection()) {
             .page-wrap{gap:8px}
             .toolbar{gap:10px}
             .kpi-grid,.meta-grid,.chart-grid{gap:8px}
-            .chart-box{height:210px}
+            .chart-box{height:260px}
             .hint{font-size:10px;line-height:1.3}
             .panel-box{padding:8px}
             .field-grid{gap:6px}
             .actions{gap:6px}
         }
-        @media (max-width:1180px){.toolbar,.chart-grid,.kpi-grid,.meta-grid,.field-grid{grid-template-columns:1fr}}
+        @media (max-width:1180px){.toolbar,.chart-grid,.kpi-grid,.meta-grid,.field-grid,.filter-form,.factor-form{grid-template-columns:1fr}.inline-action{width:100%}.inline-action .btn{width:100%}}
     </style>
 </head>
 <body>
@@ -450,7 +503,8 @@ try (Connection conn = openDbConnection()) {
     <div class="toolbar">
         <div class="panel-box">
             <h2>조회 조건</h2>
-            <form method="get" class="field-grid" id="scopeFilterForm">
+            <form method="post" action="<%= request.getContextPath() %>/carbon-emission-action" class="filter-form" id="scopeFilterForm">
+                <input type="hidden" name="action" id="scopeActionInput" value="<%= building.isEmpty() ? "recalc_all" : "recalc_scope" %>">
                 <div class="field">
                     <label>건물</label>
                     <select name="building" id="buildingSelect">
@@ -462,28 +516,28 @@ try (Connection conn = openDbConnection()) {
                 </div>
                 <div class="field">
                     <label>적용 배출계수</label>
-                    <input type="text" value="<%= fmtNumber(appliedFactor, 6) %> kgCO2/kWh" readonly>
+                    <select name="factor_code" id="factorSelect">
+                        <% for (FactorOption opt : factorOptions) { %>
+                        <option value="<%= h(opt.code) %>" <%= opt.code.equals(selectedFactorCode) ? "selected" : "" %>><%= h(opt.name) %> - <%= fmtNumber(opt.value, 6) %></option>
+                        <% } %>
+                    </select>
                 </div>
-                <div class="actions" style="grid-column:1 / -1;">
-                    <button type="submit" class="btn btn-primary">조회</button>
+                <div class="actions inline-action">
+                    <button type="submit" class="btn btn-primary">계산 후 조회</button>
                 </div>
             </form>
-            <form method="post" action="<%= request.getContextPath() %>/carbon-emission-action" class="actions" style="margin-top:10px;">
-                <input type="hidden" name="building" id="recalcBuildingInput" value="<%= h(building) %>">
-                <button type="submit" name="action" value="recalc_scope" class="btn btn-secondary">현재 범위 재집계</button>
-                <button type="submit" name="action" value="recalc_all" class="btn btn-secondary">전체 건물 재집계</button>
-            </form>
-            <div class="hint" style="margin-top:8px;font-weight:700;color:#1f3347;">
-                현재 선택 건물: <span id="selectedBuildingLabel"><%= h(building.isEmpty() ? "전체 건물" : building) %></span>
-            </div>
-            <div class="hint" style="margin-top:8px;">매일 00:10에 건물별 상위 계측기 기준으로 자동 집계되며, 필요하면 여기서 즉시 다시 계산할 수 있습니다.</div>
         </div>
 
         <div class="panel-box">
             <h2>배출계수 설정</h2>
-            <form method="post" class="field-grid">
+            <form method="post" class="factor-form">
                 <input type="hidden" name="action" value="save_factor">
+                <input type="hidden" name="factor_code" value="<%= h(selectedFactorCode) %>">
                 <input type="hidden" name="building" value="<%= h(building) %>">
+                <div class="field">
+                    <label>계수명</label>
+                    <input type="text" name="factor_name" value="" placeholder="예: 2026 전력 배출계수">
+                </div>
                 <div class="field">
                     <label>배출계수 (kgCO2/kWh)</label>
                     <input type="text" name="factor_value" value="<%= fmtNumber(appliedFactor, 6) %>">
@@ -492,9 +546,8 @@ try (Connection conn = openDbConnection()) {
                     <label>출처 / 기준</label>
                     <input type="text" name="factor_source" value="<%= h(appliedFactorSource) %>" placeholder="예: 내부 기준, 공시 기준, ESG 보고 기준">
                 </div>
-                <div class="actions" style="grid-column:1 / -1;">
+                <div class="actions inline-action">
                     <button type="submit" class="btn btn-primary">배출계수 저장</button>
-                    <span class="hint">초기값은 시스템 기본값입니다. 공식 대외보고 시에는 반드시 보고 기준에 맞는 계수로 변경해 주세요.</span>
                 </div>
             </form>
         </div>
@@ -575,7 +628,7 @@ const dailyCarbonValues = [<%
     first = true;
     for (Double value : dailyTotals.values()) {
         if (!first) out.print(",");
-        out.print(String.format(java.util.Locale.US, "%.6f", nz(value) * appliedFactor / 1000.0d));
+        out.print(String.format(java.util.Locale.US, "%.6f", nz(value)));
         first = false;
     }
 %>];
@@ -591,7 +644,7 @@ const monthlyCarbonValues = [<%
     first = true;
     for (Double value : monthlyTotals.values()) {
         if (!first) out.print(",");
-        out.print(String.format(java.util.Locale.US, "%.6f", nz(value) * appliedFactor / 1000.0d));
+        out.print(String.format(java.util.Locale.US, "%.6f", nz(value)));
         first = false;
     }
 %>];
@@ -607,7 +660,7 @@ const yearlyCarbonValues = [<%
     first = true;
     for (Double value : yearlyTotals.values()) {
         if (!first) out.print(",");
-        out.print(String.format(java.util.Locale.US, "%.6f", nz(value) * appliedFactor / 1000.0d));
+        out.print(String.format(java.util.Locale.US, "%.6f", nz(value)));
         first = false;
     }
 %>];
@@ -646,17 +699,16 @@ window.addEventListener('resize', function () {
 });
 
 var buildingSelect = document.getElementById('buildingSelect');
-var recalcBuildingInput = document.getElementById('recalcBuildingInput');
-var selectedBuildingLabel = document.getElementById('selectedBuildingLabel');
-if (buildingSelect && recalcBuildingInput) {
-  var syncRecalcBuilding = function () {
-    recalcBuildingInput.value = buildingSelect.value || '';
-    if (selectedBuildingLabel) {
-      selectedBuildingLabel.textContent = buildingSelect.value || '전체 건물';
+var factorSelect = document.getElementById('factorSelect');
+var scopeActionInput = document.getElementById('scopeActionInput');
+if (buildingSelect) {
+  var syncScopeSelection = function () {
+    if (scopeActionInput) {
+      scopeActionInput.value = buildingSelect.value ? 'recalc_scope' : 'recalc_all';
     }
   };
-  syncRecalcBuilding();
-  buildingSelect.addEventListener('change', syncRecalcBuilding);
+  syncScopeSelection();
+  buildingSelect.addEventListener('change', syncScopeSelection);
 }
 </script>
 <footer class="page-footer">EPMS Dashboard | SNUT CNT</footer>

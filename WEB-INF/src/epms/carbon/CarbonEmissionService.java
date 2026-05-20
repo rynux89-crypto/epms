@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDate;
@@ -26,28 +27,48 @@ public final class CarbonEmissionService {
         return EpmsDataSourceProvider.resolveDataSource().getConnection();
     }
 
+    public boolean hasConfiguredFactors() throws Exception {
+        try (Connection conn = openConnection();
+             Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery(
+                     "IF OBJECT_ID('dbo.epms_carbon_factor', 'U') IS NULL " +
+                     "  SELECT CAST(0 AS int) AS configured_count " +
+                     "ELSE " +
+                     "  SELECT COUNT(*) AS configured_count FROM dbo.epms_carbon_factor WHERE ISNULL(is_active, 1) = 1")) {
+            return rs.next() && rs.getInt("configured_count") > 0;
+        }
+    }
+
     public void refreshAllScopes() throws Exception {
+        refreshAllScopes(DEFAULT_FACTOR_CODE);
+    }
+
+    public void refreshAllScopes(String factorCode) throws Exception {
         try (Connection conn = openConnection()) {
             ensureSchema(conn);
-            refreshScope(conn, "");
+            refreshScope(conn, "", factorCode);
             for (String building : listBuildings(conn)) {
-                refreshScope(conn, building);
+                refreshScope(conn, building, factorCode);
             }
         }
     }
 
     public void refreshScope(String building) throws Exception {
+        refreshScope(building, DEFAULT_FACTOR_CODE);
+    }
+
+    public void refreshScope(String building, String factorCode) throws Exception {
         try (Connection conn = openConnection()) {
             ensureSchema(conn);
-            refreshScope(conn, building);
+            refreshScope(conn, building, factorCode);
         }
     }
 
-    private void refreshScope(Connection conn, String building) throws Exception {
+    private void refreshScope(Connection conn, String building, String factorCode) throws Exception {
         String safeBuilding = building == null ? "" : building.trim();
         String scopeCode = safeBuilding.isEmpty() ? DEFAULT_SCOPE_ALL : safeBuilding;
 
-        FactorData factor = loadFactor(conn);
+        FactorData factor = loadFactor(conn, factorCode);
 
         LocalDate today = LocalDate.now();
         int yearlyStartYear = today.getYear() - 4;
@@ -154,38 +175,65 @@ public final class CarbonEmissionService {
             }
             insertPs.executeBatch();
         }
+
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE dbo.epms_building_carbon_daily SET factor_code = ? " +
+                "WHERE scope_code = ? AND emission_date BETWEEN ? AND ?")) {
+            ps.setString(1, factor.code);
+            ps.setString(2, scopeCode);
+            ps.setDate(3, Date.valueOf(startDate));
+            ps.setDate(4, Date.valueOf(today));
+            ps.executeUpdate();
+        }
     }
 
-    private FactorData loadFactor(Connection conn) throws Exception {
+    private FactorData loadFactor(Connection conn, String factorCode) throws Exception {
+        String safeFactorCode = factorCode == null || factorCode.trim().isEmpty()
+                ? DEFAULT_FACTOR_CODE
+                : factorCode.trim();
         try (PreparedStatement ps = conn.prepareStatement(
                 "IF NOT EXISTS (SELECT 1 FROM dbo.epms_carbon_factor WHERE factor_code = ?) " +
                 "BEGIN " +
-                "  INSERT INTO dbo.epms_carbon_factor (factor_code, factor_value, factor_unit, factor_source, factor_note) " +
-                "  VALUES (?, ?, 'kgCO2_per_kWh', ?, ?) " +
+                "  INSERT INTO dbo.epms_carbon_factor (factor_code, factor_name, factor_value, factor_unit, factor_source, factor_note, is_active, is_default) " +
+                "  VALUES (?, ?, ?, 'kgCO2_per_kWh', ?, ?, 1, 1) " +
                 "END")) {
             ps.setString(1, DEFAULT_FACTOR_CODE);
             ps.setString(2, DEFAULT_FACTOR_CODE);
-            ps.setBigDecimal(3, decimal(DEFAULT_FACTOR_VALUE));
-            ps.setString(4, DEFAULT_FACTOR_SOURCE);
-            ps.setString(5, DEFAULT_FACTOR_NOTE);
+            ps.setString(3, "Default electricity factor");
+            ps.setBigDecimal(4, decimal(DEFAULT_FACTOR_VALUE));
+            ps.setString(5, DEFAULT_FACTOR_SOURCE);
+            ps.setString(6, DEFAULT_FACTOR_NOTE);
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE dbo.epms_carbon_factor SET is_default = CASE WHEN factor_code = ? THEN 1 ELSE ISNULL(is_default, 0) END, " +
+                "factor_name = CASE WHEN factor_code = ? AND (factor_name IS NULL OR LTRIM(RTRIM(factor_name)) = '') THEN ? ELSE factor_name END")) {
+            ps.setString(1, DEFAULT_FACTOR_CODE);
+            ps.setString(2, DEFAULT_FACTOR_CODE);
+            ps.setString(3, "Default electricity factor");
             ps.executeUpdate();
         }
 
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT factor_value, factor_source, factor_note FROM dbo.epms_carbon_factor WHERE factor_code = ?")) {
-            ps.setString(1, DEFAULT_FACTOR_CODE);
+                "SELECT factor_code, factor_value, factor_source, factor_note FROM dbo.epms_carbon_factor " +
+                "WHERE factor_code = ? AND ISNULL(is_active, 1) = 1")) {
+            ps.setString(1, safeFactorCode);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     String source = rs.getString("factor_source");
                     String note = rs.getString("factor_note");
                     return new FactorData(
+                            rs.getString("factor_code"),
                             rs.getBigDecimal("factor_value").doubleValue(),
                             source == null || source.trim().isEmpty() ? DEFAULT_FACTOR_SOURCE : source.trim(),
                             note == null || note.trim().isEmpty() ? DEFAULT_FACTOR_NOTE : note.trim());
                 }
             }
         }
-        return new FactorData(DEFAULT_FACTOR_VALUE, DEFAULT_FACTOR_SOURCE, DEFAULT_FACTOR_NOTE);
+        if (!DEFAULT_FACTOR_CODE.equals(safeFactorCode)) {
+            return loadFactor(conn, DEFAULT_FACTOR_CODE);
+        }
+        return new FactorData(DEFAULT_FACTOR_CODE, DEFAULT_FACTOR_VALUE, DEFAULT_FACTOR_SOURCE, DEFAULT_FACTOR_NOTE);
     }
 
     private List<String> listBuildings(Connection conn) throws Exception {
@@ -208,13 +256,21 @@ public final class CarbonEmissionService {
                     "BEGIN " +
                     "  CREATE TABLE dbo.epms_carbon_factor ( " +
                     "    factor_code varchar(50) NOT NULL PRIMARY KEY, " +
+                    "    factor_name nvarchar(120) NULL, " +
                     "    factor_value decimal(12,6) NOT NULL, " +
                     "    factor_unit varchar(32) NOT NULL CONSTRAINT DF_epms_carbon_factor_unit DEFAULT ('kgCO2_per_kWh'), " +
                     "    factor_source nvarchar(200) NULL, " +
                     "    factor_note nvarchar(500) NULL, " +
+                    "    is_active bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_active DEFAULT (1), " +
+                    "    is_default bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_default DEFAULT (0), " +
+                    "    created_at datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_created_at DEFAULT (sysdatetime()), " +
                     "    updated_at datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_updated_at DEFAULT (sysdatetime()) " +
                     "  ) " +
                     "END");
+            addColumnIfMissing(st, "dbo.epms_carbon_factor", "factor_name", "nvarchar(120) NULL");
+            addColumnIfMissing(st, "dbo.epms_carbon_factor", "is_active", "bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_active DEFAULT (1)");
+            addColumnIfMissing(st, "dbo.epms_carbon_factor", "is_default", "bit NOT NULL CONSTRAINT DF_epms_carbon_factor_is_default DEFAULT (0)");
+            addColumnIfMissing(st, "dbo.epms_carbon_factor", "created_at", "datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_created_at DEFAULT (sysdatetime())");
             st.execute(
                     "IF OBJECT_ID('dbo.epms_building_carbon_daily', 'U') IS NULL " +
                     "BEGIN " +
@@ -222,6 +278,7 @@ public final class CarbonEmissionService {
                     "    scope_code varchar(120) NOT NULL, " +
                     "    building_name nvarchar(200) NULL, " +
                     "    emission_date date NOT NULL, " +
+                    "    factor_code varchar(50) NULL, " +
                     "    usage_kwh decimal(18,6) NOT NULL, " +
                     "    emission_factor decimal(12,6) NOT NULL, " +
                     "    co2_kg decimal(18,6) NOT NULL, " +
@@ -231,7 +288,28 @@ public final class CarbonEmissionService {
                     "    CONSTRAINT PK_epms_building_carbon_daily PRIMARY KEY (scope_code, emission_date) " +
                     "  ) " +
                     "END");
+            addColumnIfMissing(st, "dbo.epms_building_carbon_daily", "factor_code", "varchar(50) NULL");
+            st.execute(
+                    "IF OBJECT_ID('dbo.epms_carbon_factor_history', 'U') IS NULL " +
+                    "BEGIN " +
+                    "  CREATE TABLE dbo.epms_carbon_factor_history ( " +
+                    "    history_id bigint IDENTITY(1,1) NOT NULL PRIMARY KEY, " +
+                    "    factor_code varchar(50) NOT NULL, " +
+                    "    factor_name nvarchar(120) NULL, " +
+                    "    factor_value decimal(12,6) NOT NULL, " +
+                    "    factor_unit varchar(32) NOT NULL, " +
+                    "    factor_source nvarchar(200) NULL, " +
+                    "    factor_note nvarchar(500) NULL, " +
+                    "    change_action varchar(20) NOT NULL, " +
+                    "    changed_at datetime2 NOT NULL CONSTRAINT DF_epms_carbon_factor_history_changed_at DEFAULT (sysdatetime()) " +
+                    "  ) " +
+                    "END");
         }
+    }
+
+    private static void addColumnIfMissing(Statement st, String tableName, String columnName, String definition) throws SQLException {
+        st.execute("IF COL_LENGTH('" + tableName + "', '" + columnName + "') IS NULL " +
+                "ALTER TABLE " + tableName + " ADD " + columnName + " " + definition);
     }
 
     private static java.math.BigDecimal decimal(double value) {
@@ -243,11 +321,13 @@ public final class CarbonEmissionService {
     }
 
     private static final class FactorData {
+        private final String code;
         private final double value;
         private final String source;
         private final String note;
 
-        private FactorData(double value, String source, String note) {
+        private FactorData(String code, double value, String source, String note) {
+            this.code = code;
             this.value = value;
             this.source = source;
             this.note = note;

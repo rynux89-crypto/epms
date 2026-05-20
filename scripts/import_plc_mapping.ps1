@@ -535,7 +535,6 @@ function New-SqlConnection {
     if ($user -eq '') { $user = Normalize-Str $env:EPMS_IMPORT_DB_USER }
     $password = Normalize-Str $env:EPMS_DB_PASSWORD
     if ($password -eq '') { $password = Normalize-Str $env:EPMS_IMPORT_DB_PASSWORD }
-    $legacyConn = 'Server=localhost,1433;Database=epms;User ID=sa;Password=1234;TrustServerCertificate=True;Encrypt=True'
     $connectionString = $null
 
     $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
@@ -549,9 +548,10 @@ function New-SqlConnection {
         $builder['Integrated Security'] = $false
         $connectionString = $builder.ConnectionString
     } elseif ($user -eq '' -and $password -eq '') {
-        $connectionString = $legacyConn
+        $builder['Integrated Security'] = $true
+        $connectionString = $builder.ConnectionString
     } else {
-        throw 'DB credentials are incomplete. Set EPMS_IMPORT_DB_CONN or both EPMS_DB_USER and EPMS_DB_PASSWORD.'
+        throw 'DB credentials are incomplete. Set EPMS_IMPORT_DB_CONN, both EPMS_DB_USER and EPMS_DB_PASSWORD, or leave both empty for integrated security.'
     }
     $cn = New-Object System.Data.SqlClient.SqlConnection
     $cn.ConnectionString = $connectionString

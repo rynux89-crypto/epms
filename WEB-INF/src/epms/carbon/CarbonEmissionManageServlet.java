@@ -16,29 +16,34 @@ public final class CarbonEmissionManageServlet extends HttpServlet {
         req.setCharacterEncoding(StandardCharsets.UTF_8.name());
         String action = trimToEmpty(req.getParameter("action"));
         String building = trimToEmpty(req.getParameter("building"));
-        String redirectBase = req.getContextPath() + "/epms/carbon_emissions.jsp";
+        String factorCode = trimToEmpty(req.getParameter("factor_code"));
+        String redirectBase = req.getContextPath() + "/epms/energy/carbon_emissions.jsp";
         try {
             if ("recalc_scope".equals(action)) {
-                service.refreshScope(building);
-                resp.sendRedirect(buildRedirectUrl(redirectBase, building, "msg", "선택한 범위의 탄소배출량을 재집계했습니다."));
+                service.refreshScope(building, factorCode);
+                resp.sendRedirect(buildRedirectUrl(redirectBase, building, factorCode, "msg", "선택한 범위의 탄소배출량을 재집계했습니다."));
                 return;
             }
             if ("recalc_all".equals(action)) {
-                service.refreshAllScopes();
-                resp.sendRedirect(buildRedirectUrl(redirectBase, building, "msg", "전체 건물 탄소배출량을 재집계했습니다."));
+                service.refreshAllScopes(factorCode);
+                resp.sendRedirect(buildRedirectUrl(redirectBase, building, factorCode, "msg", "전체 건물 탄소배출량을 재집계했습니다."));
                 return;
             }
             throw new IllegalArgumentException("Unsupported request.");
         } catch (Exception e) {
-            resp.sendRedirect(buildRedirectUrl(redirectBase, building, "err", e.getMessage()));
+            resp.sendRedirect(buildRedirectUrl(redirectBase, building, factorCode, "err", e.getMessage()));
         }
     }
 
-    private static String buildRedirectUrl(String base, String building, String key, String value) {
+    private static String buildRedirectUrl(String base, String building, String factorCode, String key, String value) {
         StringBuilder sb = new StringBuilder(base);
         boolean hasQuery = false;
         if (building != null && !building.trim().isEmpty()) {
             sb.append('?').append("building=").append(urlEncode(building));
+            hasQuery = true;
+        }
+        if (factorCode != null && !factorCode.trim().isEmpty()) {
+            sb.append(hasQuery ? '&' : '?').append("factor_code=").append(urlEncode(factorCode));
             hasQuery = true;
         }
         if (value != null && !value.trim().isEmpty()) {

@@ -1,6 +1,7 @@
 <%@ page contentType="application/json; charset=UTF-8" pageEncoding="UTF-8"%>
 <%@ page import="java.sql.*"%>
 <%@ page import="java.util.*"%>
+<%@ include file="./dbconfig.jspf" %>
 
 <%!
 public String esc(String s){
@@ -13,11 +14,6 @@ public String esc(String s){
 String action = request.getParameter("action");
 if(action==null) action="data";
 
-/* ===== DB ===== */
-String jdbcUrl  = "jdbc:sqlserver://192.168.0.201:1433;databaseName=EPMS;encrypt=false";
-String jdbcUser = "sa";
-String jdbcPass = "1234";
-
 /* ===== DTO ===== */
 class EnergyData{
   double today=0, yesterday=0;
@@ -29,8 +25,7 @@ PreparedStatement ps=null;
 ResultSet rs=null;
 
 try{
-  Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
-  try (Connection conn = DriverManager.getConnection(jdbcUrl,jdbcUser,jdbcPass)) {
+  try (Connection conn = openDbConnection()) {
 
   /* =====================================================
      META : building / usage

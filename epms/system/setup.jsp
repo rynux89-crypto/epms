@@ -2,7 +2,10 @@
 <%@ page import="java.io.*" %>
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
+<%@ page import="javax.naming.InitialContext" %>
+<%@ page import="javax.sql.DataSource" %>
 <%@ include file="../../includes/epms_html.jspf" %>
+<%@ include file="../../includes/epms_admin_guard.jspf" %>
 <%!
 private String nv(String value, String fallback) {
     if (value == null) return fallback;
@@ -13,6 +16,15 @@ private String nv(String value, String fallback) {
 private String q(String value) {
     String v = value == null ? "" : value;
     return "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+}
+
+private String normalizeSqlServerJdbcHost(String server) {
+    if (server == null) return "";
+    String s = server.trim();
+    if (s.matches("^[^\\\\,]+,\\d+$")) {
+        return s.replace(',', ':');
+    }
+    return s;
 }
 
 private File getConfigFile() {
@@ -68,7 +80,7 @@ private void saveToml(File file, Map<String, String> cfg) throws Exception {
 
     sb.append("[database]\n");
     sb.append("jndi_name = ").append(q(nv(cfg.get("database.jndi_name"), "java:comp/env/jdbc/epms"))).append('\n');
-    sb.append("server = ").append(q(nv(cfg.get("database.server"), "localhost,1433"))).append('\n');
+    sb.append("server = ").append(q(nv(cfg.get("database.server"), "localhost:1433"))).append('\n');
     sb.append("name = ").append(q(nv(cfg.get("database.name"), "EPMS"))).append('\n');
     sb.append("user = ").append(q(nv(cfg.get("database.user"), "sa"))).append('\n');
     sb.append("password = ").append(q(nv(cfg.get("database.password"), ""))).append('\n');
@@ -97,14 +109,38 @@ private void saveToml(File file, Map<String, String> cfg) throws Exception {
 }
 
 private Connection openSqlServerConnection(String server, String databaseName, String user, String password, String encrypt, String trustServerCertificate) throws Exception {
+    if (password == null || password.trim().isEmpty()) {
+        throw new SQLException("Direct SQL Server password is empty. Use JNDI status check or provide a password.");
+    }
     Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
     String url =
-        "jdbc:sqlserver://" + server +
+        "jdbc:sqlserver://" + normalizeSqlServerJdbcHost(server) +
         ";databaseName=" + databaseName +
         ";encrypt=" + encrypt +
         ";trustServerCertificate=" + trustServerCertificate +
         ";loginTimeout=5;";
     return DriverManager.getConnection(url, user, password);
+}
+
+private Connection openJndiConnection(String jndiName) throws Exception {
+    InitialContext ic = null;
+    try {
+        ic = new InitialContext();
+        String primaryName = nv(jndiName, "java:comp/env/jdbc/epms");
+        String[] names = new String[]{ primaryName, "java:comp/env/jdbc/epms", "jdbc/epms" };
+        for (String name : names) {
+            try {
+                Object obj = ic.lookup(name);
+                if (obj instanceof DataSource) {
+                    return ((DataSource)obj).getConnection();
+                }
+            } catch (Exception ignore) {
+            }
+        }
+        throw new SQLException("JNDI datasource not found: " + primaryName);
+    } finally {
+        try { if (ic != null) ic.close(); } catch (Exception ignore) {}
+    }
 }
 
 private boolean databaseExists(Connection conn, String dbName) throws Exception {
@@ -528,13 +564,21 @@ boolean coreTableExists = false;
 Connection statusMasterConn = null;
 Connection statusDbConn = null;
 try {
-    statusMasterConn = openSqlServerConnection(dbServer, "master", dbUser, dbPassword, dbEncrypt, dbTrust);
-    canReachServer = true;
-    targetDbExists = databaseExists(statusMasterConn, dbName);
-    if (targetDbExists) {
-        statusDbConn = openSqlServerConnection(dbServer, dbName, dbUser, dbPassword, dbEncrypt, dbTrust);
+    if (dbPassword == null || dbPassword.trim().isEmpty()) {
+        statusDbConn = openJndiConnection(dbJndiName);
+        canReachServer = true;
+        targetDbExists = true;
         coreTableExists = tableExists(statusDbConn, "dbo.meters");
         seedMeterCount = countSeedMeters(statusDbConn);
+    } else {
+        statusMasterConn = openSqlServerConnection(dbServer, "master", dbUser, dbPassword, dbEncrypt, dbTrust);
+        canReachServer = true;
+        targetDbExists = databaseExists(statusMasterConn, dbName);
+        if (targetDbExists) {
+            statusDbConn = openSqlServerConnection(dbServer, dbName, dbUser, dbPassword, dbEncrypt, dbTrust);
+            coreTableExists = tableExists(statusDbConn, "dbo.meters");
+            seedMeterCount = countSeedMeters(statusDbConn);
+        }
     }
 } catch (Exception ignore) {
 } finally {
@@ -544,7 +588,7 @@ try {
 %>
 <html>
 <head>
-    <title>EPMS 珥덇린 ?ㅼ젙</title>
+    <title>EPMS 초기 설정</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         .page-wrap { max-width: 1100px; margin: 0 auto; }
@@ -552,23 +596,17 @@ try {
         .setup-card, .status-card {
             background: #fff;
             border: 1px solid #dbe5f2;
-            border-radius: 14px;
+            border-radius: 8px;
             padding: 16px;
             box-shadow: 0 10px 24px rgba(31, 51, 71, 0.06);
         }
         .setup-card h3, .status-card h3 { margin: 0 0 10px; color: #1f3347; }
-        .setup-card h4 { margin: 12px 0 8px; color: #304860; font-size: 13px; }
         .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
         .field label { font-size: 12px; font-weight: 700; color: #475569; }
         .field input, .field select { width: 100%; margin: 0; box-sizing: border-box; }
         .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
         .actions button { min-width: 150px; }
-        .info-box, .err-box {
-            margin: 12px 0;
-            padding: 12px 14px;
-            border-radius: 10px;
-            font-size: 13px;
-        }
+        .info-box, .err-box { margin: 12px 0; padding: 12px 14px; border-radius: 8px; font-size: 13px; }
         .info-box { background: #eef6ff; border: 1px solid #cfe2ff; color: #1d4f91; }
         .err-box { background: #fff1f1; border: 1px solid #ffc9c9; color: #b42318; font-weight: 700; }
         .status-grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin: 14px 0; }
@@ -576,33 +614,24 @@ try {
         .status-label { color: #64748b; font-size: 12px; }
         .mono { font-family: Consolas, "Courier New", monospace; }
         .hint { color: #64748b; font-size: 12px; margin-top: 8px; }
-        .sql-preview {
-            width: 100%;
-            min-height: 260px;
-            box-sizing: border-box;
-            font-family: Consolas, "Courier New", monospace;
-            font-size: 12px;
-            line-height: 1.4;
-        }
+        .sql-preview { width: 100%; min-height: 260px; box-sizing: border-box; font-family: Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.4; }
         .checklist { margin: 0; padding-left: 18px; color: #304860; }
         .checklist li { margin: 6px 0; }
-        @media (max-width: 900px) {
-            .setup-grid, .status-grid { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 900px) { .setup-grid, .status-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>EPMS 珥덇린 ?ㅼ젙</h2>
+        <h2>EPMS 초기 설정</h2>
         <div class="inline-actions">
-            <button class="back-btn" type="button" onclick="location.href='/epms/epms_main.jsp'">EPMS 硫붿씤</button>
+            <button class="back-btn" type="button" onclick="location.href='/epms/epms_main.jsp'">EPMS 메인</button>
         </div>
     </div>
 
     <div class="info-box">
-        Tomcat? ?щ씪? ?덇퀬 SQL Server留??ㅼ튂??珥덇린 ?쒕쾭?먯꽌 ?ъ슜?섎뒗 ?ㅼ젙 ?붾㈃?낅땲??<br/>
-        ???섏씠吏?먯꽌 <span class="mono">WEB-INF/config.toml</span> ??? SQL Server 吏곸젒 ?곌껐 ?뚯뒪?? EPMS ?ㅽ궎留?珥덇린?붽퉴吏 ??踰덉뿉 吏꾪뻾?????덉뒿?덈떎.
+        Tomcat은 실행 중이고 SQL Server만 준비된 초기 서버에서 사용하는 설정 화면입니다.<br/>
+        이 페이지에서 <span class="mono">WEB-INF/config.toml</span> 저장, SQL Server 직접 연결 테스트, EPMS 스키마 초기화까지 한 번에 진행할 수 있습니다.
     </div>
 
     <% if (message != null) { %>
@@ -614,76 +643,76 @@ try {
 
     <div class="status-grid">
         <div class="status-card">
-            <div class="status-label">?ㅼ젙 ?뚯씪</div>
-            <div class="status-value"><%= (configFile != null && configFile.exists()) ? "以鍮꾨맖" : "?놁쓬" %></div>
+            <div class="status-label">설정 파일</div>
+            <div class="status-value"><%= (configFile != null && configFile.exists()) ? "준비됨" : "없음" %></div>
             <div class="hint"><%= configFile == null ? "-" : h(configFile.getAbsolutePath()) %></div>
         </div>
         <div class="status-card">
-            <div class="status-label">DB ?쒕쾭 ?곌껐</div>
-            <div class="status-value"><%= canReachServer ? "?뺤긽" : "?ㅽ뙣" %></div>
+            <div class="status-label">DB 서버 연결</div>
+            <div class="status-value"><%= canReachServer ? "정상" : "실패" %></div>
             <div class="hint"><%= h(dbServer) %></div>
         </div>
         <div class="status-card">
-            <div class="status-label">?ㅽ궎留?以鍮??곹깭</div>
-            <div class="status-value"><%= coreTableExists ? "?꾨즺" : (targetDbExists ? "遺遺? : "誘몄셿猷?) %></div>
+            <div class="status-label">스키마 준비 상태</div>
+            <div class="status-value"><%= coreTableExists ? "완료" : (targetDbExists ? "부분" : "미완료") %></div>
             <div class="hint">DB <span class="mono"><%= h(dbName) %></span> / table <span class="mono">dbo.meters</span></div>
         </div>
         <div class="status-card">
-            <div class="status-label">Seed Meter 嫄댁닔</div>
+            <div class="status-label">Seed Meter 건수</div>
             <div class="status-value"><%= seedMeterCount %></div>
-            <div class="hint"><span class="mono">SEED_EPMS_%</span> 湲곗?</div>
+            <div class="hint"><span class="mono">SEED_EPMS_%</span> 기준</div>
         </div>
     </div>
 
     <form method="POST">
         <div class="setup-grid">
             <div class="setup-card">
-                <h3>???ㅼ젙</h3>
+                <h3>앱 설정</h3>
                 <div class="field">
-                    <label for="app_name">???대쫫</label>
+                    <label for="app_name">앱 이름</label>
                     <input id="app_name" name="app_name" type="text" value="<%= h(appName) %>">
                 </div>
                 <div class="field">
-                    <label for="base_url">湲곕낯 URL</label>
+                    <label for="base_url">기본 URL</label>
                     <input id="base_url" name="base_url" type="text" value="<%= h(baseUrl) %>">
                 </div>
                 <div class="field">
-                    <label for="agent_properties_path">Agent ?ㅼ젙 ?뚯씪 寃쎈줈</label>
+                    <label for="agent_properties_path">Agent 설정 파일 경로</label>
                     <input id="agent_properties_path" name="agent_properties_path" type="text" value="<%= h(agentPropertiesPath) %>">
                 </div>
             </div>
 
             <div class="setup-card">
-                <h3>?곗씠?곕쿋?댁뒪 ?ㅼ젙</h3>
+                <h3>데이터베이스 설정</h3>
                 <div class="field">
-                    <label for="db_jndi_name">JNDI ?대쫫</label>
+                    <label for="db_jndi_name">JNDI 이름</label>
                     <input id="db_jndi_name" name="db_jndi_name" type="text" value="<%= h(dbJndiName) %>">
                 </div>
                 <div class="field">
-                    <label for="db_server">?쒕쾭</label>
+                    <label for="db_server">서버</label>
                     <input id="db_server" name="db_server" type="text" value="<%= h(dbServer) %>">
                 </div>
                 <div class="field">
-                    <label for="db_name">DB ?대쫫</label>
+                    <label for="db_name">DB 이름</label>
                     <input id="db_name" name="db_name" type="text" value="<%= h(dbName) %>">
                 </div>
                 <div class="field">
-                    <label for="db_user">?ъ슜??/label>
+                    <label for="db_user">사용자</label>
                     <input id="db_user" name="db_user" type="text" value="<%= h(dbUser) %>">
                 </div>
                 <div class="field">
-                    <label for="db_password">鍮꾨?踰덊샇</label>
+                    <label for="db_password">비밀번호</label>
                     <input id="db_password" name="db_password" type="password" value="<%= h(dbPassword) %>">
                 </div>
                 <div class="field">
-                    <label for="db_encrypt">?뷀샇???ъ슜</label>
+                    <label for="db_encrypt">암호화 사용</label>
                     <select id="db_encrypt" name="db_encrypt">
                         <option value="true" <%= "true".equalsIgnoreCase(dbEncrypt) ? "selected" : "" %>>true</option>
                         <option value="false" <%= "false".equalsIgnoreCase(dbEncrypt) ? "selected" : "" %>>false</option>
                     </select>
                 </div>
                 <div class="field">
-                    <label for="db_trust">?쒕쾭 ?몄쬆???좊ː</label>
+                    <label for="db_trust">서버 인증서 신뢰</label>
                     <select id="db_trust" name="db_trust">
                         <option value="true" <%= "true".equalsIgnoreCase(dbTrust) ? "selected" : "" %>>true</option>
                         <option value="false" <%= "false".equalsIgnoreCase(dbTrust) ? "selected" : "" %>>false</option>
@@ -692,89 +721,88 @@ try {
             </div>
 
             <div class="setup-card">
-                <h3>諛깆뾽 ?ㅼ젙</h3>
+                <h3>백업 설정</h3>
                 <div class="field">
-                    <label for="backup_dir">諛깆뾽 ?대뜑</label>
+                    <label for="backup_dir">백업 폴더</label>
                     <input id="backup_dir" name="backup_dir" type="text" value="<%= h(backupDir) %>">
                 </div>
                 <div class="field">
-                    <label for="backup_retain_days">蹂닿? ?쇱닔</label>
+                    <label for="backup_retain_days">보관 일수</label>
                     <input id="backup_retain_days" name="backup_retain_days" type="number" min="1" value="<%= h(backupRetainDays) %>">
                 </div>
                 <div class="field">
-                    <label for="backup_schedule">?ㅽ뻾 ?쒓컙</label>
+                    <label for="backup_schedule">실행 시간</label>
                     <input id="backup_schedule" name="backup_schedule" type="text" value="<%= h(backupSchedule) %>">
                 </div>
             </div>
 
             <div class="setup-card">
-                <h3>PLC 湲곕낯 ?ㅼ젙</h3>
+                <h3>PLC 기본 설정</h3>
                 <div class="field">
-                    <label for="plc_polling_ms">湲곕낯 Polling 二쇨린(ms)</label>
+                    <label for="plc_polling_ms">기본 Polling 주기(ms)</label>
                     <input id="plc_polling_ms" name="plc_polling_ms" type="number" min="100" value="<%= h(plcPollingMs) %>">
                 </div>
                 <div class="field">
-                    <label for="plc_write_interval_sec">湲곕낯 Write 二쇨린(珥?</label>
+                    <label for="plc_write_interval_sec">기본 Write 주기(초)</label>
                     <input id="plc_write_interval_sec" name="plc_write_interval_sec" type="number" min="1" value="<%= h(plcWriteIntervalSec) %>">
                 </div>
                 <div class="hint">
-                    ?ㅽ궎留?珥덇린????<span class="mono">docs/sql/create_epms_schema.sql</span> 怨?<span class="mono">docs/sql/create_plc_mapping_master.sql</span> ???ъ슜?⑸땲??<br/>
-                    PLC ?깅줉? 珥덇린????<span class="mono">/epms/plc/plc_register.jsp</span> ?먯꽌 吏꾪뻾?섏꽭??
+                    스키마 초기화는 <span class="mono">docs/sql/create_epms_schema.sql</span> 및 <span class="mono">docs/sql/create_plc_mapping_master.sql</span>을 사용합니다.<br/>
+                    PLC 등록은 초기화 후 <span class="mono">/epms/plc/plc_register.jsp</span>에서 진행하세요.
                 </div>
             </div>
 
             <div class="setup-card">
-                <h3>理쒖냼 Seed ?곗씠??/h3>
+                <h3>테스트 Seed 데이터</h3>
                 <div class="hint">
-                    ?ㅼ튂 吏곹썑 ?붾㈃ ?먭???理쒖냼 ?곗씠?곕쭔 ?ｌ뒿?덈떎.<br/>
-                    ?앹꽦 ??? <span class="mono">meters</span>, <span class="mono">metric_catalog</span>, <span class="mono">metric_catalog_tag_map</span>, <span class="mono">alarm_rule</span>, <span class="mono">meter_tree</span><br/>
-                    ?쒖떇: <span class="mono">SEED_EPMS_%</span>
+                    초기 화면 확인을 위한 최소 테스트 데이터를 생성합니다.<br/>
+                    생성 대상: <span class="mono">meters</span>, <span class="mono">metric_catalog</span>, <span class="mono">metric_catalog_tag_map</span>, <span class="mono">alarm_rule</span>, <span class="mono">meter_tree</span><br/>
+                    식별 기준: <span class="mono">SEED_EPMS_%</span>
                 </div>
                 <div class="field">
-                    <label>?꾩옱 Seed ?곹깭</label>
-                    <input type="text" value="<%= seedMeterCount > 0 ? ("?앹꽦??(" + seedMeterCount + " meter)") : "?놁쓬" %>" readonly>
+                    <label>현재 Seed 상태</label>
+                    <input type="text" value="<%= seedMeterCount > 0 ? ("생성됨 (" + seedMeterCount + " meter)") : "없음" %>" readonly>
                 </div>
                 <div class="hint">
-                    ??젣 ?쒖뿉??seed meter媛 ?댁쁺 ?곗씠?곗뿉 ?곌껐?섏뼱 ?덉쑝硫??덉쟾???꾪빐 以묐떒?⑸땲??
+                    실제 운영 데이터와 섞이지 않도록 seed meter 이름과 관련 데이터는 식별 가능한 접두사를 사용합니다.
                 </div>
             </div>
         </div>
 
         <div class="actions">
-            <button type="submit" name="action" value="save">?ㅼ젙 ???/button>
-            <button type="submit" name="action" value="test_db">?????DB ?곌껐 ?뚯뒪??/button>
-            <button type="submit" name="action" value="init_db" onclick="return confirm('吏湲?EPMS ?곗씠?곕쿋?댁뒪 ?ㅽ궎留덈? ?앹꽦 ?먮뒗 媛깆떊?좉퉴??');">??????ㅽ궎留?珥덇린??/button>
-            <button type="submit" name="action" value="generate_backup_job">?????諛깆뾽 Job SQL ?앹꽦</button>
-            <button type="submit" name="action" value="create_seed" onclick="return confirm('理쒖냼 seed ?곗씠?곕? ?앹꽦?좉퉴??');">理쒖냼 Seed ?앹꽦</button>
-            <button type="submit" name="action" value="delete_seed" onclick="return confirm('理쒖냼 seed ?곗씠?곕? ??젣?좉퉴?? ?댁쁺 ?곗씠?곗? ?곌껐??寃쎌슦 ??젣媛 以묐떒?⑸땲??');">理쒖냼 Seed ??젣</button>
-            <button type="button" onclick="location.href='/epms/plc/plc_register.jsp'">PLC ?깅줉 ?붾㈃?쇰줈 ?대룞</button>
+            <button type="submit" name="action" value="save">설정 저장</button>
+            <button type="submit" name="action" value="test_db">저장 후 DB 연결 테스트</button>
+            <button type="submit" name="action" value="init_db" onclick="return confirm('지금 EPMS 데이터베이스 스키마를 생성 또는 갱신할까요?');">저장 후 스키마 초기화</button>
+            <button type="submit" name="action" value="generate_backup_job">저장 후 백업 Job SQL 생성</button>
+            <button type="submit" name="action" value="create_seed" onclick="return confirm('테스트 seed 데이터를 생성할까요?');">테스트 Seed 생성</button>
+            <button type="submit" name="action" value="delete_seed" onclick="return confirm('테스트 seed 데이터를 삭제할까요? 실제 운영 데이터는 삭제하지 않습니다.');">테스트 Seed 삭제</button>
+            <button type="button" onclick="location.href='/epms/plc/plc_register.jsp'">PLC 등록 화면으로 이동</button>
         </div>
     </form>
 
     <div class="setup-grid" style="margin-top:16px;">
         <div class="setup-card">
-            <h3>諛깆뾽 Job SQL</h3>
-            <div class="hint">?쒕쾭 ?섍꼍??留욌뒗 SQL Server Agent Job ?ㅽ겕由쏀듃瑜??앹꽦?⑸땲?? ?앹꽦 ??SSMS?먯꽌 愿由ъ옄 沅뚰븳?쇰줈 ?ㅽ뻾?섏꽭??</div>
-            <textarea class="sql-preview" readonly><%= h(backupJobSql == null ? "'?????諛깆뾽 Job SQL ?앹꽦' 踰꾪듉???꾨Ⅴ硫??ш린???ㅽ겕由쏀듃媛 ?쒖떆?⑸땲??" : backupJobSql) %></textarea>
+            <h3>백업 Job SQL</h3>
+            <div class="hint">현재 서버 값으로 SQL Server Agent Job 생성 스크립트를 만듭니다. 생성된 SQL은 SSMS에서 msdb에 실행하세요.</div>
+            <textarea class="sql-preview" readonly><%= h(backupJobSql == null ? "'저장 후 백업 Job SQL 생성' 버튼을 누르면 스크립트가 표시됩니다." : backupJobSql) %></textarea>
         </div>
 
         <div class="setup-card">
-            <h3>珥덇린 愿由ъ옄 泥댄겕由ъ뒪??/h3>
+            <h3>초기화 후 확인 절차</h3>
             <ul class="checklist">
-                <li><span class="mono">?????DB ?곌껐 ?뚯뒪??/span>瑜??ㅽ뻾??SQL Server ?곌껐??癒쇱? ?뺤씤?⑸땲??</li>
-                <li>硫붿씤 ?붾㈃???닿린 ?꾩뿉 <span class="mono">??????ㅽ궎留?珥덇린??/span>瑜??ㅽ뻾?⑸땲??</li>
-                <li>?뚯뒪?멸? ?꾩슂?섎㈃ <span class="mono">理쒖냼 Seed ?앹꽦</span>?쇰줈 湲곕낯 ?곗씠?곕쭔 ?ｌ뒿?덈떎.</li>
-                <li>PLC??<span class="mono">/epms/plc/plc_register.jsp</span> ?먯꽌 ?뺤떇 ?깅줉?⑸땲??</li>
-                <li>?앹꽦??諛깆뾽 Job SQL??????쒕쾭??<span class="mono">msdb</span>?먯꽌 ?ㅽ뻾?⑸땲??</li>
-                <li><span class="mono">SQLSERVERAGENT</span> ?쒕퉬?ㅻ? <span class="mono">Automatic</span>?쇰줈 ?먭퀬 <span class="mono">Running</span> ?곹깭?몄? ?뺤씤?⑸땲??</li>
-                <li><span class="mono">/epms/epms_main.jsp</span>, <span class="mono">/epms/plc/plc_register.jsp</span>, <span class="mono">/epms/plc/di_mapping.jsp</span> ?묎렐???뺤씤?⑸땲??</li>
-                <li>?좉퇋 ?쒕쾭?쇰㈃ PLC ?깅줉 ??AI/DI 留ㅽ븨??import ?⑸땲??</li>
-                <li>?댁쁺 ?꾩뿉???꾩슂 ??<span class="mono">理쒖냼 Seed ??젣</span>濡??뚯뒪???곗씠?곕? ?쒓굅?⑸땲??</li>
+                <li><span class="mono">저장 후 DB 연결 테스트</span>로 SQL Server 연결이 정상인지 확인합니다.</li>
+                <li>처음 설치하는 경우 <span class="mono">저장 후 스키마 초기화</span>를 실행합니다.</li>
+                <li>화면 확인용 데이터가 필요하면 <span class="mono">테스트 Seed 생성</span>을 실행합니다.</li>
+                <li>PLC는 <span class="mono">/epms/plc/plc_register.jsp</span>에서 실제 장비 정보를 등록합니다.</li>
+                <li>생성된 백업 Job SQL은 서버의 <span class="mono">msdb</span>에서 실행합니다.</li>
+                <li><span class="mono">SQLSERVERAGENT</span> 서비스가 <span class="mono">Automatic</span> 및 <span class="mono">Running</span> 상태인지 확인합니다.</li>
+                <li><span class="mono">/epms/epms_main.jsp</span>, <span class="mono">/epms/plc/plc_register.jsp</span>, <span class="mono">/epms/plc/di_mapping.jsp</span> 접근을 확인합니다.</li>
+                <li>운영 장비 반영 전 PLC 등록 및 AI/DI 매핑 import를 진행합니다.</li>
+                <li>테스트 데이터가 필요 없어지면 <span class="mono">테스트 Seed 삭제</span>로 정리합니다.</li>
             </ul>
         </div>
     </div>
 </div>
-<footer>짤 EPMS Dashboard | SNUT CNT</footer>
+<footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
-

@@ -192,9 +192,9 @@
         </div>
         <div class="section-links">
             <div class="app-card">
-                <a href="energy/energy_meter_overview.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>계측기별 에너지 관리</h3></div>
-                    <p>각 계측기의 지난달 사용량과 현재 사용량을 빠르게 비교합니다.</p>
+                <a href="energy/carbon_emissions.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 18h8"/><path d="M8 14c0-3 2-5 5-5 2.8 0 5 2.2 5 5 0 2.2-1.4 3.6-3.4 4.3"/><path d="M8 14c0 2.2 1.4 3.6 3.4 4.3"/><path d="M5 8c1.2-1.7 3.1-3 5.3-3"/></svg></span><h3>건물 탄소배출량 조회</h3></div>
+                    <p>건물 단위 전력사용량을 기준으로 CO2 배출량을 계산하고 배출계수를 관리합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
@@ -206,23 +206,23 @@
                 </a>
             </div>
             <div class="app-card">
-                <a href="energy/energy_manage.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="M6 8l4 4 3-3 5 5"/></svg></span><h3>에너지 통합 상세분석</h3></div>
-                    <p>기간, 건물, 용도, 계측기를 좁혀 사용량과 이상 징후를 통합 분석합니다.</p>
-                    <span class="sub-card-meta">바로가기</span>
-                </a>
-            </div>
-            <div class="app-card">
-                <a href="energy/carbon_emissions.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 18h8"/><path d="M8 14c0-3 2-5 5-5 2.8 0 5 2.2 5 5 0 2.2-1.4 3.6-3.4 4.3"/><path d="M8 14c0 2.2 1.4 3.6 3.4 4.3"/><path d="M5 8c1.2-1.7 3.1-3 5.3-3"/></svg></span><h3>건물 탄소배출량 조회</h3></div>
-                    <p>건물 단위 전력사용량을 기준으로 CO2 배출량을 계산하고 배출계수를 관리합니다.</p>
-                    <span class="sub-card-meta">바로가기</span>
-                </a>
-            </div>
-            <div class="app-card">
                 <a href="energy/energy_sankey.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M6 7h8a4 4 0 1 1 0 8H6"/><path d="M14 7l3-3"/><path d="M14 7l3 3"/><path d="M10 15l-3-3"/><path d="M10 15l-3 3"/></svg></span><h3>에너지 흐름 분석</h3></div>
                     <p>트리 구조 기준으로 에너지 흐름을 추적합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="energy/energy_meter_overview.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-4"/></svg></span><h3>계측기별 에너지 관리</h3></div>
+                    <p>각 계측기의 지난달 사용량과 현재 사용량을 빠르게 비교합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="energy/energy_manage.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 18h16"/><path d="M6 8l4 4 3-3 5 5"/></svg></span><h3>에너지 통합 상세분석</h3></div>
+                    <p>기간, 건물, 용도, 계측기를 좁혀 사용량과 이상 징후를 통합 분석합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
@@ -283,7 +283,7 @@
         <div class="section-links">
             <div class="app-card">
                 <a href="peak/peak_management.jsp" class="sub-card-link">
-                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15l3-3 3 2 4-5 2 2"/></svg></span><h3>Peak 운영 대시보드</h3></div>
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15l3-3 3 2 4-5 2 2"/></svg></span><h3>Peak 대시보드</h3></div>
                     <p>최근 30일 피크 상위 계측기와 매핑 누락 매장을 빠르게 확인합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
@@ -434,4 +434,3 @@
 <footer>© EPMS Dashboard | SNUT CNT</footer>
 </body>
 </html>
-

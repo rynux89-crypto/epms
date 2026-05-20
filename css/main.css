@@ -17,8 +17,8 @@
   --warning: #d9a441;
   --shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
   --shadow-soft: 0 4px 14px rgba(15, 23, 42, 0.06);
-  --radius: 14px;
-  --radius-sm: 10px;
+  --radius: 8px;
+  --radius-sm: 6px;
 }
 
 *{ box-sizing: border-box; }
@@ -45,7 +45,7 @@ a:hover{
 
 h1, h2, h3, h4{
   color: var(--text);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 h1{
@@ -169,7 +169,7 @@ input[type="button"]{
   background: linear-gradient(180deg, var(--primary) 0%, #1659c9 100%);
   color: #fff;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(31, 111, 235, 0.22);
   transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
@@ -286,7 +286,7 @@ input[type="button"]:active{
   gap:6px;
   width:fit-content;
   padding:4px 10px;
-  border-radius:999px;
+  border-radius:var(--radius-sm);
   border:1px solid #d7e4f4;
   background: var(--primary-soft);
   color:#28527a;
@@ -460,7 +460,7 @@ input[type="button"]:active{
   display:inline-flex;
   align-items:center;
   padding:4px 10px;
-  border-radius:999px;
+  border-radius:var(--radius-sm);
   border:1px solid #d4e2f3;
   background:#eef4fb;
   color:#24496e;

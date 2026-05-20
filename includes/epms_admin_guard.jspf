@@ -1,0 +1,52 @@
+<%!
+    private static String epmsAdminTrimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static boolean epmsAdminConstantTimeEquals(String a, String b) {
+        if (a == null || b == null) return false;
+        int diff = a.length() ^ b.length();
+        int max = Math.max(a.length(), b.length());
+        for (int i = 0; i < max; i++) {
+            char ca = i < a.length() ? a.charAt(i) : 0;
+            char cb = i < b.length() ? b.charAt(i) : 0;
+            diff |= ca ^ cb;
+        }
+        return diff == 0;
+    }
+
+    private boolean epmsAdminSessionAllowed(HttpServletRequest request) {
+        HttpSession existingSession = request.getSession(false);
+        if (existingSession == null) return false;
+        Object role = existingSession.getAttribute("role");
+        if (role != null && "ADMIN".equalsIgnoreCase(String.valueOf(role).trim())) return true;
+        Object isAdmin = existingSession.getAttribute("isAdmin");
+        return isAdmin instanceof Boolean && ((Boolean)isAdmin).booleanValue();
+    }
+
+    private boolean epmsAdminTokenAllowed(HttpServletRequest request, String expectedToken) {
+        String suppliedToken = epmsAdminTrimToNull(request.getHeader("X-EPMS-ADMIN-TOKEN"));
+        if (suppliedToken == null) suppliedToken = epmsAdminTrimToNull(request.getParameter("admin_token"));
+        if (!epmsAdminConstantTimeEquals(expectedToken, suppliedToken)) return false;
+
+        HttpSession session = request.getSession(true);
+        session.setAttribute("role", "ADMIN");
+        session.setAttribute("isAdmin", Boolean.TRUE);
+        return true;
+    }
+%>
+<%
+    response.setHeader("X-Frame-Options", "SAMEORIGIN");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader("Referrer-Policy", "same-origin");
+
+    String epmsExpectedAdminToken = epmsAdminTrimToNull(System.getenv("EPMS_ADMIN_TOKEN"));
+    if (epmsExpectedAdminToken != null &&
+        !epmsAdminSessionAllowed(request) &&
+        !epmsAdminTokenAllowed(request, epmsExpectedAdminToken)) {
+        response.sendError(HttpServletResponse.SC_FORBIDDEN, "EPMS admin token required.");
+        return;
+    }
+%>

@@ -8,6 +8,7 @@
 <%@ page import="epms.util.PlcWriteSupport" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_json.jspf" %>
+<%@ include file="../../includes/epms_admin_guard.jspf" %>
 <%!
 private static final ScheduledExecutorService WRITE_EXEC = Executors.newScheduledThreadPool(4);
 private static final ConcurrentHashMap<Integer, ScheduledFuture<?>> WRITE_TASKS = new ConcurrentHashMap<>();

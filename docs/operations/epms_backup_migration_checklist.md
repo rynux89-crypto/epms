@@ -1,4 +1,4 @@
-﻿# EPMS Backup Migration Checklist
+# EPMS Backup Migration Checklist
 
 새 서버로 EPMS를 옮길 때 일일 백업 자동화는 자동으로 따라가지 않습니다.
 프로젝트 파일은 복사되더라도 SQL Server Agent Job, 서비스 상태, 서버별 경로는 새 서버에서 다시 적용해야 합니다.
@@ -73,7 +73,8 @@
 - PowerShell로 스크립트 단독 실행
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Tomcat 9.0\webapps\ROOT\scripts\backup_epms_daily.ps1" -Server "localhost,1433" -Database "EPMS" -User "sa" -Password "1234" -BackupDir "C:\backup" -RetainDays 7
+$env:EPMS_DB_PASSWORD = "<set outside source tree>"
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Tomcat 9.0\webapps\ROOT\scripts\backup_epms_daily.ps1" -Server "localhost,1433" -Database "EPMS" -User "sa" -BackupDir "C:\backup" -RetainDays 7
 ```
 
 - `C:\backup`에 `.bak` 생성 확인
@@ -93,4 +94,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Tomcat 9.0\webapps\ROOT\
   - 일일 전체 백업 1회
   - 7일 또는 14일 보관
 - 경로 또는 계정이 바뀌면 Job을 다시 생성하거나 스텝 명령을 수정
-- 운영 비밀번호를 SQL 파일에 고정하고 싶지 않으면 Job 스텝에서 `-User`, `-Password` 대신 환경변수 기반으로 운영하는 방식도 고려
+- 운영 비밀번호는 SQL 파일이나 `.cmd` 파일에 고정하지 말고 SQL Server Agent 실행 계정의 `EPMS_DB_PASSWORD` 환경변수 또는 보안 저장소로 관리

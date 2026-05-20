@@ -179,18 +179,21 @@ if (!(Test-Path $aggregateScript)) {
 $resolvedDbServer = if ($DbServer -and $DbServer.Trim() -ne '') { $DbServer.Trim() } else { 'localhost,1433' }
 $resolvedDbName = if ($DbName -and $DbName.Trim() -ne '') { $DbName.Trim() } else { 'epms' }
 $resolvedDbUser = if ($DbUser -and $DbUser.Trim() -ne '') { $DbUser.Trim() } else { 'sa' }
-$resolvedDbPassword = if ($DbPassword -and $DbPassword.Trim() -ne '') { $DbPassword } else { '1234' }
+$resolvedDbPassword = if ($DbPassword -and $DbPassword.Trim() -ne '') { $DbPassword } elseif ($env:EPMS_DB_PASSWORD) { $env:EPMS_DB_PASSWORD } else { '' }
+if ([string]::IsNullOrWhiteSpace($resolvedDbPassword)) {
+    throw 'Database password is required. Set -DbPassword or EPMS_DB_PASSWORD.'
+}
 
 $hourlyCmdPath = Join-Path $scriptsDir 'run_aggregate_hourly.cmd'
 $rollupCmdPath = Join-Path $scriptsDir 'run_aggregate_rollup.cmd'
 
 $hourlyCmd = @(
     '@echo off',
-    ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}" -Mode hourly -Server "{1}" -Database "{2}" -User "{3}" -Password "{4}"' -f $aggregateScript, $resolvedDbServer, $resolvedDbName, $resolvedDbUser, $resolvedDbPassword)
+    ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}" -Mode hourly -Server "{1}" -Database "{2}" -User "{3}"' -f $aggregateScript, $resolvedDbServer, $resolvedDbName, $resolvedDbUser)
 )
 $rollupCmd = @(
     '@echo off',
-    ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}" -Mode rollup -Server "{1}" -Database "{2}" -User "{3}" -Password "{4}"' -f $aggregateScript, $resolvedDbServer, $resolvedDbName, $resolvedDbUser, $resolvedDbPassword)
+    ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}" -Mode rollup -Server "{1}" -Database "{2}" -User "{3}"' -f $aggregateScript, $resolvedDbServer, $resolvedDbName, $resolvedDbUser)
 )
 
 Set-Content -Path $hourlyCmdPath -Value $hourlyCmd -Encoding ASCII

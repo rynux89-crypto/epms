@@ -4,6 +4,7 @@
 <%@ page import="java.util.*" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_html.jspf" %>
+<%@ include file="../../includes/epms_admin_guard.jspf" %>
 <%!
     private static class RetentionTargetDef {
         String fqtn;

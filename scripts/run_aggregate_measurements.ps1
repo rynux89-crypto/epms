@@ -61,7 +61,10 @@ $script:LogPath = Join-Path $logDir 'aggregate_measurements.log'
 $script:DbServer = Resolve-Value -Explicit $Server -EnvNames @('EPMS_DB_SERVER','EPMS_IMPORT_DB_SERVER') -Default 'localhost,1433'
 $script:DbName = Resolve-Value -Explicit $Database -EnvNames @('EPMS_DB_NAME','EPMS_IMPORT_DB_NAME') -Default 'epms'
 $script:DbUser = Resolve-Value -Explicit $User -EnvNames @('EPMS_DB_USER','EPMS_IMPORT_DB_USER') -Default 'sa'
-$script:DbPassword = Resolve-Value -Explicit $Password -EnvNames @('EPMS_DB_PASSWORD','EPMS_IMPORT_DB_PASSWORD') -Default '1234'
+$script:DbPassword = Resolve-Value -Explicit $Password -EnvNames @('EPMS_DB_PASSWORD','EPMS_IMPORT_DB_PASSWORD') -Default ''
+if ([string]::IsNullOrWhiteSpace($script:DbPassword)) {
+    throw 'Database password is required. Set -Password or EPMS_DB_PASSWORD.'
+}
 
 Write-Log 'info' ("aggregate run start mode={0} server={1} db={2}" -f $Mode, $script:DbServer, $script:DbName)
 

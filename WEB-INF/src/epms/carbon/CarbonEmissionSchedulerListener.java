@@ -35,7 +35,9 @@ public final class CarbonEmissionSchedulerListener implements ServletContextList
 
     private void safeRefreshAll() {
         try {
-            service.refreshAllScopes();
+            if (service.hasConfiguredFactors()) {
+                service.refreshAllScopes();
+            }
         } catch (Exception ignore) {
         }
     }

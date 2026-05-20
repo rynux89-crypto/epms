@@ -9,6 +9,7 @@
 <%@ page import="org.apache.poi.ss.usermodel.WorkbookFactory" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_html.jspf" %>
+<%@ include file="../../includes/epms_admin_guard.jspf" %>
 <%!
     private static final String[] METER_IMPORT_HEADERS = new String[] {
         "meter_id", "name", "building_name", "panel_name", "usage_type", "rated_voltage", "rated_current"

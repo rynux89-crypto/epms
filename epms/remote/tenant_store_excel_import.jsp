@@ -9,6 +9,7 @@
 <%@ page import="org.apache.poi.ss.usermodel.WorkbookFactory" %>
 <%@ include file="../../includes/dbconfig.jspf" %>
 <%@ include file="../../includes/epms_html.jspf" %>
+<%@ include file="../../includes/epms_admin_guard.jspf" %>
 <%!
     private static final String STORE_CODE_PREFIX = "STORE";
     private static String trimToNullImport(String s) {
