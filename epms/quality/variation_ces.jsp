@@ -64,11 +64,11 @@
     String building = request.getParameter("building");
     String usage = request.getParameter("usage");
 
-    // 湲곗? ?좏깮: avg(조회구간 평균) / rated(?뺢꺽 湲곗?-李멸퀬??
+    // 기준 선택: avg(조회구간 평균) / rated(정격 기준-참고용)
     String refMode = request.getParameter("refMode");
     if (refMode == null || refMode.trim().isEmpty()) refMode = "avg";
 
-    float ratedIDefault = 100f; // ?꾩슂???꾩옣 湲곗??꾨쪟(?? 李⑤떒湲??뺢꺽 ??濡?議곗젙
+    float ratedIDefault = 100f; // 필요한 현장 기준전류(예: 차단기 정격 등)로 조정
     float ratedI = safeParseFloat(request.getParameter("ratedI"), ratedIDefault);
 
     List<String[]> meterOptions = new ArrayList<>();
@@ -322,7 +322,7 @@
             }
         }
     } catch (Exception e) {
-        out.println("DB ?ㅻ쪟: " + e.getMessage());
+        out.println("DB 오류: " + e.getMessage());
     }
 
     final float EPS = 0.000001f;
@@ -338,7 +338,7 @@
         ibAvg = ibSum / ibRaw.size();
         icAvg = icSum / icRaw.size();
 
-        // 湲곗?媛?寃곗젙
+        // 기준값 결정
         if ("rated".equals(refMode) && Math.abs(ratedI) > EPS) {
             iaRef = ratedI;
             ibRef = ratedI;
@@ -367,7 +367,7 @@
         }
     }
 
-    // ?붿빟 ?듦퀎 + worst phase ?좏깮(95% |蹂?숈쑉| 湲곗?)
+    // 요약 통계 + worst phase 선택(95% |변동율| 기준)
     float aMax = maxFloat(currentRateA), aMin = minFloat(currentRateA), aP95 = percentileAbs(currentRateA, 95);
     float bMax = maxFloat(currentRateB), bMin = minFloat(currentRateB), bP95 = percentileAbs(currentRateB, 95);
     float cMax = maxFloat(currentRateC), cMin = minFloat(currentRateC), cP95 = percentileAbs(currentRateC, 95);

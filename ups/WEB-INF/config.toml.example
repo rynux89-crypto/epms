@@ -1,0 +1,12 @@
+[app]
+name = "UPS Monitor"
+base_url = "http://localhost:8080/ups"
+
+[ups_database]
+jndi_name = "java:comp/env/jdbc/ups"
+server = "localhost:1433"
+name = "UPS_MONITOR"
+user = "UPS_DB_USER"
+password = "UPS_DB_PASSWORD"
+encrypt = "true"
+trust_server_certificate = "true"

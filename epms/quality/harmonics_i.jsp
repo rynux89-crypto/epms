@@ -6,24 +6,24 @@
 
 <%
 try (Connection conn = openDbConnection()) {
-    // 湲곌컙 珥덇린??
+    // 기간 초기화
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today;
 
-    // 1. ?뚮씪誘명꽣 ?섏떊 (?곷떒?쇰줈 ?대룞?섏뿬 ?쇱뿉???좏깮媛??좎????ъ슜)
+    // 1. 파라미터 수신 (상단으로 이동하여 이전 선택값 유지)
     String startDate = request.getParameter("startDate");
     String startTime = request.getParameter("startTime");
     String endDate = request.getParameter("endDate");
     String endTime = request.getParameter("endTime");
 
-    // 媛믪씠 ?놁쑝硫?湲곕낯媛믪쑝濡??ㅼ젙
+    // 값이 없으면 기본값으로 설정
     if (startDate == null || startDate.trim().isEmpty()) { startDate = yesterday.toString(); }  // "YYYY-MM-DD"
     if (endDate == null || endDate.trim().isEmpty()) { endDate = today.toString(); }
     if (startTime == null || startTime.isEmpty()) { startTime = "00:00:00"; }
     if (endTime == null || endTime.isEmpty()) {  endTime = "23:59:59"; }
 
-    // meter 異붽?
-    String meter = "1";   // 湲곕낯媛믪? "1"
+    // meter 추가
+    String meter = "1";   // 기본값은 "1"
     String paramMeter = request.getParameter("meter");
 
     if (paramMeter != null && !paramMeter.trim().isEmpty()) {
@@ -191,7 +191,7 @@ try (Connection conn = openDbConnection()) {
 <% } %>
 
 <div class="chart-container">
-  <!-- ECharts??canvas ???div -->
+  <!-- ECharts용 canvas 영역 div -->
   <div id="thdChart" style="width:100%; height:100%;"></div>
 </div>
 
@@ -308,7 +308,7 @@ const option = {
 
 myChart.setOption(option);
 
-// ?대┃ ??harmonic_detail.jsp ?대룞
+// 클릭 시 harmonic_detail.jsp 이동
 myChart.on('click', function (params) {
   const index = params.dataIndex;
   const time = labelsPlot[index];
@@ -327,7 +327,7 @@ myChart.on('click', function (params) {
   window.location.href = url;
 });
 
-// 由ъ궗?댁쫰 ???
+// 리사이즈 처리
 window.addEventListener('resize', () => myChart.resize());
 </script>
 

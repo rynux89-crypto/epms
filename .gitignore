@@ -1,0 +1,5 @@
+ups.war
+ups/WEB-INF/config.toml
+ups/META-INF/context.xml
+ups/simulator/__pycache__/
+*.pyc

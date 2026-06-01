@@ -170,7 +170,7 @@
         String ext = resolveUploadSuffix(uploadName);
         if (".csv".equals(ext)) return readCsvRows(path);
         if (".xlsx".equals(ext)) return readXlsxRows(path);
-        throw new IllegalArgumentException("吏?먰븯吏 ?딅뒗 ?뚯씪 ?뺤떇?낅땲?? " + ext);
+        throw new IllegalArgumentException("지원하지 않는 파일 형식입니다: " + ext);
     }
 
     private static Double parseOptionalDouble(String value, int rowNo, String fieldName, List<String> errors) {
@@ -179,7 +179,7 @@
         try {
             return Double.valueOf(x.replace(",", ""));
         } catch (Exception e) {
-            errors.add("Row " + rowNo + ": '" + fieldName + "' 媛믪씠 ?レ옄媛 ?꾨떃?덈떎.");
+            errors.add("Row " + rowNo + ": '" + fieldName + "' 값이 숫자가 아닙니다.");
             return null;
         }
     }
@@ -190,7 +190,7 @@
         try {
             return Integer.valueOf(x.replace(",", ""));
         } catch (Exception e) {
-            errors.add("Row " + rowNo + ": meter_id 媛믪씠 ?뺤닔媛 ?꾨떃?덈떎.");
+            errors.add("Row " + rowNo + ": meter_id 값이 정수가 아닙니다.");
             return null;
         }
     }
@@ -275,7 +275,7 @@
                 String uploadName = request.getParameter("upload_name");
 
                 if (uploadB64 == null || uploadB64.trim().isEmpty()) {
-                    throw new IllegalArgumentException("?낅줈?쒕맂 ?뚯씪???놁뒿?덈떎.");
+                    throw new IllegalArgumentException("업로드된 파일이 없습니다.");
                 }
 
                 uploadNameUsed = (uploadName == null || uploadName.trim().isEmpty()) ? "meters.csv" : uploadName.trim();
@@ -377,12 +377,12 @@
             }
         }
     } catch (Exception e) {
-        error = "?섏씠吏 泥섎━ 以??ㅻ쪟: " + e.getMessage();
+        error = "페이지 처리 중 오류: " + e.getMessage();
     }
 %>
 <html>
 <head>
-    <title>怨꾨웾湲??묒?/CSV ?쇨큵 ?깅줉</title>
+    <title>계측기 Excel/CSV 일괄 등록</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         .page-wrap { max-width: 900px; margin: 0 auto; }
@@ -407,19 +407,19 @@
 <div id="loadingOverlay"><div class="spinner"></div></div>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>怨꾨웾湲??묒?/CSV ?쇨큵 ?깅줉/?섏젙</h2>
+        <h2>계측기 Excel/CSV 일괄 등록/수정</h2>
         <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='download_meter_template.jsp'">?쒗뵆由??ㅼ슫濡쒕뱶</button>
-            <button class="back-btn" onclick="location.href='meter_register.jsp'">紐⑸줉?쇰줈 ?뚯븘媛湲?/button>
+            <button class="back-btn" onclick="location.href='download_meter_template.jsp'">템플릿 다운로드</button>
+            <button class="back-btn" onclick="location.href='meter_register.jsp'">목록으로 돌아가기</button>
         </div>
     </div>
 
     <div class="info-box">
-        <b>1. ?쒗뵆由??ㅼ슫濡쒕뱶:</b> ?꾩옱 ?깅줉??紐⑤뱺 怨꾨웾湲??뺣낫媛 ?ы븿??XLSX ?쒗뵆由우쓣 ?ㅼ슫濡쒕뱶?⑸땲??<br/>
-        <b>2. ?뚯씪 ?섏젙:</b> ?쒗뵆由우뿉???뺣낫瑜??섏젙?섍굅?????됱쓣 異붽??⑸땲??<br/>
-        &nbsp;&nbsp;&nbsp;??<b>?섏젙 ??/b> `meter_id`瑜??좎??섍퀬 ?ㅻⅨ 媛믩쭔 諛붽퓠?덈떎.<br/>
-        &nbsp;&nbsp;&nbsp;??<b>?좉퇋 ?깅줉 ??/b> `meter_id`瑜?鍮꾩슦怨??섎㉧吏 ?뺣낫瑜??낅젰?⑸땲??<br/>
-        <b>3. ?뚯씪 ?낅줈??</b> ?섏젙??`.xlsx` ?먮뒗 `.csv` ?뚯씪???낅줈?쒗븯怨??ㅽ뻾 踰꾪듉???꾨쫭?덈떎.
+        <b>1. 템플릿 다운로드:</b> 현재 등록된 모든 계측기 정보가 포함된 XLSX 템플릿을 다운로드합니다.<br/>
+        <b>2. 파일 수정:</b> 템플릿에서 정보를 수정하거나 새 행을 추가합니다.<br/>
+        &nbsp;&nbsp;&nbsp;- <b>수정 시</b> `meter_id`를 유지하고 다른 값만 변경합니다.<br/>
+        &nbsp;&nbsp;&nbsp;- <b>신규 등록 시</b> `meter_id`를 비우고 나머지 정보를 입력합니다.<br/>
+        <b>3. 파일 업로드:</b> 수정한 `.xlsx` 또는 `.csv` 파일을 업로드하고 실행 버튼을 누릅니다.
     </div>
 
     <% if (error != null) { %>
@@ -428,10 +428,10 @@
 
     <form method="POST" id="importForm" action="<%= request.getRequestURI() %>" onsubmit="return handleFormSubmit(event);">
         <div class="toolbar">
-            <label for="excel_file"><b>CSV/Excel ?뚯씪 ?좏깮</b></label>
+            <label for="excel_file"><b>CSV/Excel 파일 선택</b></label>
             <input type="file" id="excel_file" accept=".csv,.xlsx" required>
             <div class="btn-group">
-                <button type="submit">媛?몄삤湲??ㅽ뻾</button>
+                <button type="submit">가져오기 실행</button>
             </div>
         </div>
         <input type="hidden" name="upload_name" id="upload_name">
@@ -457,22 +457,22 @@
 
         <div class="ok-box">
             <% if (resultText.contains("\"ok\":true") && !resultText.contains("\"errors\":[\"")) { %>
-                ?ㅽ뻾 ?꾨즺
+            실행 결과
             <% } else if (resultText.contains("\"ok\":true")) { %>
-                ?ㅽ뻾 ?꾨즺 (?ㅻ쪟 諛쒖깮)
+            실행 결과 (오류 발생)
             <% } else { %>
-                ?ㅽ뻾 ?ㅽ뙣
+            실행 완료
             <% } %>
         </div>
 
         <div class="info-box">
-            泥섎━ ????뚯씪: <span class="mono"><%= h(uploadNameUsed) %></span>
+            처리 대상 파일: <span class="mono"><%= h(uploadNameUsed) %></span>
         </div>
 
         <div id="resultSummary"></div>
 
         <details>
-            <summary class="muted">Import ?먮낯 寃곌낵 蹂닿린</summary>
+            <summary class="muted">Import 원본 결과 보기</summary>
             <pre id="resultRaw"><%= h(resultText) %></pre>
         </details>
     <% } %>
@@ -487,7 +487,7 @@
         var errors = Array.isArray(obj.errors) ? obj.errors : [];
         var errorHtml = '';
         if (errors.length > 0) {
-            errorHtml = '<div class="err-box"><b>?ㅻ쪟 (' + errors.length + '嫄?</b><br/>' +
+            errorHtml = '<div class="err-box"><b>오류 (' + errors.length + '건)</b><br/>' +
                 errors.slice(0, 20).map(function(e) { return '- ' + esc(e); }).join('<br/>') +
                 (errors.length > 20 ? '<br/>... ?? : '') +
                 '</div>';
@@ -495,9 +495,9 @@
 
         summaryEl.innerHTML =
             '<div class="result-grid">' +
-            '  <div class="result-card"><div class="k">珥?????/div><div class="v">' + esc(obj.rows_total) + '</div></div>' +
-            '  <div class="result-card"><div class="k">?좉퇋 ?깅줉</div><div class="v">' + esc(obj.inserts) + '</div></div>' +
-            '  <div class="result-card"><div class="k">?뺣낫 ?섏젙</div><div class="v">' + esc(obj.updates) + '</div></div>' +
+            '  <div class="result-card"><div class="k">총 행</div><div class="v">' + esc(obj.rows_total) + '</div></div>' +
+            '  <div class="result-card"><div class="k">신규 등록</div><div class="v">' + esc(obj.inserts) + '</div></div>' +
+            '  <div class="result-card"><div class="k">정보 수정</div><div class="v">' + esc(obj.updates) + '</div></div>' +
             '</div>' + errorHtml;
     }
 
@@ -520,7 +520,7 @@
 
         var file = fileInput.files && fileInput.files[0];
         if (!file) {
-            alert('?낅줈?쒗븷 ?뚯씪???좏깮??二쇱꽭??');
+            alert('업로드할 파일을 선택해 주세요.');
             return false;
         }
 
@@ -534,7 +534,7 @@
         };
         reader.onerror = function() {
             loadingOverlay.style.display = 'none';
-            alert('?뚯씪???쎈뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.');
+            alert('파일을 읽는 중 오류가 발생했습니다.');
         };
         reader.readAsDataURL(file);
 

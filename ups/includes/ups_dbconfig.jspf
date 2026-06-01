@@ -1,0 +1,165 @@
+<%@ page import="java.io.*" %>
+<%@ page import="java.sql.*" %>
+<%@ page import="java.util.*" %>
+<%@ page import="javax.naming.InitialContext" %>
+<%@ page import="javax.naming.NamingException" %>
+<%@ page import="javax.sql.DataSource" %>
+<%!
+    private static final String UPS_DB_JNDI_NAME = "java:comp/env/jdbc/ups";
+    private static final Object UPS_DB_DATASOURCE_LOCK = new Object();
+    private static volatile DataSource UPS_CACHED_DATA_SOURCE = null;
+
+    private static DataSource resolveUpsDataSource() throws Exception {
+        DataSource ds = UPS_CACHED_DATA_SOURCE;
+        if (ds != null) return ds;
+
+        synchronized (UPS_DB_DATASOURCE_LOCK) {
+            if (UPS_CACHED_DATA_SOURCE != null) return UPS_CACHED_DATA_SOURCE;
+
+            InitialContext ic = null;
+            NamingException lastError = null;
+            try {
+                ic = new InitialContext();
+                String[] names = new String[]{ UPS_DB_JNDI_NAME, "jdbc/ups" };
+                for (String name : names) {
+                    try {
+                        Object obj = ic.lookup(name);
+                        if (obj instanceof DataSource) {
+                            UPS_CACHED_DATA_SOURCE = (DataSource)obj;
+                            return UPS_CACHED_DATA_SOURCE;
+                        }
+                    } catch (NamingException ne) {
+                        lastError = ne;
+                    }
+                }
+            } finally {
+                try { if (ic != null) ic.close(); } catch (Exception ignore) {}
+            }
+
+            if (lastError != null) throw lastError;
+            throw new NamingException("JNDI datasource not found: " + UPS_DB_JNDI_NAME);
+        }
+    }
+
+    private File getUpsConfigTomlFile() {
+        try {
+            String path = getServletContext().getRealPath("/WEB-INF/config.toml");
+            if (path == null || path.isEmpty()) return null;
+            return new File(path);
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private Map<String, String> loadUpsConfigToml() {
+        Map<String, String> out = new HashMap<String, String>();
+        File file = getUpsConfigTomlFile();
+        if (file == null || !file.exists() || !file.isFile()) return out;
+
+        String section = null;
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"));
+            String rawLine;
+            while ((rawLine = reader.readLine()) != null) {
+                String line = rawLine.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                if (line.startsWith("[") && line.endsWith("]") && line.length() > 2) {
+                    section = line.substring(1, line.length() - 1).trim();
+                    continue;
+                }
+                int eq = line.indexOf('=');
+                if (eq <= 0) continue;
+                String key = line.substring(0, eq).trim();
+                String value = line.substring(eq + 1).trim();
+                int commentIdx = value.indexOf(" #");
+                if (commentIdx >= 0) value = value.substring(0, commentIdx).trim();
+                if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+                    value = value.substring(1, value.length() - 1);
+                }
+                String fullKey = (section == null || section.isEmpty()) ? key : (section + "." + key);
+                out.put(fullKey, value);
+            }
+        } catch (Exception ignore) {
+        } finally {
+            closeUpsQuietly(reader);
+        }
+        return out;
+    }
+
+    private String upsFirstNonBlank(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) return value;
+        }
+        return null;
+    }
+
+    private String upsFirstNonNull(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private String normalizeUpsSqlServerJdbcHost(String server) {
+        if (server == null) return "";
+        String s = server.trim();
+        if (s.matches("^[^\\\\,]+,\\d+$")) return s.replace(',', ':');
+        return s;
+    }
+
+    private Connection openDirectUpsConfigConnection() throws Exception {
+        Map<String, String> cfg = loadUpsConfigToml();
+        String server = upsFirstNonBlank(System.getenv("UPS_DB_SERVER"), cfg.get("ups_database.server"));
+        String dbName = upsFirstNonBlank(System.getenv("UPS_DB_NAME"), cfg.get("ups_database.name"));
+        String user = upsFirstNonBlank(System.getenv("UPS_DB_USER"), cfg.get("ups_database.user"));
+        String password = upsFirstNonNull(System.getenv("UPS_DB_PASSWORD"), cfg.get("ups_database.password"));
+        String encrypt = upsFirstNonBlank(System.getenv("UPS_DB_ENCRYPT"), cfg.get("ups_database.encrypt"));
+        String trust = upsFirstNonBlank(System.getenv("UPS_DB_TRUST_SERVER_CERTIFICATE"), cfg.get("ups_database.trust_server_certificate"));
+
+        if (server == null || server.trim().isEmpty() ||
+            dbName == null || dbName.trim().isEmpty() ||
+            user == null || user.trim().isEmpty() ||
+            password == null) {
+            throw new NamingException("UPS database settings are incomplete. Set UPS_DB_* environment variables or WEB-INF/config.toml [ups_database].");
+        }
+
+        if (encrypt == null || encrypt.trim().isEmpty()) encrypt = "true";
+        if (trust == null || trust.trim().isEmpty()) trust = "true";
+
+        Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+        String url =
+            "jdbc:sqlserver://" + normalizeUpsSqlServerJdbcHost(server) +
+            ";databaseName=" + dbName.trim() +
+            ";encrypt=" + encrypt.trim() +
+            ";trustServerCertificate=" + trust.trim() +
+            ";loginTimeout=5;";
+        return DriverManager.getConnection(url, user.trim(), password);
+    }
+
+    private Connection openUpsDbConnection() throws Exception {
+        Exception primaryError = null;
+        try {
+            return resolveUpsDataSource().getConnection();
+        } catch (Exception e) {
+            primaryError = e;
+        }
+
+        try {
+            return openDirectUpsConfigConnection();
+        } catch (Exception fallbackError) {
+            if (primaryError != null) fallbackError.addSuppressed(primaryError);
+            throw fallbackError;
+        }
+    }
+
+    private static void closeUpsQuietly(AutoCloseable c) {
+        if (c == null) return;
+        try {
+            c.close();
+        } catch (Exception ignore) {
+        }
+    }
+%>

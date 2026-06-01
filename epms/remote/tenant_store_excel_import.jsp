@@ -143,7 +143,7 @@ try {
         try {
             String uploadB64 = request.getParameter("upload_b64");
             String uploadName = request.getParameter("upload_name");
-            if (uploadB64 == null || uploadB64.trim().isEmpty()) throw new IllegalArgumentException("?낅줈?쒕맂 ?뚯씪???놁뒿?덈떎.");
+            if (uploadB64 == null || uploadB64.trim().isEmpty()) throw new IllegalArgumentException("업로드된 파일이 없습니다.");
 
             uploadNameUsed = (uploadName == null || uploadName.trim().isEmpty()) ? "tenant_store.xlsx" : uploadName.trim();
             String b64 = uploadB64.trim();
@@ -180,7 +180,7 @@ try {
                     String notes = trimToNullImport(row.get("notes"));
 
                     if (storeName == null) {
-                        errors.add("Row " + rowNo + ": store_name? ?꾩닔?낅땲??");
+                        errors.add("Row " + rowNo + ": store_name은 필수입니다.");
                         continue;
                     }
                     if (storeCode == null) storeCode = nextStoreCode(conn);
@@ -189,14 +189,14 @@ try {
                         String x = trimToNullImport(row.get("opened_on"));
                         if (x != null) openedOn = java.sql.Date.valueOf(x);
                     } catch (Exception e) {
-                        errors.add("Row " + rowNo + ": opened_on ?뺤떇? YYYY-MM-DD ?댁뼱???⑸땲??");
+                        errors.add("Row " + rowNo + ": opened_on 형식은 YYYY-MM-DD 이어야 합니다.");
                         continue;
                     }
                     try {
                         String x = trimToNullImport(row.get("closed_on"));
                         if (x != null) closedOn = java.sql.Date.valueOf(x);
                     } catch (Exception e) {
-                        errors.add("Row " + rowNo + ": closed_on ?뺤떇? YYYY-MM-DD ?댁뼱???⑸땲??");
+                        errors.add("Row " + rowNo + ": closed_on 형식은 YYYY-MM-DD 이어야 합니다.");
                         continue;
                     }
 
@@ -267,7 +267,7 @@ try {
 %>
 <html>
 <head>
-    <title>留ㅼ옣 Excel/CSV ?쇨큵 ?깅줉</title>
+    <title>매장 Excel/CSV 일괄 등록</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         body{max-width:980px;margin:14px auto;padding:0 12px}
@@ -284,29 +284,29 @@ try {
 <div id="loadingOverlay"><div class="spinner"></div></div>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>留ㅼ옣 Excel/CSV ?쇨큵 ?깅줉/?섏젙</h2>
+        <h2>매장 Excel/CSV 일괄 등록/수정</h2>
         <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='download_tenant_store_template.jsp'">?쒗뵆由??ㅼ슫濡쒕뱶</button>
-            <button class="back-btn" onclick="location.href='tenant_store_manage.jsp'">留ㅼ옣 愿由щ줈</button>
+            <button class="back-btn" onclick="location.href='download_tenant_store_template.jsp'">템플릿 다운로드</button>
+            <button class="back-btn" onclick="location.href='tenant_store_manage.jsp'">매장 관리로</button>
         </div>
     </div>
     <div class="info-box">
-        1. ?쒗뵆由우쓣 ?대젮諛쏆븘 `store_code` 湲곗??쇰줈 湲곗〈 留ㅼ옣? ?섏젙, ?녿뒗 肄붾뱶???좉퇋 ?깅줉?⑸땲??<br/>
-        2. ?좎쭨??`YYYY-MM-DD` ?뺤떇?쇰줈 ?낅젰?⑸땲??<br/>
-        3. `.xlsx` ?먮뒗 `.csv` ?뚯씪???낅줈?쒗븯硫???踰덉뿉 諛섏쁺?⑸땲??
+        1. 템플릿을 내려받아 `store_code` 기준으로 기존 매장을 수정하거나, 코드가 없는 행을 신규 등록합니다.<br/>
+        2. 날짜는 `YYYY-MM-DD` 형식으로 입력합니다.<br/>
+        3. `.xlsx` 또는 `.csv` 파일을 업로드하면 한 번에 반영됩니다.
     </div>
     <% if (error != null) { %><div class="err-box"><%= h(error) %></div><% } %>
     <form method="POST" id="importForm" action="<%= request.getRequestURI() %>" onsubmit="return handleFormSubmit(event);">
         <div class="toolbar">
-            <label for="excel_file"><b>CSV/Excel ?뚯씪 ?좏깮</b></label>
+            <label for="excel_file"><b>CSV/Excel 파일 선택</b></label>
             <input type="file" id="excel_file" accept=".csv,.xlsx" required>
-            <div class="btn-group"><button type="submit">?낅줈???ㅽ뻾</button></div>
+            <div class="btn-group"><button type="submit">업로드 실행</button></div>
         </div>
         <input type="hidden" name="upload_name" id="upload_name">
         <input type="hidden" name="upload_b64" id="upload_b64">
     </form>
     <% if (resultText != null && !resultText.trim().isEmpty()) { %>
-    <div class="ok-box">?낅줈??泥섎━ ?꾨즺</div>
+    <div class="ok-box">업로드 처리 완료</div>
     <pre><%= h(resultText) %></pre>
     <% } %>
 </div>
@@ -319,11 +319,11 @@ function handleFormSubmit(event){
     var uploadB64=document.getElementById('upload_b64');
     var loadingOverlay=document.getElementById('loadingOverlay');
     var file=fileInput.files&&fileInput.files[0];
-    if(!file){alert('?낅줈?쒗븷 ?뚯씪???좏깮??二쇱꽭??');return false;}
+    if(!file){alert('업로드할 파일을 선택해 주세요.');return false;}
     loadingOverlay.style.display='flex';
     var reader=new FileReader();
     reader.onload=function(e){uploadName.value=file.name||'';uploadB64.value=String(e.target.result||'');form.submit();};
-    reader.onerror=function(){loadingOverlay.style.display='none';alert('?뚯씪???쎈뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.');};
+    reader.onerror=function(){loadingOverlay.style.display='none';alert('파일을 읽는 중 오류가 발생했습니다.');};
     reader.readAsDataURL(file);
     return false;
 }

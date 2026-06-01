@@ -45,7 +45,7 @@
 
 <%
     try (Connection conn = openDbConnection()) {
-    // ===== 湲곕낯 ?뚮씪誘명꽣 ?명똿 (variation_ves.jsp? ?숈씪??UX) =====
+    // ===== 기본 파라미터 설정 (variation_ves.jsp와 동일한 UX) =====
     LocalDate today = LocalDate.now();
     LocalDate yesterday = today;
 
@@ -72,7 +72,7 @@
     float warn2 = 2f;
     float warn3 = 3f;
 
-    // ?듭뀡 紐⑸줉 (variation_ves.jsp? ?숈씪)
+    // 옵션 목록 (variation_ves.jsp와 동일)
     List<String[]> meterOptions = new ArrayList<>();
     List<String> buildingOptions = new ArrayList<>();
     List<String> usageOptions = new ArrayList<>();
@@ -303,11 +303,11 @@
 </form>
 
 <%
-    // ===== ?곗씠??議고쉶 諛?遺덊룊??怨꾩궛 =====
+    // ===== 데이터 조회 및 불평형 계산 =====
     List<String> labels = new ArrayList<>();
 
-    List<Float> unbPhase = new ArrayList<>(); // ?곸쟾??遺덊룊??%)
-    List<Float> unbLine = new ArrayList<>();  // ?좉컙?꾩븬 遺덊룊??%)
+    List<Float> unbPhase = new ArrayList<>(); // 상전압 불평형(%)
+    List<Float> unbLine = new ArrayList<>();  // 선간전압 불평형(%)
 
     List<Float> phaseWarn2Line = new ArrayList<>();
     List<Float> phaseWarn3Line = new ArrayList<>();
@@ -347,7 +347,7 @@
                     float vbc = rs.getFloat("voltage_bc");
                     float vca = rs.getFloat("voltage_ca");
 
-                    // ?곸쟾??遺덊룊??NEMA-style)
+                    // 상전압 불평형(NEMA-style)
                     float vavgP = (va + vb + vc) / 3f;
                     float phaseU = 0f;
                     if (Math.abs(vavgP) > EPS) {
@@ -355,7 +355,7 @@
                         phaseU = (dmax / vavgP) * 100f;
                     }
 
-                    // ?좉컙?꾩븬 遺덊룊??NEMA-style)
+                    // 선간전압 불평형(NEMA-style)
                     float vavgL = (vab + vbc + vca) / 3f;
                     float lineU = 0f;
                     if (Math.abs(vavgL) > EPS) {
@@ -378,7 +378,7 @@
         lineWarn1Line.add(warn1);
     }
 
-    // ?붿빟 ?듦퀎
+    // 요약 통계
     float maxPhase = maxFloat(unbPhase);
     float maxLine = maxFloat(unbLine);
     float p95Phase = percentileAbs(unbPhase, 95);
@@ -405,7 +405,7 @@
     float line1pct = (cntLine1 * 100f) / n;
     boolean noData = labels.isEmpty();
 
-    // ===== JSON 臾몄옄???앹꽦 (stream/toList 誘몄궗?? ?댁쁺 ?섍꼍 ?명솚?? =====
+    // ===== JSON 문자열 생성 (stream/toList 미사용: 구형 운영 환경 호환) =====
     StringBuilder labelsJson = new StringBuilder("[");
     for (int i = 0; i < labels.size(); i++) {
         if (i > 0) labelsJson.append(',');

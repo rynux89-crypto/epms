@@ -19,11 +19,11 @@ try (Connection conn = openDbConnection()) {
 <!doctype html>
 <html>
 <head>
-    <title>媛쒕퀎 ?ъ슜??愿由?/title>
+    <title>개별 사용량 관리</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
 </head>
 <body>
-<div class="err-box">meter_id 媛 ?꾩슂?⑸땲??</div>
+<div class="err-box">meter_id가 필요합니다.</div>
 </body>
 </html>
 <%
@@ -186,7 +186,7 @@ try (Connection conn = openDbConnection()) {
 <!doctype html>
 <html>
 <head>
-    <title>媛쒕퀎 ?ъ슜??愿由?/title>
+    <title>개별 사용량 관리</title>
     <script src="../../js/echarts.js"></script>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
@@ -219,15 +219,15 @@ try (Connection conn = openDbConnection()) {
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <h2>媛쒕퀎 ?ъ슜??愿由?/h2>
+        <h2>개별 사용량 관리</h2>
         <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='/epms/energy/energy_meter_overview.jsp'">?먮꼫吏 愿由?/button>
-            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS ??/button>
+            <button class="back-btn" onclick="location.href='/epms/energy/energy_meter_overview.jsp'">에너지 관리</button>
+            <button class="back-btn" onclick="location.href='/epms/epms_main.jsp'">EPMS 홈</button>
         </div>
     </div>
 
     <% if (queryError != null && !queryError.trim().isEmpty()) { %>
-    <div class="err-box">議고쉶 ?ㅻ쪟: <%= h(queryError) %></div>
+    <div class="err-box">조회 오류: <%= h(queryError) %></div>
     <% } %>
 
     <div class="hero">
@@ -241,65 +241,65 @@ try (Connection conn = openDbConnection()) {
             </div>
             <div class="hero-stats">
                 <div class="stat">
-                    <div class="stat-label">?꾩옱 ?ъ슜??/div>
+                    <div class="stat-label">현재 사용량</div>
                     <div class="stat-value <%= shownCurrentKw <= 0.0001d ? "is-muted" : "" %>"><%= String.format(java.util.Locale.US, "%,.2f", shownCurrentKw) %> <span style="font-size:12px;">kW</span></div>
-                    <div class="stat-sub"><%= usingFallbackCurrent ? ("理쒓렐 ?좏슚媛?湲곗?: " + h(String.valueOf(currentValidMeasuredAt))) : (currentMeasuredAt == null ? "理쒓렐 痢≪젙媛??놁쓬" : h(String.valueOf(currentMeasuredAt))) %></div>
+                    <div class="stat-sub"><%= usingFallbackCurrent ? ("최근 유효값 기준: " + h(String.valueOf(currentValidMeasuredAt))) : (currentMeasuredAt == null ? "최근 측정값 없음" : h(String.valueOf(currentMeasuredAt))) %></div>
                 </div>
                 <div class="stat">
-                    <div class="stat-label">吏?쒕떖 ?ъ슜??/div>
+                    <div class="stat-label">지난달 사용량</div>
                     <div class="stat-value"><%= String.format(java.util.Locale.US, "%,.1f", prevMonthKwh) %> <span style="font-size:12px;">kWh</span></div>
-                    <div class="stat-sub"><%= prevYm.toString() %> ?꾩쟻</div>
+                    <div class="stat-sub"><%= prevYm.toString() %> 누적</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-label">?대쾲???꾩쟻</div>
+                    <div class="stat-label">이번달 누적</div>
                     <div class="stat-value"><%= String.format(java.util.Locale.US, "%,.1f", currentMonthKwh) %> <span style="font-size:12px;">kWh</span></div>
-                    <div class="stat-sub"><%= currentYm.toString() %> ?꾩쟻</div>
+                    <div class="stat-sub"><%= currentYm.toString() %> 누적</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-label">湲덉씪 ?ъ슜??/div>
+                    <div class="stat-label">금일 사용량</div>
                     <div class="stat-value"><%= String.format(java.util.Locale.US, "%,.1f", todayKwh) %> <span style="font-size:12px;">kWh</span></div>
-                    <div class="stat-sub"><%= today.toString() %> 湲곗?</div>
+                    <div class="stat-sub"><%= today.toString() %> 기준</div>
                 </div>
             </div>
         </div>
 
         <div class="meta-card">
-            <h3>怨꾩륫湲??뺣낫</h3>
+            <h3>계측기 정보</h3>
             <div class="meta-grid">
                 <div class="meta-item">
-                    <div class="meta-label">嫄대Ъ</div>
+                    <div class="meta-label">건물</div>
                     <div class="meta-value"><%= h(String.valueOf(buildingName == null ? "-" : buildingName)) %></div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">?⑤꼸</div>
+                    <div class="meta-label">패널</div>
                     <div class="meta-value"><%= h(String.valueOf(panelName == null ? "-" : panelName)) %></div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">?⑸룄</div>
+                    <div class="meta-label">용도</div>
                     <div class="meta-value"><%= h(String.valueOf(usageType == null ? "-" : usageType)) %></div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">?꾩옱 ??쪧</div>
+                    <div class="meta-label">현재 역률</div>
                     <div class="meta-value"><%= String.format(java.util.Locale.US, "%,.3f", currentPf == null ? 0.0 : currentPf.doubleValue()) %></div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">?뺢꺽 ?꾩븬</div>
+                    <div class="meta-label">정격 전압</div>
                     <div class="meta-value"><%= String.format(java.util.Locale.US, "%,.1f", ratedVoltage == null ? 0.0 : ratedVoltage.doubleValue()) %> V</div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">?뺢꺽 ?꾨쪟</div>
+                    <div class="meta-label">정격 전류</div>
                     <div class="meta-value"><%= String.format(java.util.Locale.US, "%,.1f", ratedCurrent == null ? 0.0 : ratedCurrent.doubleValue()) %> A</div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">理쒓렐 ?꾩쟻 ?먮꼫吏</div>
+                    <div class="meta-label">최근 누적 에너지</div>
                     <div class="meta-value"><%= String.format(java.util.Locale.US, "%,.1f", currentEnergyTotal == null ? 0.0 : currentEnergyTotal.doubleValue()) %> kWh</div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">30???됯퇏 ?쇱궗?⑸웾</div>
+                    <div class="meta-label">30일 평균 일사용량</div>
                     <div class="meta-value"><%= String.format(java.util.Locale.US, "%,.1f", avgDailyKwh) %> kWh</div>
                 </div>
                 <div class="meta-item">
-                    <div class="meta-label">30???쇳겕?꾨젰</div>
+                    <div class="meta-label">30일 피크전력</div>
                     <div class="meta-value"><%= String.format(java.util.Locale.US, "%,.2f", peakKw) %> kW</div>
                 </div>
             </div>
@@ -308,22 +308,22 @@ try (Connection conn = openDbConnection()) {
 
     <div class="chart-grid">
         <div class="panel">
-            <h3>?쇰퀎 ?ъ슜??異붿씠</h3>
+            <h3>일별 사용량 추이</h3>
             <div id="dailyChart" class="chart-box"></div>
         </div>
         <div class="panel">
-            <h3>?붾퀎 ?ъ슜??異붿씠</h3>
+            <h3>월별 사용량 추이</h3>
             <div id="monthlyChart" class="chart-box"></div>
         </div>
     </div>
 
     <div class="panel" style="margin-top:16px;">
-        <h3>理쒓렐 31???쇰퀎 ?ъ슜??/h3>
+        <h3>최근 31일 일별 사용량</h3>
         <table class="data-table">
             <thead>
             <tr>
-                <th>?좎쭨</th>
-                <th>?ъ슜??(kWh)</th>
+                <th>날짜</th>
+                <th>사용량(kWh)</th>
             </tr>
             </thead>
             <tbody>
@@ -384,13 +384,13 @@ dailyChart.setOption({
     color:['#d48a14'],
     tooltip:{trigger:'axis',formatter:function(params){
         if(!params||!params.length) return '';
-        return params[0].axisValue + '<br/>' + params[0].marker + '?쇱궗?⑸웾: ' + fmtNum(params[0].value,1) + ' kWh';
+        return params[0].axisValue + '<br/>' + params[0].marker + '일사용량: ' + fmtNum(params[0].value,1) + ' kWh';
     }},
     grid:{left:50,right:20,top:18,bottom:40,containLabel:true},
     xAxis:{type:'category',data:dailyLabels,axisLabel:{color:'#64748b',interval:4}},
     yAxis:{type:'value',axisLabel:{formatter:function(v){ return fmtNum(v,0); }}},
     series:[{
-        name:'?쇱궗?⑸웾',
+        name:'일사용량',
         type:'line',
         smooth:true,
         symbol:'circle',
@@ -407,13 +407,13 @@ monthlyChart.setOption({
     color:['#2f6fed'],
     tooltip:{trigger:'axis',formatter:function(params){
         if(!params||!params.length) return '';
-        return params[0].axisValue + '<br/>' + params[0].marker + '?붿궗?⑸웾: ' + fmtNum(params[0].value,1) + ' kWh';
+        return params[0].axisValue + '<br/>' + params[0].marker + '월사용량: ' + fmtNum(params[0].value,1) + ' kWh';
     }},
     grid:{left:48,right:20,top:18,bottom:40,containLabel:true},
     xAxis:{type:'category',data:monthlyLabels,axisLabel:{color:'#64748b'}},
     yAxis:{type:'value',axisLabel:{formatter:function(v){ return fmtNum(v,0); }}},
     series:[{
-        name:'?붿궗?⑸웾',
+        name:'월사용량',
         type:'bar',
         barMaxWidth:30,
         itemStyle:{color:'#2f6fed',borderRadius:[8,8,0,0]},
