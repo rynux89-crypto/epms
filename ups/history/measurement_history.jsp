@@ -4,20 +4,6 @@
 <%@ include file="../includes/ups_dbconfig.jspf" %>
 <%@ include file="../includes/ups_html.jspf" %>
 <%!
-    private String fmt(Object value, int scale) {
-        if (value == null) return "";
-        try {
-            double v = value instanceof Number ? ((Number)value).doubleValue() : Double.parseDouble(String.valueOf(value));
-            return String.format(java.util.Locale.US, "%,." + scale + "f", v);
-        } catch (Exception ignore) {
-            return String.valueOf(value);
-        }
-    }
-
-    private String dt(Object value) {
-        return value == null ? "" : String.valueOf(value).replace('-', '/');
-    }
-
     private int parseLimit(String raw) {
         try {
             int n = Integer.parseInt(raw == null ? "" : raw.trim());
@@ -25,17 +11,6 @@
         } catch (Exception ignore) {
         }
         return 200;
-    }
-
-    private Timestamp parseDateTime(String raw) {
-        if (raw == null || raw.trim().isEmpty()) return null;
-        String s = raw.trim().replace('T', ' ');
-        if (s.length() == 16) s += ":00";
-        try {
-            return Timestamp.valueOf(s);
-        } catch (Exception ignore) {
-            return null;
-        }
     }
 
     private String csv(Object value) {
@@ -52,71 +27,30 @@
 request.setCharacterEncoding("UTF-8");
 String err = null;
 String selectedId = request.getParameter("ups_id");
+String upsSearch = request.getParameter("ups");
+String searchText = upsSearch == null ? "" : upsSearch.trim();
+String normalizedSearchText = searchText.replaceAll("\\s+", "");
 String fromRaw = request.getParameter("from");
 String toRaw = request.getParameter("to");
+boolean explicitTo = toRaw != null && !toRaw.trim().isEmpty();
 String export = request.getParameter("export");
 int limit = parseLimit(request.getParameter("limit"));
-Timestamp fromTs = parseDateTime(fromRaw);
-Timestamp toTs = parseDateTime(toRaw);
+java.util.Calendar nowCal = java.util.Calendar.getInstance();
+String defaultTo = epms.util.UpsFormatSupport.htmlDateTime(nowCal);
+java.util.Calendar fromCal = (java.util.Calendar) nowCal.clone();
+fromCal.add(java.util.Calendar.DAY_OF_MONTH, -1);
+String defaultFrom = epms.util.UpsFormatSupport.htmlDateTime(fromCal);
+if (fromRaw == null || fromRaw.trim().isEmpty()) fromRaw = defaultFrom;
+if (toRaw == null || toRaw.trim().isEmpty()) toRaw = defaultTo;
+Timestamp fromTs = epms.util.UpsFormatSupport.parseDateTime(fromRaw, false);
+Timestamp toTs = epms.util.UpsFormatSupport.parseDateTime(toRaw, true);
 
 List<Map<String, Object>> devices = new ArrayList<Map<String, Object>>();
 List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
 
-try (Connection conn = openUpsDbConnection()) {
-    try (PreparedStatement ps = conn.prepareStatement(
-        "SELECT ups_id, ups_name, ip_address, modbus_port FROM dbo.ups_device ORDER BY ups_name")) {
-        try (ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                Map<String, Object> d = new HashMap<String, Object>();
-                d.put("ups_id", rs.getInt("ups_id"));
-                d.put("ups_name", rs.getString("ups_name"));
-                d.put("ip_address", rs.getString("ip_address"));
-                d.put("modbus_port", rs.getInt("modbus_port"));
-                devices.add(d);
-            }
-        }
-    }
-
-    StringBuilder sql = new StringBuilder();
-    sql.append("SELECT TOP ").append(limit).append(" d.ups_name, d.ip_address, d.modbus_port, ")
-       .append("m.measured_at, m.output_voltage_l12, m.output_voltage_l23, m.output_voltage_l31, ")
-       .append("m.output_current_l1, m.output_current_l2, m.output_current_l3, ")
-       .append("m.frequency, m.load_percent, m.output_power_kw, m.output_apparent_total_kva, ")
-       .append("m.output_pf_l1, m.output_pf_l2, m.output_pf_l3, ")
-       .append("m.battery_voltage, m.battery_current, m.battery_charge_percent, m.battery_temperature, m.remaining_minutes, ")
-       .append("m.ups_operation_mode_code, m.system_operation_mode_code, m.raw_status ")
-       .append("FROM dbo.ups_measurement m INNER JOIN dbo.ups_device d ON d.ups_id = m.ups_id WHERE 1=1 ");
-    List<Object> params = new ArrayList<Object>();
-    if (selectedId != null && !selectedId.trim().isEmpty()) {
-        sql.append("AND m.ups_id = ? ");
-        params.add(Integer.valueOf(selectedId.trim()));
-    }
-    if (fromTs != null) {
-        sql.append("AND m.measured_at >= ? ");
-        params.add(fromTs);
-    }
-    if (toTs != null) {
-        sql.append("AND m.measured_at <= ? ");
-        params.add(toTs);
-    }
-    sql.append("ORDER BY m.measured_at DESC");
-
-    try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
-        for (int i = 0; i < params.size(); i++) {
-            Object p = params.get(i);
-            if (p instanceof Timestamp) ps.setTimestamp(i + 1, (Timestamp)p);
-            else if (p instanceof Integer) ps.setInt(i + 1, ((Integer)p).intValue());
-            else ps.setObject(i + 1, p);
-        }
-        try (ResultSet rs = ps.executeQuery()) {
-            ResultSetMetaData md = rs.getMetaData();
-            while (rs.next()) {
-                Map<String, Object> row = new HashMap<String, Object>();
-                for (int i = 1; i <= md.getColumnCount(); i++) row.put(md.getColumnLabel(i), rs.getObject(i));
-                rows.add(row);
-            }
-        }
-    }
+try {
+    devices = epms.ups.UpsQueryService.listDevicesBasic();
+    rows = epms.ups.UpsQueryService.measurementHistory(selectedId, searchText, fromTs, toTs, limit);
 } catch (Exception e) {
     err = e.getMessage();
 }
@@ -168,22 +102,30 @@ if ("csv".equalsIgnoreCase(export)) {
     <style>
         body { background:#f2f4f7; }
         .history-shell { max-width:1320px; margin:0 auto; }
-        .history-filter { display:flex; flex-wrap:wrap; gap:10px; align-items:end; background:#fff; border:1px solid #d7e1ec; border-radius:8px; padding:12px; margin-bottom:12px; }
-        .history-filter label { display:grid; gap:4px; font-size:12px; color:#475569; }
-        .history-filter input, .history-filter select { min-height:34px; border:1px solid #b9c7d7; border-radius:6px; padding:6px 8px; background:#fff; color:#111827; }
-        .history-filter button { min-height:34px; }
+        .history-filter { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:#fff; border:1px solid #dbe5f2; border-radius:8px; padding:12px; margin-bottom:12px; }
+        .history-filter label { font-size:13px; color:#475569; font-weight:800; }
+        .history-filter input, .history-filter select { min-height:36px; border:1px solid #cbd8e6; border-radius:6px; padding:8px 10px; background:#fff; color:#111827; }
+        .history-filter input[name="ups"] { min-width:260px; }
+        .history-filter input[type="datetime-local"] { min-width:190px; }
+        .history-filter select[name="limit"] { min-width:82px; }
+        .history-filter button { min-height:36px; padding:8px 12px; }
         .history-table-wrap { overflow:auto; max-height:calc(100vh - 230px); background:#fff; border:1px solid #d7e1ec; border-radius:8px; }
-        .history-table { width:max-content; min-width:1900px; border-collapse:collapse; font-size:12px; white-space:nowrap; table-layout:fixed; }
-        .history-table th, .history-table td { border-bottom:1px solid #e6edf5; border-right:1px solid #edf2f7; padding:7px 12px; text-align:right; }
+        .history-table { width:max-content; min-width:1780px; border-collapse:collapse; font-size:12px; white-space:nowrap; table-layout:fixed; }
+        .history-table th, .history-table td { border-bottom:1px solid #e6edf5; border-right:1px solid #edf2f7; padding:7px 10px; text-align:right; }
         .history-table th:last-child, .history-table td:last-child { border-right:none; }
         .history-table th { position:sticky; top:0; background:#eef4fb; color:#1f3347; z-index:1; }
         .history-table th:first-child, .history-table td:first-child,
         .history-table th:nth-child(2), .history-table td:nth-child(2) { text-align:left; }
         .history-table th, .history-table td { overflow:hidden; text-overflow:ellipsis; }
-        .col-ups { width:170px; }
-        .col-time { width:210px; }
-        .col-num { width:86px; }
-        .col-mode { width:100px; }
+        .col-ups { width:160px; }
+        .col-time { width:170px; }
+        .col-v { width:78px; }
+        .col-a { width:72px; }
+        .col-small { width:70px; }
+        .col-pf { width:68px; }
+        .col-battery { width:86px; }
+        .col-mode { width:96px; }
+        .col-status { width:82px; }
         .empty { padding:22px; text-align:center; color:#64748b; }
         .summary { margin:0 0 8px; color:#64748b; font-size:13px; }
     </style>
@@ -202,29 +144,24 @@ if ("csv".equalsIgnoreCase(export)) {
 
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
-    <form class="history-filter" method="get">
-        <label>UPS
-            <select name="ups_id">
-                <option value="">전체</option>
-                <% for (Map<String, Object> d : devices) { String id = String.valueOf(d.get("ups_id")); %>
-                <option value="<%= h(id) %>" <%= id.equals(selectedId) ? "selected" : "" %>><%= h(d.get("ups_name")) %> - <%= h(d.get("ip_address")) %>:<%= h(d.get("modbus_port")) %></option>
-                <% } %>
-            </select>
-        </label>
-        <label>시작
-            <input type="datetime-local" name="from" value="<%= h(fromRaw) %>">
-        </label>
-        <label>종료
-            <input type="datetime-local" name="to" value="<%= h(toRaw) %>">
-        </label>
-        <label>건수
-            <select name="limit">
-                <% int[] limits = new int[]{100, 200, 500, 1000}; for (int n : limits) { %>
-                <option value="<%= n %>" <%= n == limit ? "selected" : "" %>><%= n %></option>
-                <% } %>
-            </select>
-        </label>
-        <button type="submit">조회</button>
+    <form class="history-filter" method="get" id="historyFilter">
+        <label for="ups">UPS 검색</label>
+        <input id="ups" name="ups" value="<%= h(searchText) %>" placeholder="UPS 이름, IP">
+        <% if (selectedId != null && !selectedId.trim().isEmpty()) { %>
+        <input type="hidden" name="ups_id" value="<%= h(selectedId) %>">
+        <% } %>
+        <label for="from">시작</label>
+        <input id="from" type="datetime-local" name="from" value="<%= h(fromRaw) %>">
+        <label for="to">종료</label>
+        <input id="to" type="datetime-local" name="to" value="<%= h(toRaw) %>" <%= explicitTo ? "" : "data-auto-now=\"1\"" %>>
+        <label for="limit">건수</label>
+        <select id="limit" name="limit">
+            <% int[] limits = new int[]{100, 200, 500, 1000}; for (int n : limits) { %>
+            <option value="<%= n %>" <%= n == limit ? "selected" : "" %>><%= n %></option>
+            <% } %>
+        </select>
+        <button type="submit">검색</button>
+        <button type="button" onclick="location.href='measurement_history.jsp'">전체</button>
         <button type="submit" name="export" value="csv">CSV 다운로드</button>
     </form>
 
@@ -237,12 +174,12 @@ if ("csv".equalsIgnoreCase(export)) {
             <colgroup>
                 <col class="col-ups">
                 <col class="col-time">
-                <col class="col-num"><col class="col-num"><col class="col-num">
-                <col class="col-num"><col class="col-num"><col class="col-num">
-                <col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num">
-                <col class="col-num"><col class="col-num"><col class="col-num">
-                <col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num"><col class="col-num">
-                <col class="col-mode"><col class="col-mode"><col class="col-mode">
+                <col class="col-v"><col class="col-v"><col class="col-v">
+                <col class="col-a"><col class="col-a"><col class="col-a">
+                <col class="col-small"><col class="col-small"><col class="col-small"><col class="col-small">
+                <col class="col-pf"><col class="col-pf"><col class="col-pf">
+                <col class="col-battery"><col class="col-battery"><col class="col-battery"><col class="col-battery"><col class="col-battery">
+                <col class="col-mode"><col class="col-mode"><col class="col-status">
             </colgroup>
             <thead>
                 <tr>
@@ -259,27 +196,27 @@ if ("csv".equalsIgnoreCase(export)) {
             <% for (Map<String, Object> r : rows) { %>
                 <tr>
                     <td><%= h(r.get("ups_name")) %></td>
-                    <td><%= h(dt(r.get("measured_at"))) %></td>
-                    <td><%= fmt(r.get("output_voltage_l12"), 0) %></td>
-                    <td><%= fmt(r.get("output_voltage_l23"), 0) %></td>
-                    <td><%= fmt(r.get("output_voltage_l31"), 0) %></td>
-                    <td><%= fmt(r.get("output_current_l1"), 0) %></td>
-                    <td><%= fmt(r.get("output_current_l2"), 0) %></td>
-                    <td><%= fmt(r.get("output_current_l3"), 0) %></td>
-                    <td><%= fmt(r.get("frequency"), 1) %></td>
-                    <td><%= fmt(r.get("load_percent"), 1) %></td>
-                    <td><%= fmt(r.get("output_power_kw"), 0) %></td>
-                    <td><%= fmt(r.get("output_apparent_total_kva"), 0) %></td>
-                    <td><%= fmt(r.get("output_pf_l1"), 2) %></td>
-                    <td><%= fmt(r.get("output_pf_l2"), 2) %></td>
-                    <td><%= fmt(r.get("output_pf_l3"), 2) %></td>
-                    <td><%= fmt(r.get("battery_charge_percent"), 0) %></td>
-                    <td><%= fmt(r.get("battery_voltage"), 0) %></td>
-                    <td><%= fmt(r.get("battery_current"), 0) %></td>
-                    <td><%= fmt(r.get("battery_temperature"), 1) %></td>
-                    <td><%= fmt(r.get("remaining_minutes"), 0) %></td>
-                    <td><%= h(r.get("ups_operation_mode_code")) %></td>
-                    <td><%= h(r.get("system_operation_mode_code")) %></td>
+                    <td><%= h(epms.util.UpsFormatSupport.displaySlashDateTime(r.get("measured_at"))) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_voltage_l12"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_voltage_l23"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_voltage_l31"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_current_l1"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_current_l2"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_current_l3"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("frequency"), 1) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("load_percent"), 1) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_power_kw"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_apparent_total_kva"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_pf_l1"), 2) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_pf_l2"), 2) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("output_pf_l3"), 2) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("battery_charge_percent"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("battery_voltage"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("battery_current"), 0) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("battery_temperature"), 1) %></td>
+                    <td><%= epms.util.UpsFormatSupport.fmt(r.get("remaining_minutes"), 0) %></td>
+                    <td><%= h(epms.util.UpsFormatSupport.upsModeLabel(r.get("ups_operation_mode_code"))) %></td>
+                    <td><%= h(epms.util.UpsFormatSupport.systemModeLabel(r.get("system_operation_mode_code"))) %></td>
                     <td><%= h(r.get("raw_status")) %></td>
                 </tr>
             <% } %>
@@ -288,5 +225,24 @@ if ("csv".equalsIgnoreCase(export)) {
         <% } %>
     </div>
 </div>
+<script>
+(function () {
+    var form = document.getElementById('historyFilter');
+    var to = document.getElementById('to');
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function nowValue() {
+        var d = new Date();
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+    function updateAutoNow() {
+        if (to && to.dataset.autoNow === '1') to.value = nowValue();
+    }
+    if (to) {
+        to.addEventListener('input', function () { delete to.dataset.autoNow; });
+        updateAutoNow();
+        setInterval(updateAutoNow, 1000);
+    }
+})();
+</script>
 </body>
 </html>

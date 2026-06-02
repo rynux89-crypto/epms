@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 import webbrowser
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -48,6 +49,53 @@ SCENARIO_LABELS = {
     "power_module_fault": "파워 모듈 이상",
     "critical": "중요 알람",
 }
+
+ALARM_TESTS = [
+    {"code": "UPS_MIN_RUNTIME", "group": "UPS", "label": "배터리 런타임 최소 이하", "severity": "CRITICAL", "metric": "ups_status_word", "bit": 1},
+    {"code": "UPS_BATTERY_INOPERABLE", "group": "UPS", "label": "배터리 사용 불가", "severity": "CRITICAL", "metric": "ups_status_word", "bit": 9},
+    {"code": "UPS_CRITICAL_ALARM_PRESENT", "group": "UPS", "label": "UPS 중요 알람 존재", "severity": "CRITICAL", "metric": "ups_status_word", "bit": 15},
+    {"code": "BATTERY_CRITICAL", "group": "Battery", "label": "배터리 충전율 위험", "severity": "CRITICAL", "metric": "battery_charge_percent", "value": 5},
+    {"code": "BATTERY_TEMP_HIGH", "group": "Battery", "label": "배터리 온도 높음", "severity": "WARNING", "metric": "battery_temperature", "value": 42.0},
+    {"code": "BATTERY_HEALTH_ABNORMAL", "group": "Battery", "label": "배터리 상태 이상", "severity": "WARNING", "metric": "battery_health_status", "value": 3},
+    {"code": "ENERGY_CHARGER_HIGH_TEMP_SHUTDOWN", "group": "Energy", "label": "고온으로 충전기 정지", "severity": "CRITICAL", "metric": "energy_storage_status", "bit": 5},
+    {"code": "ENERGY_MIN_RUNTIME", "group": "Energy", "label": "배터리 런타임 부족", "severity": "CRITICAL", "metric": "energy_storage_status", "bit": 6},
+    {"code": "ENERGY_BATTERY_VOLTAGE_MISMATCH", "group": "Energy", "label": "배터리 전압 설정 불일치", "severity": "CRITICAL", "metric": "energy_storage_status", "bit": 7},
+    {"code": "ENERGY_BATTERY_POOR", "group": "Energy", "label": "배터리 상태 불량", "severity": "CRITICAL", "metric": "energy_storage_status", "bit": 9},
+    {"code": "ENERGY_BATTERY_NOT_WORKING", "group": "Energy", "label": "배터리 동작 이상", "severity": "CRITICAL", "metric": "energy_storage_status", "bit": 14},
+    {"code": "ENERGY_HIGH_TEMP_SHUTDOWN", "group": "Energy", "label": "배터리 고온 시스템 정지", "severity": "CRITICAL", "metric": "energy_storage_status_2", "bit": 0},
+    {"code": "ENERGY_CONFIG_INCORRECT", "group": "Energy", "label": "배터리 설정 오류", "severity": "CRITICAL", "metric": "energy_storage_status_2", "bit": 1},
+    {"code": "ENERGY_LOW_TEMP_CHARGER_SHUTDOWN", "group": "Energy", "label": "저온으로 충전기 정지", "severity": "CRITICAL", "metric": "energy_storage_status_2", "bit": 2},
+    {"code": "GENERAL_EPO_ACTIVE", "group": "General", "label": "EPO 스위치 동작", "severity": "CRITICAL", "metric": "general_status", "bit": 0},
+    {"code": "GENERAL_INVERTER_BYPASS_PHASE_MISMATCH", "group": "General", "label": "인버터/바이패스 위상 불일치", "severity": "CRITICAL", "metric": "general_status", "bit": 2},
+    {"code": "GENERAL_SYSTEM_LOCKED_BYPASS", "group": "General", "label": "바이패스 운전 고정", "severity": "CRITICAL", "metric": "general_status_2", "bit": 9},
+    {"code": "GENERAL_UNSUPPORTED_POWER_MODULE", "group": "General", "label": "미지원 파워 모듈", "severity": "CRITICAL", "metric": "general_status_2", "bit": 11},
+    {"code": "GENERAL_UNSUPPORTED_SBS", "group": "General", "label": "미지원 정적 바이패스 모듈", "severity": "CRITICAL", "metric": "general_status_2", "bit": 12},
+    {"code": "GENERAL_RATING_EXCEEDS_FRAME", "group": "General", "label": "정격 프레임 용량 초과", "severity": "CRITICAL", "metric": "general_status_2", "bit": 14},
+    {"code": "GENERAL_NO_POWER_MODULE", "group": "General", "label": "파워 모듈 없음", "severity": "CRITICAL", "metric": "general_status_3", "bit": 2},
+    {"code": "GENERAL_SURVEILLANCE_FAULT", "group": "General", "label": "UPS 감시 기능 고장", "severity": "CRITICAL", "metric": "general_status_3", "bit": 13},
+    {"code": "GENERAL_MODEL_INCORRECT", "group": "General", "label": "UPS 모델 번호 오류", "severity": "CRITICAL", "metric": "general_status_4", "bit": 4},
+    {"code": "INPUT_VOLTAGE_OUT", "group": "Input", "label": "입력 전압 범위 이탈", "severity": "CRITICAL", "metric": "input_status", "bit": 0},
+    {"code": "INPUT_PHASE_SEQUENCE", "group": "Input", "label": "입력 상 회전 순서 이상", "severity": "CRITICAL", "metric": "input_status", "bit": 1},
+    {"code": "INPUT_FREQ_OUT", "group": "Input", "label": "입력 주파수 범위 이탈", "severity": "CRITICAL", "metric": "input_status", "bit": 2},
+    {"code": "INPUT_PHASE_MISSING", "group": "Input", "label": "입력 결상", "severity": "CRITICAL", "metric": "input_status", "bit": 3},
+    {"code": "OUTPUT_VOLTAGE_OUT", "group": "Output", "label": "출력 전압 범위 이탈", "severity": "CRITICAL", "metric": "output_status", "bit": 0},
+    {"code": "OUTPUT_FREQ_OUT", "group": "Output", "label": "출력 주파수 범위 이탈", "severity": "CRITICAL", "metric": "output_status", "bit": 1},
+    {"code": "OUTPUT_OVERLOAD_SHORT", "group": "Output", "label": "UPS 과부하 또는 단락", "severity": "CRITICAL", "metric": "output_status", "bit": 2},
+    {"code": "OUTPUT_OVERLOAD_HIGH_AMBIENT", "group": "Output", "label": "고온 UPS 과부하", "severity": "CRITICAL", "metric": "output_status", "bit": 3},
+    {"code": "OUTPUT_LOAD_CRITICAL", "group": "Output", "label": "출력 부하율 위험", "severity": "CRITICAL", "metric": "output_load_total_percent", "value": 97},
+    {"code": "BYPASS_VOLTAGE_OUT", "group": "Bypass", "label": "바이패스 전압 범위 이탈", "severity": "WARNING", "metric": "bypass_status", "bit": 0},
+    {"code": "BYPASS_PHASE_SEQUENCE", "group": "Bypass", "label": "바이패스 상 회전 순서 이상", "severity": "WARNING", "metric": "bypass_status", "bit": 1},
+    {"code": "BYPASS_FREQ_OUT", "group": "Bypass", "label": "바이패스 주파수 범위 이탈", "severity": "WARNING", "metric": "bypass_status", "bit": 2},
+    {"code": "BYPASS_PHASE_MISSING", "group": "Bypass", "label": "바이패스 결상", "severity": "WARNING", "metric": "bypass_status", "bit": 3},
+    {"code": "PARALLEL_REDUNDANCY_LOST", "group": "Parallel", "label": "병렬 이중화 상실", "severity": "CRITICAL", "metric": "parallel_status", "bit": 5},
+    {"code": "POWER_MODULE_INOPERABLE", "group": "Power Module", "label": "파워 모듈 사용 불가", "severity": "CRITICAL", "metric": "power_module_status", "bit": 0},
+    {"code": "POWER_MODULE_OVERHEATED", "group": "Power Module", "label": "파워 모듈 과열", "severity": "CRITICAL", "metric": "power_module_status", "bit": 2},
+    {"code": "POWER_MODULE_FAN_INOPERABLE", "group": "Power Module", "label": "파워 모듈 팬 이상", "severity": "CRITICAL", "metric": "power_module_status", "bit": 7},
+    {"code": "POWER_MODULE_SURVEILLANCE_FAULT", "group": "Power Module", "label": "파워 모듈 감시 고장", "severity": "CRITICAL", "metric": "power_module_status", "bit": 9},
+    {"code": "POWER_MODULE_PMC_LOST_DISCONNECTED", "group": "Power Module", "label": "PMC 통신 끊김", "severity": "CRITICAL", "metric": "power_module_status", "bit": 10},
+]
+
+ALARM_TEST_BY_CODE = {item["code"]: item for item in ALARM_TESTS}
 
 
 def u16(value: int) -> int:
@@ -90,6 +138,7 @@ class SimulatorState:
         "mbb": False,
         "bb": True,
     })
+    active_alarm_tests: set[str] = field(default_factory=set)
 
     def set_scenario(self, scenario: str) -> None:
         if scenario not in SCENARIOS:
@@ -122,6 +171,24 @@ class SimulatorState:
     def get_breakers(self) -> dict[str, bool]:
         with self.lock:
             return dict(self.breakers)
+
+    def set_alarm_test(self, code: str, active: bool) -> None:
+        key = code.strip().upper()
+        if key not in ALARM_TEST_BY_CODE:
+            raise ValueError(f"unknown alarm test: {code}")
+        with self.lock:
+            if active:
+                self.active_alarm_tests.add(key)
+            else:
+                self.active_alarm_tests.discard(key)
+
+    def reset_alarm_tests(self) -> None:
+        with self.lock:
+            self.active_alarm_tests.clear()
+
+    def get_alarm_tests(self) -> set[str]:
+        with self.lock:
+            return set(self.active_alarm_tests)
 
     def snapshot(self) -> dict[str, object]:
         regs = self.registers()
@@ -162,12 +229,21 @@ class SimulatorState:
             "input_status": regs.get(11, 0),
             "output_status": regs.get(12, 0),
             "power_module_status": regs.get(14, 0),
+            "bypass_status": regs.get(2, 0),
+            "energy_storage_status": regs.get(3, 0),
+            "energy_storage_status_2": regs.get(4, 0),
+            "general_status": regs.get(5, 0),
+            "general_status_2": regs.get(6, 0),
+            "general_status_3": regs.get(7, 0),
+            "general_status_4": regs.get(8, 0),
+            "parallel_status": regs.get(13, 0),
+            "battery_health_status": regs.get(4880, 0),
+            "active_alarm_tests": sorted(self.get_alarm_tests()),
         }
 
     def registers(self) -> dict[int, int]:
         scenario = self.get_scenario()
-        elapsed = time.time() - self.started_at
-        wave = int((elapsed % 10) - 5)
+        wave = 0
 
         regs: dict[int, int] = {}
         breakers = self.get_breakers()
@@ -190,6 +266,7 @@ class SimulatorState:
         battery_current = 4
         remaining_seconds = 7200
         battery_health = 1
+        battery_temperature = 28.5
         ups_mode = 2
         system_mode = 2
 
@@ -232,6 +309,49 @@ class SimulatorState:
             output_load = 101
             battery_charge = 5
             battery_health = 3
+
+        status_values = {
+            "ups_status_word": ups_status,
+            "bypass_status": bypass_status,
+            "energy_storage_status": energy_status,
+            "energy_storage_status_2": energy_status_2,
+            "general_status": general_status,
+            "general_status_2": general_status_2,
+            "general_status_3": general_status_3,
+            "general_status_4": general_status_4,
+            "input_status": input_status,
+            "output_status": output_status,
+            "parallel_status": parallel_status,
+            "power_module_status": power_module_status,
+        }
+        for code in self.get_alarm_tests():
+            test = ALARM_TEST_BY_CODE.get(code)
+            if not test:
+                continue
+            metric = str(test["metric"])
+            if "bit" in test:
+                status_values[metric] = status_values.get(metric, 0) | (1 << int(test["bit"]))
+            elif metric == "battery_charge_percent":
+                battery_charge = min(battery_charge, int(test["value"]))
+            elif metric == "battery_temperature":
+                battery_temperature = max(battery_temperature, float(test["value"]))
+            elif metric == "battery_health_status":
+                battery_health = max(battery_health, int(test["value"]))
+            elif metric == "output_load_total_percent":
+                output_load = max(output_load, int(test["value"]))
+
+        ups_status = status_values["ups_status_word"]
+        bypass_status = status_values["bypass_status"]
+        energy_status = status_values["energy_storage_status"]
+        energy_status_2 = status_values["energy_storage_status_2"]
+        general_status = status_values["general_status"]
+        general_status_2 = status_values["general_status_2"]
+        general_status_3 = status_values["general_status_3"]
+        general_status_4 = status_values["general_status_4"]
+        input_status = status_values["input_status"]
+        output_status = status_values["output_status"]
+        parallel_status = status_values["parallel_status"]
+        power_module_status = status_values["power_module_status"]
 
         # Status registers.
         regs[1] = ups_status
@@ -311,7 +431,7 @@ class SimulatorState:
         regs[4632] = u16(output_load * 10)
 
         # Battery.
-        regs[4864] = 285
+        regs[4864] = int(round(battery_temperature * 10))
         regs[4865] = 540
         set_i32(regs, 4866, battery_current)
         regs[4868] = abs(battery_current) * 2
@@ -415,6 +535,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self.server.state.reset_breakers()  # type: ignore[attr-defined]
                 self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
                 return
+            if parsed.path == "/api/alarm-test":
+                self._post_alarm_test()
+                return
+            if parsed.path == "/api/reset-alarm-tests":
+                self.server.state.reset_alarm_tests()  # type: ignore[attr-defined]
+                self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
+                return
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -422,10 +549,14 @@ class ControlHandler(BaseHTTPRequestHandler):
         data = urllib.parse.parse_qs(raw)
         scenario = (data.get("scenario", [""])[0] or "").strip()
         try:
+            before = self.server.state.get_scenario()  # type: ignore[attr-defined]
             self.server.state.set_scenario(scenario)  # type: ignore[attr-defined]
         except ValueError as exc:
             self._json({"ok": False, "error": str(exc)}, status=400)
             return
+        # A repeated click is still useful during simulator testing, so record it
+        # as a current-state event instead of dropping it as "no change".
+        self._send_scenario_event("" if before == scenario else before, scenario)
         self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
 
     def _post_breaker(self) -> None:
@@ -436,11 +567,60 @@ class ControlHandler(BaseHTTPRequestHandler):
         closed_raw = (data.get("closed", [""])[0] or "").strip().lower()
         closed = closed_raw in ("1", "true", "yes", "closed", "on")
         try:
+            before = bool(self.server.state.get_breakers().get(name, False))  # type: ignore[attr-defined]
             self.server.state.set_breaker(name, closed)  # type: ignore[attr-defined]
         except ValueError as exc:
             self._json({"ok": False, "error": str(exc)}, status=400)
             return
+        self._send_breaker_event(name, before, closed)
         self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
+
+    def _post_alarm_test(self) -> None:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        data = urllib.parse.parse_qs(raw)
+        code = (data.get("code", [""])[0] or "").strip()
+        active_raw = (data.get("active", [""])[0] or "").strip().lower()
+        active = active_raw in ("1", "true", "yes", "active", "on")
+        try:
+            self.server.state.set_alarm_test(code, active)  # type: ignore[attr-defined]
+        except ValueError as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+        self._send_alarm_test(code, active)
+        self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
+
+    def _send_breaker_event(self, name: str, before: bool, after: bool) -> None:
+        if before == after:
+            return
+        params = urllib.parse.urlencode({
+            "name": name,
+            "before": "closed" if before else "open",
+            "after": "closed" if after else "open",
+        })
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:8080/ups/api/simulator_breaker_event.jsp?{params}", timeout=0.5) as resp:
+                resp.read(256)
+        except Exception:
+            pass
+
+    def _send_scenario_event(self, before: str, after: str) -> None:
+        if before == after:
+            return
+        params = urllib.parse.urlencode({"before": before, "after": after})
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:8080/ups/api/simulator_scenario_event.jsp?{params}", timeout=0.5) as resp:
+                resp.read(256)
+        except Exception:
+            pass
+
+    def _send_alarm_test(self, code: str, active: bool) -> None:
+        params = urllib.parse.urlencode({"code": code, "active": "1" if active else "0"})
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:8080/ups/api/simulator_alarm_test.jsp?{params}", timeout=0.5) as resp:
+                resp.read(256)
+        except Exception:
+            pass
 
     def log_message(self, fmt: str, *args: object) -> None:
         return
@@ -486,8 +666,18 @@ button.breaker strong {{ display:block; font-size:15px; margin-bottom:4px; }}
 button.breaker span {{ display:block; font-size:12px; color:#64748b; }}
 button.breaker.closed {{ border-color:#169b45; background:#ecfdf3; }}
 button.breaker.open {{ border-color:#9ca3af; background:#f8fafc; }}
+.alarm-test-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-top:12px; }}
+.alarm-group {{ grid-column:1/-1; margin-top:8px; padding:8px 0 2px; border-bottom:2px solid #d7e1ec; font-size:13px; color:#334155; font-weight:800; }}
+button.alarm-test {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:10px; cursor:pointer; text-align:left; min-height:66px; }}
+button.alarm-test strong {{ display:block; font-size:14px; margin-bottom:5px; }}
+button.alarm-test span {{ display:block; color:#64748b; font-size:12px; }}
+button.alarm-test.active {{ border-color:#dc2626; background:#fff1f2; box-shadow:inset 0 0 0 1px #dc2626; }}
+.sev-critical {{ color:#b91c1c; font-weight:800; }}
+.sev-warning {{ color:#b45309; font-weight:800; }}
 button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; background:#fff; padding:8px 10px; cursor:pointer; }}
 .metrics {{ display:grid; gap:8px; }}
+.metric-section-title {{ margin-top:8px; padding:8px 0 2px; border-bottom:2px solid #cbd8e6; color:#334155; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
+.metric-section-title:first-child {{ margin-top:0; }}
 .row {{ display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #edf2f7; font-size:14px; }}
 .row:last-child {{ border-bottom:none; }}
 .row strong {{ color:#0f172a; }}
@@ -513,10 +703,14 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
       <h2>차단기 테스트</h2>
       <div class="breaker-grid" id="breakers"></div>
       <button class="reset" id="resetBreakers" type="button">차단기 기본값 복원</button>
+      <h2>세부 알람 테스트</h2>
+      <div class="alarm-test-grid" id="alarmTests"></div>
+      <button class="reset" id="resetAlarmTests" type="button">세부 알람 전체 해제</button>
       <div class="links">
         <a href="http://localhost:8080/ups/monitoring/ups_status.jsp" target="_blank">실시간 상태</a>
-        <a href="http://localhost:8080/ups/monitoring/phasor_diagram.jsp" target="_blank">Phasor Diagram</a>
         <a href="http://localhost:8080/ups/alarm/alarm_view.jsp" target="_blank">알람 화면</a>
+        <a href="http://localhost:8080/ups/alarm/event_view.jsp" target="_blank">이벤트 화면</a>
+        <a href="http://localhost:8080/ups/monitoring/phasor_diagram.jsp" target="_blank">Phasor Diagram</a>
         <a href="http://localhost:8080/ups/system/ups_register.jsp" target="_blank">UPS 등록</a>
       </div>
     </div>
@@ -528,6 +722,7 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
 </div>
 <script>
 const labels = {json.dumps(SCENARIO_LABELS, ensure_ascii=False)};
+const alarmTests = {json.dumps(ALARM_TESTS, ensure_ascii=False)};
 const metricNames = {{
   output_frequency_hz:'출력 주파수',
   output_voltage_l12:'출력 전압 L1-2',
@@ -538,11 +733,21 @@ const metricNames = {{
   output_current_l3:'출력 전류 L3',
   output_load_percent:'부하율',
   output_pf_l1:'역률 L1',
+  output_pf_l2:'역률 L2',
+  output_pf_l3:'역률 L3',
   battery_charge_percent:'배터리 충전율',
   battery_temperature_c:'배터리 온도',
   ups_status_word:'UPS Status',
+  bypass_status:'Bypass Status',
+  energy_storage_status:'Energy Storage 1',
+  energy_storage_status_2:'Energy Storage 2',
+  general_status:'General Status 1',
+  general_status_2:'General Status 2',
+  general_status_3:'General Status 3',
+  general_status_4:'General Status 4',
   input_status:'Input Status',
   output_status:'Output Status',
+  parallel_status:'Parallel Status',
   power_module_status:'Power Module Status'
 }};
 const breakerNames = {{
@@ -553,8 +758,16 @@ const breakerNames = {{
   mbb:'MBB',
   bb:'BB'
 }};
+const metricGroups = [
+  ['Frequency', ['output_frequency_hz']],
+  ['Voltage', ['output_voltage_l12', 'output_voltage_l23', 'output_voltage_l31']],
+  ['Current / Load', ['output_current_l1', 'output_current_l2', 'output_current_l3', 'output_load_percent']],
+  ['Power Factor', ['output_pf_l1', 'output_pf_l2', 'output_pf_l3']],
+  ['Battery', ['battery_charge_percent', 'battery_temperature_c']],
+  ['Status Word', ['ups_status_word', 'bypass_status', 'energy_storage_status', 'energy_storage_status_2', 'general_status', 'general_status_2', 'general_status_3', 'general_status_4', 'input_status', 'output_status', 'parallel_status', 'power_module_status']]
+];
 function fmt(k, v) {{
-  if (k.endsWith('_status') || k === 'ups_status_word') return '0x' + Number(v).toString(16).toUpperCase().padStart(4, '0');
+  if (k.includes('status') || k === 'ups_status_word') return '0x' + Number(v).toString(16).toUpperCase().padStart(4, '0');
   if (k.includes('frequency')) return Number(v).toFixed(1) + ' Hz';
   if (k.includes('voltage')) return Number(v).toFixed(0) + ' V';
   if (k.includes('current')) return Number(v).toFixed(0) + ' A';
@@ -573,8 +786,19 @@ async function refresh() {{
     return `<button class="breaker ${{closed ? 'closed' : 'open'}}" data-breaker="${{k}}" data-closed="${{closed ? '1' : '0'}}"><strong>${{breakerNames[k]}}</strong><span>${{closed ? 'Closed' : 'Open'}}</span></button>`;
   }}).join('');
   document.querySelectorAll('.breaker').forEach(b => b.addEventListener('click', () => setBreaker(b.dataset.breaker, b.dataset.closed !== '1')));
-  document.getElementById('metrics').innerHTML = Object.keys(metricNames).map(k =>
-    `<div class="row"><span>${{metricNames[k]}}</span><strong class="${{k.includes('status') ? 'status-word' : ''}}">${{fmt(k, s[k])}}</strong></div>`
+  const activeAlarmTests = new Set(s.active_alarm_tests || []);
+  let lastGroup = '';
+  document.getElementById('alarmTests').innerHTML = alarmTests.map(t => {{
+    const group = t.group || '';
+    const heading = group !== lastGroup ? (lastGroup = group, `<div class="alarm-group">${{group}}</div>`) : '';
+    const active = activeAlarmTests.has(t.code);
+    const sev = String(t.severity || '').toLowerCase();
+    return heading + `<button class="alarm-test ${{active ? 'active' : ''}}" data-code="${{t.code}}" data-active="${{active ? '1' : '0'}}"><strong>${{t.label}}</strong><span class="sev-${{sev}}">${{t.severity}}</span><span>${{t.code}}</span></button>`;
+  }}).join('');
+  document.querySelectorAll('.alarm-test').forEach(b => b.addEventListener('click', () => setAlarmTest(b.dataset.code, b.dataset.active !== '1')));
+  document.getElementById('metrics').innerHTML = metricGroups.map(group =>
+    `<div class="metric-section-title">${{group[0]}}</div>` +
+    group[1].map(k => `<div class="row"><span>${{metricNames[k]}}</span><strong class="${{k.includes('status') ? 'status-word' : ''}}">${{fmt(k, s[k])}}</strong></div>`).join('')
   ).join('');
 }}
 async function setScenario(name) {{
@@ -593,9 +817,21 @@ async function setBreaker(name, closed) {{
   }});
   refresh();
 }}
+async function setAlarmTest(code, active) {{
+  await fetch('/api/alarm-test', {{
+    method:'POST',
+    headers:{{'Content-Type':'application/x-www-form-urlencoded'}},
+    body:new URLSearchParams({{code:code, active:active ? '1' : '0'}})
+  }});
+  refresh();
+}}
 document.querySelectorAll('.scenario').forEach(b => b.addEventListener('click', () => setScenario(b.dataset.scenario)));
 document.getElementById('resetBreakers').addEventListener('click', async () => {{
   await fetch('/api/reset-breakers', {{method:'POST'}});
+  refresh();
+}});
+document.getElementById('resetAlarmTests').addEventListener('click', async () => {{
+  await fetch('/api/reset-alarm-tests', {{method:'POST'}});
   refresh();
 }});
 refresh();

@@ -43,6 +43,11 @@ public final class UpsCollectorService {
         final List<Point> points = new ArrayList<Point>();
     }
 
+    private static final class BreakerState {
+        Integer switchgearStatus;
+        Integer batteryBreakerStatus;
+    }
+
     public void pollEnabledDevices() throws Exception {
         List<Device> devices;
         Map<Integer, List<Point>> pointsByProfile = new HashMap<Integer, List<Point>>();
@@ -63,8 +68,10 @@ public final class UpsCollectorService {
             }
             try {
                 Map<String, BigDecimal> values = readDevice(device, points);
+                BreakerState previousBreakers = loadLastBreakerState(device.upsId);
                 persistMeasurement(device.upsId, values);
                 syncValueAlarms(device.upsId, values);
+                syncBreakerEvents(device.upsId, previousBreakers, values);
                 updateSuccess(device.upsId);
             } catch (Exception e) {
                 updateFailure(device.upsId, e.getMessage());
@@ -260,6 +267,24 @@ public final class UpsCollectorService {
         return seconds.divide(BigDecimal.valueOf(60L), 3, java.math.RoundingMode.HALF_UP);
     }
 
+    private static BreakerState loadLastBreakerState(int upsId) throws Exception {
+        try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                    "SELECT TOP 1 switchgear_status_code, battery_breaker_status_code " +
+                    "FROM dbo.ups_measurement WHERE ups_id = ? ORDER BY measured_at DESC")) {
+            ps.setInt(1, upsId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                BreakerState state = new BreakerState();
+                int switchgear = rs.getInt("switchgear_status_code");
+                state.switchgearStatus = rs.wasNull() ? null : Integer.valueOf(switchgear);
+                int battery = rs.getInt("battery_breaker_status_code");
+                state.batteryBreakerStatus = rs.wasNull() ? null : Integer.valueOf(battery);
+                return state;
+            }
+        }
+    }
+
     private static void persistMeasurement(int upsId, Map<String, BigDecimal> v) throws Exception {
         BigDecimal outV12 = v.get("output_voltage_l12");
         BigDecimal outV23 = v.get("output_voltage_l23");
@@ -346,6 +371,46 @@ public final class UpsCollectorService {
         }
     }
 
+    private static void syncBreakerEvents(int upsId, BreakerState previous, Map<String, BigDecimal> values) throws Exception {
+        if (previous == null || values == null) return;
+        Integer currentSwitchgear = intOrNull(values.get("switchgear_status"));
+        Integer currentBattery = intOrNull(values.get("battery_breaker_status"));
+        try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection()) {
+            compareSwitchgearBreaker(conn, upsId, "UIB", "switchgear_status", previous.switchgearStatus, currentSwitchgear, 0);
+            compareSwitchgearBreaker(conn, upsId, "SSIB", "switchgear_status", previous.switchgearStatus, currentSwitchgear, 1);
+            compareSwitchgearBreaker(conn, upsId, "UOB", "switchgear_status", previous.switchgearStatus, currentSwitchgear, 3);
+            compareSwitchgearBreaker(conn, upsId, "BF2", "switchgear_status", previous.switchgearStatus, currentSwitchgear, 4);
+            compareSwitchgearBreaker(conn, upsId, "MBB", "switchgear_status", previous.switchgearStatus, currentSwitchgear, 10);
+            compareBinaryBreaker(conn, upsId, "BB", "battery_breaker_status", previous.batteryBreakerStatus, currentBattery);
+        }
+    }
+
+    private static void compareSwitchgearBreaker(Connection conn, int upsId, String name, String metricKey, Integer previous, Integer current, int bit) throws Exception {
+        if (previous == null || current == null) return;
+        boolean before = (previous.intValue() & (1 << bit)) != 0;
+        boolean after = (current.intValue() & (1 << bit)) != 0;
+        if (before != after) {
+            insertEvent(conn, upsId, "BREAKER_" + name + "_CHANGE", metricKey, "차단기 " + name + " " + stateText(before) + " -> " + stateText(after));
+        }
+    }
+
+    private static void compareBinaryBreaker(Connection conn, int upsId, String name, String metricKey, Integer previous, Integer current) throws Exception {
+        if (previous == null || current == null) return;
+        boolean before = previous.intValue() != 0;
+        boolean after = current.intValue() != 0;
+        if (before != after) {
+            insertEvent(conn, upsId, "BREAKER_" + name + "_CHANGE", metricKey, "차단기 " + name + " " + stateText(before) + " -> " + stateText(after));
+        }
+    }
+
+    private static String stateText(boolean closed) {
+        return closed ? "Close" : "Open";
+    }
+
+    private static Integer intOrNull(BigDecimal value) {
+        return value == null ? null : Integer.valueOf(value.intValue());
+    }
+
     private static boolean compare(BigDecimal value, String operator, BigDecimal threshold) {
         if (value == null || threshold == null || operator == null) return false;
         String op = operator.trim().toUpperCase(Locale.ROOT);
@@ -367,9 +432,14 @@ public final class UpsCollectorService {
     private static String renderMessage(String template, String metricKey, BigDecimal value, BigDecimal threshold) {
         String msg = template == null || template.trim().isEmpty() ? metricKey + " alarm" : template;
         msg = msg.replace("{metric}", metricKey == null ? "" : metricKey);
-        msg = msg.replace("{value}", value == null ? "" : value.stripTrailingZeros().toPlainString());
-        msg = msg.replace("{threshold}", threshold == null ? "" : threshold.stripTrailingZeros().toPlainString());
+        msg = msg.replace("{value}", formatAlarmNumber(value));
+        msg = msg.replace("{threshold}", formatAlarmNumber(threshold));
         return msg.length() > 500 ? msg.substring(0, 500) : msg;
+    }
+
+    private static String formatAlarmNumber(BigDecimal value) {
+        if (value == null) return "";
+        return value.setScale(1, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
     private static void openAlarm(Connection conn, int upsId, String ruleCode, String metricKey, String severity, String message) throws Exception {
@@ -399,6 +469,18 @@ public final class UpsCollectorService {
                 "WHERE ups_id=? AND rule_code=? AND status='ACTIVE'")) {
             ps.setInt(1, upsId);
             ps.setString(2, ruleCode);
+            ps.executeUpdate();
+        }
+    }
+
+    private static void insertEvent(Connection conn, int upsId, String ruleCode, String metricKey, String message) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO dbo.ups_alarm_log (ups_id, rule_code, metric_key, severity, alarm_message, occurred_at, status) " +
+                "VALUES (?, ?, ?, 'INFO', ?, sysdatetime(), 'EVENT')")) {
+            ps.setInt(1, upsId);
+            ps.setString(2, ruleCode);
+            ps.setString(3, metricKey);
+            ps.setString(4, message == null ? "Breaker event" : (message.length() > 500 ? message.substring(0, 500) : message));
             ps.executeUpdate();
         }
     }

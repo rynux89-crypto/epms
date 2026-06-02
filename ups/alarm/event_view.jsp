@@ -28,6 +28,11 @@
         return s;
     }
 
+    private String displayEventMessage(Object value) {
+        if (value == null) return "";
+        return String.valueOf(value).replace("차단기 ", "").replace("차단기", "").trim();
+    }
+
     private String readUrl(String urlText, int timeoutMs) {
         return epms.util.UpsSimulatorSupport.readUrl(urlText, timeoutMs);
     }
@@ -91,6 +96,7 @@
 %>
 <%
 request.setCharacterEncoding("UTF-8");
+epms.ups.UpsQueryService.syncSimulatorScenarioEvent(application);
 List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
 String err = null;
 String upsSearch = request.getParameter("ups");
@@ -110,7 +116,7 @@ if (toRaw == null || toRaw.trim().isEmpty()) toRaw = defaultTo;
 Timestamp fromTs = parseDateTime(fromRaw, false);
 Timestamp toTs = parseDateTime(toRaw, true);
 try {
-    rows = epms.ups.UpsQueryService.alarmRows(searchText, fromTs, toTs);
+    rows = epms.ups.UpsQueryService.eventRows(searchText, fromTs, toTs);
 } catch (Exception e) {
     err = e.getMessage();
 }
@@ -118,17 +124,16 @@ if ("csv".equalsIgnoreCase(export)) {
     response.reset();
     response.setCharacterEncoding("UTF-8");
     response.setContentType("text/csv;charset=UTF-8");
-    response.setHeader("Content-Disposition", "attachment; filename=\"ups_alarm_history.csv\"");
+    response.setHeader("Content-Disposition", "attachment; filename=\"ups_event_history.csv\"");
     out.print("\uFEFF");
-    out.println("ID,UPS,Severity,Message,Occurred At,Cleared At,Status");
+    out.println("ID,UPS,Severity,Message,Occurred At,Status");
     for (Map<String, Object> r : rows) {
         out.println(
             csv(r.get("alarm_id")) + "," +
             csv(r.get("ups_name")) + "," +
             csv(r.get("severity")) + "," +
-            csv(r.get("alarm_message")) + "," +
+            csv(displayEventMessage(r.get("alarm_message"))) + "," +
             csv(displayDateTime(r.get("occurred_at"))) + "," +
-            csv(displayDateTime(r.get("cleared_at"))) + "," +
             csv(r.get("status"))
         );
     }
@@ -138,52 +143,51 @@ if ("csv".equalsIgnoreCase(export)) {
 <!doctype html>
 <html>
 <head>
-    <title>UPS 알람</title>
+    <title>UPS 이벤트</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
-        .alarm-filter { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 12px; padding:12px; background:#fff; border:1px solid #dbe5f2; border-radius:8px; }
-        .alarm-filter label { font-size:13px; color:#475569; font-weight:800; }
-        .alarm-filter input { min-width:260px; padding:8px 10px; border:1px solid #cbd8e6; border-radius:6px; }
-        .alarm-filter input[type="datetime-local"] { min-width:190px; }
-        .alarm-filter button { padding:8px 12px; }
-        .alarm-count { color:#64748b; font-size:13px; }
+        .event-filter { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 12px; padding:12px; background:#fff; border:1px solid #dbe5f2; border-radius:8px; }
+        .event-filter label { font-size:13px; color:#475569; font-weight:800; }
+        .event-filter input { min-width:260px; padding:8px 10px; border:1px solid #cbd8e6; border-radius:6px; }
+        .event-filter input[type="datetime-local"] { min-width:190px; }
+        .event-filter button { padding:8px 12px; }
+        .event-count { color:#64748b; font-size:13px; }
     </style>
 </head>
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <div><h2>UPS 알람</h2><p class="muted">활성/해제 알람 이력 200건을 표시합니다.</p></div>
+        <div><h2>UPS 이벤트</h2><p class="muted">시나리오 변경, 스위치 조작 등 순간 이벤트 200건을 표시합니다.</p></div>
         <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='event_view.jsp'">이벤트</button>
+            <button class="back-btn" onclick="location.href='alarm_view.jsp'">알람</button>
             <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
         </div>
     </div>
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
-    <form class="alarm-filter" method="get" id="alarmFilter">
+    <form class="event-filter" method="get" id="eventFilter">
         <label for="ups">UPS 검색</label>
-        <input id="ups" name="ups" value="<%= h(searchText) %>" placeholder="UPS 이름, 위치, IP, 알람">
+        <input id="ups" name="ups" value="<%= h(searchText) %>" placeholder="UPS 이름, 위치, IP, 이벤트">
         <label for="from">시작</label>
         <input id="from" name="from" type="datetime-local" value="<%= h(fromRaw) %>">
         <label for="to">종료</label>
         <input id="to" name="to" type="datetime-local" value="<%= h(toRaw) %>" <%= explicitTo ? "" : "data-auto-now=\"1\"" %>>
         <button type="submit">검색</button>
         <button type="submit" name="export" value="csv">CSV 다운로드</button>
-        <button type="button" onclick="location.href='alarm_view.jsp'">전체</button>
-        <span class="alarm-count">조회 <%= rows.size() %>건</span>
+        <button type="button" onclick="location.href='event_view.jsp'">전체</button>
+        <span class="event-count">조회 <%= rows.size() %>건</span>
     </form>
     <div class="panel">
         <table class="data-table">
-            <thead><tr><th>ID</th><th>UPS</th><th>등급</th><th>메시지</th><th>발생</th><th>해제</th><th>상태</th></tr></thead>
+            <thead><tr><th>ID</th><th>UPS</th><th>등급</th><th>메시지</th><th>발생</th><th>상태</th></tr></thead>
             <tbody>
-            <% if (rows.isEmpty()) { %><tr><td colspan="7">알람 이력이 없습니다.</td></tr><% } %>
+            <% if (rows.isEmpty()) { %><tr><td colspan="6">이벤트 이력이 없습니다.</td></tr><% } %>
             <% for (Map<String, Object> r : rows) { %>
             <tr>
                 <td><%= h(r.get("alarm_id")) %></td>
                 <td><%= h(r.get("ups_name")) %></td>
                 <td><%= h(r.get("severity")) %></td>
-                <td><%= h(r.get("alarm_message")) %></td>
+                <td><%= h(displayEventMessage(r.get("alarm_message"))) %></td>
                 <td><%= h(displayDateTime(r.get("occurred_at"))) %></td>
-                <td><%= h(displayDateTime(r.get("cleared_at"))) %></td>
                 <td><%= h(r.get("status")) %></td>
             </tr>
             <% } %>
@@ -193,7 +197,7 @@ if ("csv".equalsIgnoreCase(export)) {
 </div>
 <script>
 (function () {
-    var form = document.getElementById('alarmFilter');
+    var form = document.getElementById('eventFilter');
     var to = document.getElementById('to');
     var refreshMs = 5000;
     function pad(n) { return n < 10 ? '0' + n : '' + n; }

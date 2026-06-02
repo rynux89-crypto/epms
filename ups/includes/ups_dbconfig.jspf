@@ -4,6 +4,7 @@
 <%@ page import="javax.naming.InitialContext" %>
 <%@ page import="javax.naming.NamingException" %>
 <%@ page import="javax.sql.DataSource" %>
+<%@ page import="javax.servlet.http.HttpServletRequest" %>
 <%!
     private static final String UPS_DB_JNDI_NAME = "java:comp/env/jdbc/ups";
     private static final Object UPS_DB_DATASOURCE_LOCK = new Object();
@@ -153,6 +154,19 @@
             if (primaryError != null) fallbackError.addSuppressed(primaryError);
             throw fallbackError;
         }
+    }
+
+    private boolean isUpsLocalRequest(HttpServletRequest request) {
+        if (request == null) return false;
+        String addr = request.getRemoteAddr();
+        return "127.0.0.1".equals(addr) || "0:0:0:0:0:0:0:1".equals(addr) || "::1".equals(addr) || "localhost".equalsIgnoreCase(addr);
+    }
+
+    private boolean isUpsTestApiAllowed(HttpServletRequest request) {
+        if (isUpsLocalRequest(request)) return true;
+        Map<String, String> cfg = loadUpsConfigToml();
+        String enabled = upsFirstNonBlank(System.getenv("UPS_TEST_API_ENABLED"), cfg.get("app.test_api_enabled"));
+        return "true".equalsIgnoreCase(enabled) || "1".equals(enabled) || "yes".equalsIgnoreCase(enabled);
     }
 
     private static void closeUpsQuietly(AutoCloseable c) {

@@ -5,13 +5,15 @@
 <%@ include file="../includes/ups_html.jspf" %>
 <%!
     private String fmt(Object value, int scale) {
-        if (value == null) return "---";
-        try {
-            double v = value instanceof Number ? ((Number)value).doubleValue() : Double.parseDouble(String.valueOf(value));
-            return String.format(java.util.Locale.US, "%,." + scale + "f", v);
-        } catch (Exception ignore) {
-            return String.valueOf(value);
-        }
+        return epms.util.UpsFormatSupport.fmtDash(value, scale);
+    }
+
+    private String fmt(Object value, int scale, boolean hide) {
+        return hide ? "-" : fmt(value, scale);
+    }
+
+    private String fmtUnit(Object value, int scale, String unit, boolean hide) {
+        return hide ? "-" : fmt(value, scale) + " " + unit;
     }
 
     private double dbl(Object value, double fallback) {
@@ -32,6 +34,14 @@
         return Math.toDegrees(Math.acos(clamp(Math.abs(dbl(pf, 1d)), 0d, 1d)));
     }
 
+    private String readUrl(String urlText, int timeoutMs) {
+        return epms.util.UpsSimulatorSupport.readUrl(urlText, timeoutMs);
+    }
+
+    private void putJsonDecimal(Map<String, Object> target, String json, String jsonKey, String metricKey) {
+        epms.util.UpsSimulatorSupport.putJsonDecimal(target, json, jsonKey, metricKey);
+    }
+
     private String line(double cx, double cy, double r, double angleDeg) {
         double rad = Math.toRadians(angleDeg);
         double x = cx + Math.cos(rad) * r;
@@ -47,7 +57,22 @@
     }
 
     private String dateText(Object value) {
-        return value == null ? "수집 데이터 없음" : String.valueOf(value).replace('-', '/');
+        if (value == null) return "수집 데이터 없음";
+        return epms.util.UpsFormatSupport.displaySlashDateTime(value);
+    }
+
+    private String dateText(Object value, boolean hide) {
+        return hide ? "-" : dateText(value);
+    }
+
+    private boolean commBad(Map<String, Object> selected) {
+        if (selected == null || selected.get("last_comm_status") == null) return false;
+        String comm = String.valueOf(selected.get("last_comm_status"));
+        return !("OK".equalsIgnoreCase(comm) || "NORMAL".equalsIgnoreCase(comm) || "ONLINE".equalsIgnoreCase(comm));
+    }
+
+    private String angleText(Object pf, boolean hide) {
+        return hide || pf == null ? "-" : fmt(pfAngle(pf), 1) + "\u00B0";
     }
 %>
 <%
@@ -57,21 +82,10 @@ String selectedId = request.getParameter("ups_id");
 List<Map<String, Object>> devices = new ArrayList<Map<String, Object>>();
 Map<String, Object> selected = null;
 Map<String, Object> m = new HashMap<String, Object>();
+boolean simulatorLive = false;
 
-try (Connection conn = openUpsDbConnection()) {
-    try (PreparedStatement ps = conn.prepareStatement(
-        "SELECT d.ups_id, d.ups_name, d.location, d.ip_address, d.modbus_port, d.unit_id, d.enabled, d.last_comm_status, d.last_success_at, p.profile_name " +
-        "FROM dbo.ups_device d LEFT JOIN dbo.ups_modbus_profile p ON p.profile_id = d.profile_id ORDER BY d.ups_name")) {
-        try (ResultSet rs = ps.executeQuery()) {
-            ResultSetMetaData md = rs.getMetaData();
-            while (rs.next()) {
-                Map<String, Object> row = new HashMap<String, Object>();
-                for (int i = 1; i <= md.getColumnCount(); i++) row.put(md.getColumnLabel(i), rs.getObject(i));
-                devices.add(row);
-            }
-        }
-    }
-
+try {
+    devices = epms.ups.UpsQueryService.listDevicesWithProfile();
     if ((selectedId == null || selectedId.trim().isEmpty()) && !devices.isEmpty()) {
         selectedId = String.valueOf(devices.get(0).get("ups_id"));
     }
@@ -82,23 +96,30 @@ try (Connection conn = openUpsDbConnection()) {
                 break;
             }
         }
-        try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT TOP 1 measured_at, output_voltage_l12, output_voltage_l23, output_voltage_l31, " +
-            "output_current_l1, output_current_l2, output_current_l3, output_pf_l1, output_pf_l2, output_pf_l3 " +
-            "FROM dbo.ups_measurement WHERE ups_id = ? ORDER BY measured_at DESC")) {
-            ps.setInt(1, Integer.parseInt(selectedId));
-            try (ResultSet rs = ps.executeQuery()) {
-                ResultSetMetaData md = rs.getMetaData();
-                if (rs.next()) {
-                    for (int i = 1; i <= md.getColumnCount(); i++) m.put(md.getColumnLabel(i), rs.getObject(i));
-                }
-            }
-        }
+        m = epms.ups.UpsQueryService.latestPhasorMeasurement(selectedId);
     }
 } catch (Exception e) {
     err = e.getMessage();
 }
 
+if (epms.util.UpsSimulatorSupport.isSimulatorDevice(selected)) {
+    String simStatus = epms.util.UpsSimulatorSupport.readStatus(250);
+    if (simStatus != null && !simStatus.trim().isEmpty()) {
+        simulatorLive = true;
+        putJsonDecimal(m, simStatus, "output_voltage_l12", "output_voltage_l12");
+        putJsonDecimal(m, simStatus, "output_voltage_l23", "output_voltage_l23");
+        putJsonDecimal(m, simStatus, "output_voltage_l31", "output_voltage_l31");
+        putJsonDecimal(m, simStatus, "output_current_l1", "output_current_l1");
+        putJsonDecimal(m, simStatus, "output_current_l2", "output_current_l2");
+        putJsonDecimal(m, simStatus, "output_current_l3", "output_current_l3");
+        putJsonDecimal(m, simStatus, "output_pf_l1", "output_pf_l1");
+        putJsonDecimal(m, simStatus, "output_pf_l2", "output_pf_l2");
+        putJsonDecimal(m, simStatus, "output_pf_l3", "output_pf_l3");
+        m.put("measured_at", new java.sql.Timestamp(System.currentTimeMillis()));
+    }
+}
+
+boolean hideData = commBad(selected) && !simulatorLive;
 double cx = 330d;
 double cy = 250d;
 double vMax = Math.max(1d, Math.max(dbl(m.get("output_voltage_l12"), 0d), Math.max(dbl(m.get("output_voltage_l23"), 0d), dbl(m.get("output_voltage_l31"), 0d))));
@@ -115,7 +136,7 @@ double v3a = 120d;
 double i1a = v1a - pfAngle(m.get("output_pf_l1"));
 double i2a = v2a - pfAngle(m.get("output_pf_l2"));
 double i3a = v3a - pfAngle(m.get("output_pf_l3"));
-boolean hasData = m.get("measured_at") != null;
+boolean hasData = !hideData && m.get("measured_at") != null;
 %>
 <!doctype html>
 <html>
@@ -131,8 +152,8 @@ boolean hasData = m.get("measured_at") != null;
         .phasor-layout { display:grid; grid-template-columns:minmax(0, 1fr) 300px; gap:14px; align-items:start; }
         .phasor-panel { background:#fff; border:1px solid #d7e1ec; border-radius:8px; padding:14px; }
         .phasor-svg { width:100%; max-width:680px; display:block; margin:0 auto; }
-        .axis { stroke:#d9e2ed; stroke-width:1; }
-        .grid { fill:none; stroke:#e6edf5; stroke-width:1; }
+        .axis { stroke:#c4d0dd; stroke-width:1.2; }
+        .grid { fill:none; stroke:#aebdcb; stroke-width:1.4; stroke-dasharray:4 4; }
         .vline { stroke-width:4; marker-end:url(#arrow); }
         .iline { stroke-width:3; stroke-dasharray:9 6; marker-end:url(#arrow); }
         .l1 { stroke:#1267b1; color:#1267b1; fill:#1267b1; }
@@ -180,7 +201,7 @@ boolean hasData = m.get("measured_at") != null;
                 <% } %>
             </select>
         </form>
-        <div class="muted">최근 수집: <%= h(dateText(m.get("measured_at"))) %> / 자동 갱신 5초</div>
+        <div class="muted">최근 수집: <%= h(dateText(m.get("measured_at"), hideData)) %> / 자동 갱신 5초</div>
     </div>
 
     <div class="phasor-layout">
@@ -191,8 +212,9 @@ boolean hasData = m.get("measured_at") != null;
                         <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"></path>
                     </marker>
                 </defs>
-                <circle class="grid" cx="330" cy="250" r="80"></circle>
-                <circle class="grid" cx="330" cy="250" r="140"></circle>
+                <circle class="grid" cx="330" cy="250" r="50"></circle>
+                <circle class="grid" cx="330" cy="250" r="100"></circle>
+                <circle class="grid" cx="330" cy="250" r="150"></circle>
                 <circle class="grid" cx="330" cy="250" r="200"></circle>
                 <line class="axis" x1="90" y1="250" x2="570" y2="250"></line>
                 <line class="axis" x1="330" y1="30" x2="330" y2="470"></line>
@@ -231,24 +253,24 @@ boolean hasData = m.get("measured_at") != null;
         <div>
             <div class="phase-card">
                 <h3 class="l1">L1</h3>
-                <div class="phase-row"><span>전압</span><strong><%= fmt(m.get("output_voltage_l12"), 0) %> V</strong></div>
-                <div class="phase-row"><span>전류</span><strong><%= fmt(m.get("output_current_l1"), 0) %> A</strong></div>
-                <div class="phase-row"><span>역률</span><strong><%= fmt(m.get("output_pf_l1"), 2) %></strong></div>
-                <div class="phase-row"><span>추정 위상각</span><strong><%= m.get("output_pf_l1") == null ? "---" : fmt(pfAngle(m.get("output_pf_l1")), 1) %>°</strong></div>
+                <div class="phase-row"><span>전압</span><strong><%= fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData) %></strong></div>
+                <div class="phase-row"><span>전류</span><strong><%= fmtUnit(m.get("output_current_l1"), 0, "A", hideData) %></strong></div>
+                <div class="phase-row"><span>역률</span><strong><%= fmt(m.get("output_pf_l1"), 2, hideData) %></strong></div>
+                <div class="phase-row"><span>추정 위상각</span><strong><%= angleText(m.get("output_pf_l1"), hideData) %></strong></div>
             </div>
             <div class="phase-card">
                 <h3 class="l2">L2</h3>
-                <div class="phase-row"><span>전압</span><strong><%= fmt(m.get("output_voltage_l23"), 0) %> V</strong></div>
-                <div class="phase-row"><span>전류</span><strong><%= fmt(m.get("output_current_l2"), 0) %> A</strong></div>
-                <div class="phase-row"><span>역률</span><strong><%= fmt(m.get("output_pf_l2"), 2) %></strong></div>
-                <div class="phase-row"><span>추정 위상각</span><strong><%= m.get("output_pf_l2") == null ? "---" : fmt(pfAngle(m.get("output_pf_l2")), 1) %>°</strong></div>
+                <div class="phase-row"><span>전압</span><strong><%= fmtUnit(m.get("output_voltage_l23"), 0, "V", hideData) %></strong></div>
+                <div class="phase-row"><span>전류</span><strong><%= fmtUnit(m.get("output_current_l2"), 0, "A", hideData) %></strong></div>
+                <div class="phase-row"><span>역률</span><strong><%= fmt(m.get("output_pf_l2"), 2, hideData) %></strong></div>
+                <div class="phase-row"><span>추정 위상각</span><strong><%= angleText(m.get("output_pf_l2"), hideData) %></strong></div>
             </div>
             <div class="phase-card">
                 <h3 class="l3">L3</h3>
-                <div class="phase-row"><span>전압</span><strong><%= fmt(m.get("output_voltage_l31"), 0) %> V</strong></div>
-                <div class="phase-row"><span>전류</span><strong><%= fmt(m.get("output_current_l3"), 0) %> A</strong></div>
-                <div class="phase-row"><span>역률</span><strong><%= fmt(m.get("output_pf_l3"), 2) %></strong></div>
-                <div class="phase-row"><span>추정 위상각</span><strong><%= m.get("output_pf_l3") == null ? "---" : fmt(pfAngle(m.get("output_pf_l3")), 1) %>°</strong></div>
+                <div class="phase-row"><span>전압</span><strong><%= fmtUnit(m.get("output_voltage_l31"), 0, "V", hideData) %></strong></div>
+                <div class="phase-row"><span>전류</span><strong><%= fmtUnit(m.get("output_current_l3"), 0, "A", hideData) %></strong></div>
+                <div class="phase-row"><span>역률</span><strong><%= fmt(m.get("output_pf_l3"), 2, hideData) %></strong></div>
+                <div class="phase-row"><span>추정 위상각</span><strong><%= angleText(m.get("output_pf_l3"), hideData) %></strong></div>
             </div>
         </div>
     </div>

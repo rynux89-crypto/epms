@@ -160,6 +160,15 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID(N'dbo.ups_measurement', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_measurement_device_time' AND object_id = OBJECT_ID(N'dbo.ups_measurement'))
+        CREATE INDEX IX_ups_measurement_device_time ON dbo.ups_measurement(ups_id, measured_at DESC);
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_measurement_time' AND object_id = OBJECT_ID(N'dbo.ups_measurement'))
+        CREATE INDEX IX_ups_measurement_time ON dbo.ups_measurement(measured_at DESC);
+END
+GO
+
 IF OBJECT_ID(N'dbo.ups_comm_status', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.ups_comm_status (
@@ -212,6 +221,17 @@ BEGIN
     );
 
     CREATE INDEX IX_ups_alarm_log_active ON dbo.ups_alarm_log(status, occurred_at DESC);
+END
+GO
+
+IF OBJECT_ID(N'dbo.ups_alarm_log', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_alarm_log_active' AND object_id = OBJECT_ID(N'dbo.ups_alarm_log'))
+        CREATE INDEX IX_ups_alarm_log_active ON dbo.ups_alarm_log(status, occurred_at DESC);
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_alarm_log_device_time' AND object_id = OBJECT_ID(N'dbo.ups_alarm_log'))
+        CREATE INDEX IX_ups_alarm_log_device_time ON dbo.ups_alarm_log(ups_id, occurred_at DESC);
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_alarm_log_rule_active' AND object_id = OBJECT_ID(N'dbo.ups_alarm_log'))
+        CREATE INDEX IX_ups_alarm_log_rule_active ON dbo.ups_alarm_log(ups_id, rule_code, status);
 END
 GO
 

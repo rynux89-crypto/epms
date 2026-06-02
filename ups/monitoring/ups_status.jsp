@@ -1,189 +1,45 @@
-<%@ page import="java.sql.*" %>
-<%@ page import="java.util.*" %>
+﻿<%@ page import="java.util.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/ups_dbconfig.jspf" %>
 <%@ include file="../includes/ups_html.jspf" %>
 <%!
     private String fmt(Object value, int scale) {
-        if (value == null) return "---";
-        try {
-            double v = value instanceof Number ? ((Number)value).doubleValue() : Double.parseDouble(String.valueOf(value));
-            return String.format(java.util.Locale.US, "%,." + scale + "f", v);
-        } catch (Exception ignore) {
-            return String.valueOf(value);
-        }
+        return epms.util.UpsFormatSupport.fmtDash(value, scale);
     }
 
     private String fmtUnit(Object value, int scale, String unit) {
         return value == null ? "--- " + unit : fmt(value, scale) + " " + unit;
     }
 
+    private String fmtUnit(Object value, int scale, String unit, boolean hide) {
+        return hide ? "-" : fmtUnit(value, scale, unit);
+    }
+
+    private String fmtPlain(Object value, int scale, boolean hide) {
+        return hide ? "-" : fmt(value, scale);
+    }
+
+    private String fmtPlainUnit(Object value, int scale, String unit, boolean hide) {
+        return hide ? "-" : fmt(value, scale) + unit;
+    }
+
     private String fmtDate(Object value) {
-        return value == null ? "----/--/-- --:--:--" : String.valueOf(value).replace('-', '/');
+        return value == null ? "----/--/-- --:--:--" : epms.util.UpsFormatSupport.displaySlashDateTime(value);
+    }
+
+    private String fmtDate(Object value, boolean hide) {
+        return hide ? "-" : fmtDate(value);
+    }
+
+    private boolean commBad(Map<String, Object> selected) {
+        if (selected == null || selected.get("last_comm_status") == null) return false;
+        String comm = String.valueOf(selected.get("last_comm_status"));
+        return !("OK".equalsIgnoreCase(comm) || "NORMAL".equalsIgnoreCase(comm) || "ONLINE".equalsIgnoreCase(comm));
     }
 
     private String nowText() {
         return new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new java.util.Date());
     }
 
-    private String modeText(Object value, String fallback) {
-        if (value == null) return fallback;
-        int code;
-        try {
-            code = value instanceof Number ? ((Number)value).intValue() : Integer.parseInt(String.valueOf(value));
-        } catch (Exception ignore) {
-            return fallback;
-        }
-        if (code == 0x02 || code == 2) return "정상 작동";
-        if (code == 0x04 || code == 4) return "배터리 운전";
-        if (code == 0x10 || code == 16) return "정지";
-        if (code == 0x408 || code == 1032) return "요청 바이패스";
-        if (code == 0x28 || code == 40) return "강제 바이패스";
-        if (code == 0x808 || code == 2056) return "유지보수 바이패스";
-        if (code == 0x2008 || code == 8200) return "ECO 모드";
-        if (code == 0x10000 || code == 65536) return "바이패스 대기";
-        return fallback;
-    }
-
-    private String systemModeText(Object value, String fallback) {
-        if (value == null) return fallback;
-        int code;
-        try {
-            code = value instanceof Number ? ((Number)value).intValue() : Integer.parseInt(String.valueOf(value));
-        } catch (Exception ignore) {
-            return fallback;
-        }
-        if ((code & (1 << 1)) != 0) return "인버터";
-        if ((code & (1 << 2)) != 0) return "요청 바이패스";
-        if ((code & (1 << 3)) != 0) return "강제 바이패스";
-        if ((code & (1 << 4)) != 0) return "정지";
-        if ((code & (1 << 6)) != 0) return "유지보수 바이패스";
-        if ((code & (1 << 7)) != 0) return "ECO";
-        if ((code & (1 << 9)) != 0) return "바이패스 대기";
-        return fallback;
-    }
-
-    private int intValue(Object value, int fallback) {
-        if (value == null) return fallback;
-        try {
-            return value instanceof Number ? ((Number)value).intValue() : Integer.parseInt(String.valueOf(value));
-        } catch (Exception ignore) {
-            return fallback;
-        }
-    }
-
-    private boolean bitOn(Object value, int bit) {
-        return (intValue(value, 0) & (1 << bit)) != 0;
-    }
-
-    private String readUrl(String urlText, int timeoutMs) {
-        java.net.HttpURLConnection conn = null;
-        try {
-            java.net.URL url = new java.net.URL(urlText);
-            conn = (java.net.HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(timeoutMs);
-            conn.setReadTimeout(timeoutMs);
-            conn.setRequestMethod("GET");
-            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"))) {
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) sb.append(line);
-                return sb.toString();
-            }
-        } catch (Exception ignore) {
-            return null;
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
-    }
-
-    private boolean jsonBool(String json, String key, boolean fallback) {
-        if (json == null) return fallback;
-        try {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*(true|false)");
-            java.util.regex.Matcher m = p.matcher(json);
-            return m.find() ? Boolean.parseBoolean(m.group(1)) : fallback;
-        } catch (Exception ignore) {
-            return fallback;
-        }
-    }
-
-    private int jsonInt(String json, String key, int fallback) {
-        if (json == null) return fallback;
-        try {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*(-?\\d+)");
-            java.util.regex.Matcher m = p.matcher(json);
-            return m.find() ? Integer.parseInt(m.group(1)) : fallback;
-        } catch (Exception ignore) {
-            return fallback;
-        }
-    }
-
-    private java.math.BigDecimal jsonDecimal(String json, String key, java.math.BigDecimal fallback) {
-        if (json == null) return fallback;
-        try {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)");
-            java.util.regex.Matcher m = p.matcher(json);
-            return m.find() ? new java.math.BigDecimal(m.group(1)) : fallback;
-        } catch (Exception ignore) {
-            return fallback;
-        }
-    }
-
-    private void putJsonDecimal(Map<String, Object> target, String json, String jsonKey, String metricKey) {
-        java.math.BigDecimal value = jsonDecimal(json, jsonKey, null);
-        if (value != null) target.put(metricKey, value);
-    }
-
-    private void putIfMissing(Map<String, Object> target, String metricKey, String value) {
-        if (target.get(metricKey) == null && value != null) {
-            target.put(metricKey, new java.math.BigDecimal(value));
-        }
-    }
-
-    private void putSimulatorDefaults(Map<String, Object> target, String scenario) {
-        putIfMissing(target, "output_power_kw", "40");
-        putIfMissing(target, "output_power_l1_kw", "13");
-        putIfMissing(target, "output_power_l2_kw", "13");
-        putIfMissing(target, "output_power_l3_kw", "14");
-        putIfMissing(target, "output_apparent_total_kva", "43");
-        putIfMissing(target, "output_apparent_l1_kva", "14");
-        putIfMissing(target, "output_apparent_l2_kva", "14");
-        putIfMissing(target, "output_apparent_l3_kva", "15");
-        putIfMissing(target, "output_pf_l1", "0.96");
-        putIfMissing(target, "output_pf_l2", "0.95");
-        putIfMissing(target, "output_pf_l3", "0.97");
-        putIfMissing(target, "battery_voltage", "540");
-        putIfMissing(target, "battery_temperature", "28.5");
-        if ("battery".equals(scenario)) {
-            target.put("remaining_minutes", new java.math.BigDecimal("45"));
-            target.put("battery_current", new java.math.BigDecimal("-35"));
-            target.put("battery_charge_percent", new java.math.BigDecimal("72"));
-        } else if ("low_battery".equals(scenario)) {
-            target.put("remaining_minutes", new java.math.BigDecimal("7"));
-            target.put("battery_current", new java.math.BigDecimal("-48"));
-            target.put("battery_charge_percent", new java.math.BigDecimal("8"));
-        } else if ("critical".equals(scenario)) {
-            target.put("remaining_minutes", new java.math.BigDecimal("120"));
-            target.put("battery_current", new java.math.BigDecimal("4"));
-            target.put("battery_charge_percent", new java.math.BigDecimal("5"));
-        } else {
-            target.put("remaining_minutes", new java.math.BigDecimal("120"));
-            target.put("battery_current", new java.math.BigDecimal("4"));
-            if (target.get("battery_charge_percent") == null) target.put("battery_charge_percent", new java.math.BigDecimal("96"));
-        }
-    }
-
-    private String jsonText(String json, String key, String fallback) {
-        if (json == null) return fallback;
-        try {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*\"([^\"]*)\"");
-            java.util.regex.Matcher m = p.matcher(json);
-            return m.find() ? m.group(1) : fallback;
-        } catch (Exception ignore) {
-            return fallback;
-        }
-    }
 %>
 <%
 request.setCharacterEncoding("UTF-8");
@@ -192,125 +48,52 @@ String selectedId = request.getParameter("ups_id");
 List<Map<String, Object>> devices = new ArrayList<Map<String, Object>>();
 Map<String, Object> selected = null;
 Map<String, Object> m = new HashMap<String, Object>();
+Map<String, Object> statusView = new HashMap<String, Object>();
 
-try (Connection conn = openUpsDbConnection()) {
-    try (PreparedStatement ps = conn.prepareStatement(
-        "SELECT d.ups_id, d.ups_name, d.location, d.ip_address, d.modbus_port, d.unit_id, d.enabled, d.last_comm_status, d.last_success_at, p.profile_name " +
-        "FROM dbo.ups_device d LEFT JOIN dbo.ups_modbus_profile p ON p.profile_id = d.profile_id ORDER BY d.ups_name")) {
-        try (ResultSet rs = ps.executeQuery()) {
-            ResultSetMetaData md = rs.getMetaData();
-            while (rs.next()) {
-                Map<String, Object> row = new HashMap<String, Object>();
-                for (int i = 1; i <= md.getColumnCount(); i++) row.put(md.getColumnLabel(i), rs.getObject(i));
-                devices.add(row);
-            }
-        }
-    }
-
-    if ((selectedId == null || selectedId.trim().isEmpty()) && !devices.isEmpty()) {
-        selectedId = String.valueOf(devices.get(0).get("ups_id"));
-    }
-    if (selectedId != null && !selectedId.trim().isEmpty()) {
-        for (Map<String, Object> d : devices) {
-            if (selectedId.equals(String.valueOf(d.get("ups_id")))) {
-                selected = d;
-                break;
-            }
-        }
-        try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT TOP 1 * FROM dbo.ups_measurement WHERE ups_id = ? ORDER BY measured_at DESC")) {
-            ps.setInt(1, Integer.parseInt(selectedId));
-            try (ResultSet rs = ps.executeQuery()) {
-                ResultSetMetaData md = rs.getMetaData();
-                if (rs.next()) {
-                    for (int i = 1; i <= md.getColumnCount(); i++) m.put(md.getColumnLabel(i), rs.getObject(i));
-                }
-            }
-        }
-    }
+try {
+    statusView = epms.ups.UpsQueryService.realtimeStatus(selectedId, application);
+    devices = (List<Map<String, Object>>) statusView.get("devices");
+    selectedId = String.valueOf(statusView.get("selectedId"));
+    selected = (Map<String, Object>) statusView.get("selected");
+    m = (Map<String, Object>) statusView.get("measurement");
 } catch (Exception e) {
     err = e.getMessage();
 }
 
-String comm = selected == null ? "UNKNOWN" : String.valueOf(selected.get("last_comm_status"));
-boolean ok = "OK".equalsIgnoreCase(comm) || "NORMAL".equalsIgnoreCase(comm) || "ONLINE".equalsIgnoreCase(comm);
-String upsMode = modeText(m.get("ups_operation_mode_code"), ok ? "정상 작동" : "대기");
-String systemMode = systemModeText(m.get("system_operation_mode_code"), "인버터");
+if (devices == null) devices = new ArrayList<Map<String, Object>>();
+if (m == null) m = new HashMap<String, Object>();
+String upsMode = String.valueOf(statusView.get("upsMode"));
+String systemMode = String.valueOf(statusView.get("systemMode"));
+boolean commBad = commBad(selected);
+if (commBad) {
+    upsMode = "통신불량";
+    systemMode = "-";
+}
 Object totalLoad = m.get("load_percent");
 Object totalKw = m.get("output_power_kw");
 Object totalKva = m.get("output_apparent_total_kva");
-boolean hasMeasurement = m.get("measured_at") != null;
-boolean uibClosed = bitOn(m.get("switchgear_status_code"), 0);
-boolean ssibClosed = bitOn(m.get("switchgear_status_code"), 1);
-boolean uobClosed = bitOn(m.get("switchgear_status_code"), 3);
-boolean bf2Closed = bitOn(m.get("switchgear_status_code"), 4);
-boolean mbbClosed = bitOn(m.get("switchgear_status_code"), 10);
-boolean bbClosed = intValue(m.get("battery_breaker_status_code"), 0) != 0;
-boolean simulatorDevice = selected != null
-        && "127.0.0.1".equals(String.valueOf(selected.get("ip_address")))
-        && "1502".equals(String.valueOf(selected.get("modbus_port")));
-if (simulatorDevice) {
-    String simStatus = readUrl("http://127.0.0.1:1503/api/status", 250);
-    String simScenario = jsonText(simStatus, "scenario", "");
-    putJsonDecimal(m, simStatus, "output_voltage_l12", "output_voltage_l12");
-    putJsonDecimal(m, simStatus, "output_voltage_l23", "output_voltage_l23");
-    putJsonDecimal(m, simStatus, "output_voltage_l31", "output_voltage_l31");
-    putJsonDecimal(m, simStatus, "output_current_l1", "output_current_l1");
-    putJsonDecimal(m, simStatus, "output_current_l2", "output_current_l2");
-    putJsonDecimal(m, simStatus, "output_current_l3", "output_current_l3");
-    putJsonDecimal(m, simStatus, "output_frequency_hz", "frequency");
-    putJsonDecimal(m, simStatus, "output_load_percent", "load_percent");
-    putJsonDecimal(m, simStatus, "output_power_kw", "output_power_kw");
-    putJsonDecimal(m, simStatus, "output_power_l1_kw", "output_power_l1_kw");
-    putJsonDecimal(m, simStatus, "output_power_l2_kw", "output_power_l2_kw");
-    putJsonDecimal(m, simStatus, "output_power_l3_kw", "output_power_l3_kw");
-    putJsonDecimal(m, simStatus, "output_apparent_total_kva", "output_apparent_total_kva");
-    putJsonDecimal(m, simStatus, "output_apparent_l1_kva", "output_apparent_l1_kva");
-    putJsonDecimal(m, simStatus, "output_apparent_l2_kva", "output_apparent_l2_kva");
-    putJsonDecimal(m, simStatus, "output_apparent_l3_kva", "output_apparent_l3_kva");
-    putJsonDecimal(m, simStatus, "output_pf_l1", "output_pf_l1");
-    putJsonDecimal(m, simStatus, "output_pf_l2", "output_pf_l2");
-    putJsonDecimal(m, simStatus, "output_pf_l3", "output_pf_l3");
-    putJsonDecimal(m, simStatus, "battery_voltage", "battery_voltage");
-    putJsonDecimal(m, simStatus, "battery_current", "battery_current");
-    putJsonDecimal(m, simStatus, "battery_charge_percent", "battery_charge_percent");
-    putJsonDecimal(m, simStatus, "battery_temperature_c", "battery_temperature");
-    putJsonDecimal(m, simStatus, "remaining_minutes", "remaining_minutes");
-    putSimulatorDefaults(m, simScenario);
-    int simUpsMode = jsonInt(simStatus, "ups_operation_mode_code", intValue(m.get("ups_operation_mode_code"), ok ? 2 : 0));
-    int simSystemMode = jsonInt(simStatus, "system_operation_mode_code", intValue(m.get("system_operation_mode_code"), 2));
-    if ("normal".equals(simScenario)) simUpsMode = 2;
-    if ("battery".equals(simScenario) || "low_battery".equals(simScenario)) simUpsMode = 4;
-    upsMode = modeText(Integer.valueOf(simUpsMode), ok ? "정상 작동" : "대기");
-    systemMode = systemModeText(Integer.valueOf(simSystemMode), "인버터");
-    uibClosed = jsonBool(simStatus, "uib", uibClosed);
-    uobClosed = jsonBool(simStatus, "uob", uobClosed);
-    ssibClosed = jsonBool(simStatus, "ssib", ssibClosed);
-    bf2Closed = jsonBool(simStatus, "bf2", bf2Closed);
-    mbbClosed = jsonBool(simStatus, "mbb", mbbClosed);
-    bbClosed = jsonBool(simStatus, "bb", bbClosed);
-}
-totalLoad = m.get("load_percent");
-totalKw = m.get("output_power_kw");
-totalKva = m.get("output_apparent_total_kva");
-boolean inverterPath = hasMeasurement && uibClosed && uobClosed;
-boolean staticBypassPath = hasMeasurement && ssibClosed && bf2Closed;
-boolean maintenanceBypassPath = hasMeasurement && mbbClosed;
-boolean bypassPath = staticBypassPath || maintenanceBypassPath;
-boolean batteryPath = hasMeasurement && bbClosed;
-String uibPathClass = (hasMeasurement && uibClosed) ? "mimic-active" : "mimic-idle";
-String uobPathClass = (hasMeasurement && uobClosed) ? "mimic-active" : "mimic-idle";
-String inverterPathClass = inverterPath ? "mimic-active" : "mimic-idle";
-String ssibPathClass = (hasMeasurement && ssibClosed) ? "mimic-active" : "mimic-idle";
-String staticBypassPathClass = staticBypassPath ? "mimic-active" : "mimic-idle";
-String maintenanceBypassPathClass = maintenanceBypassPath ? "mimic-active" : "mimic-idle";
-String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
+boolean uibClosed = Boolean.TRUE.equals(statusView.get("uibClosed"));
+boolean ssibClosed = Boolean.TRUE.equals(statusView.get("ssibClosed"));
+boolean uobClosed = Boolean.TRUE.equals(statusView.get("uobClosed"));
+boolean bf2Closed = Boolean.TRUE.equals(statusView.get("bf2Closed"));
+boolean mbbClosed = Boolean.TRUE.equals(statusView.get("mbbClosed"));
+boolean bbClosed = Boolean.TRUE.equals(statusView.get("bbClosed"));
+boolean inverterPath = Boolean.TRUE.equals(statusView.get("inverterPath"));
+boolean staticBypassPath = Boolean.TRUE.equals(statusView.get("staticBypassPath"));
+String uibPathClass = String.valueOf(statusView.get("uibPathClass"));
+String uobPathClass = String.valueOf(statusView.get("uobPathClass"));
+String inverterPathClass = String.valueOf(statusView.get("inverterPathClass"));
+String ssibPathClass = String.valueOf(statusView.get("ssibPathClass"));
+String bypassInputBranchClass = String.valueOf(statusView.get("bypassInputBranchClass"));
+String staticBypassPathClass = String.valueOf(statusView.get("staticBypassPathClass"));
+String maintenanceBypassPathClass = String.valueOf(statusView.get("maintenanceBypassPathClass"));
+String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
 %>
 <!doctype html>
 <html>
 <head>
     <title>UPS 모니터링</title>
-    <meta http-equiv="refresh" content="5">
+    <meta http-equiv="refresh" content="2">
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
     <style>
         body { background:#f2f4f7; }
@@ -359,29 +142,41 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
         .hmi-panel {
             border:2px solid #666;
             background:#fff;
-            min-height:92px;
+            min-height:86px;
             padding:7px 13px;
+            font-weight:400;
         }
         .hmi-panel h3 { margin:0 0 6px; text-align:center; font-size:27px; font-weight:800; color:#111; line-height:1.05; }
         .metric-row { display:grid; grid-template-columns:70px 22px 1fr; gap:8px; align-items:center; font-size:25px; line-height:1.16; }
-        .metric-row .val { text-align:right; font-weight:700; }
+        .metric-row .val { text-align:right; font-weight:400; }
         .battery-panel { display:grid; grid-template-columns:1fr 120px 1fr; align-items:center; gap:10px; }
-        .battery-time { font-size:25px; line-height:1.16; }
-        .battery-percent { font-size:27px; font-weight:800; text-align:center; }
+        .battery-time { text-align:center; line-height:1.18; }
+        .battery-time-title { font-size:21px; font-weight:800; margin-bottom:5px; }
+        .battery-time-value { font-size:25px; font-weight:400; }
+        .battery-percent { font-size:27px; font-weight:400; text-align:center; line-height:1.15; }
+        .battery-temp { margin-top:5px; font-size:20px; }
         .battery-shape { height:54px; border:7px solid #111; position:relative; background:linear-gradient(90deg,#5fc878 var(--charge,0%),#fff var(--charge,0%)); }
         .battery-shape::before { content:""; position:absolute; left:18px; top:-16px; width:32px; height:14px; border:7px solid #111; border-bottom:none; background:#fff; }
         .battery-shape::after { content:""; position:absolute; right:18px; top:-16px; width:32px; height:14px; border:7px solid #111; border-bottom:none; background:#fff; }
-        .date-panel { min-height:58px; display:flex; align-items:center; justify-content:center; font-size:25px; font-weight:700; }
+        .date-panel { min-height:58px; display:flex; align-items:center; justify-content:center; font-size:25px; font-weight:800; }
         .mode-panel { min-height:78px; padding:0; overflow:hidden; }
         .mode-panel h3 { padding:6px 12px 3px; margin:0; }
-        .mode-value { background:#5fc878; text-align:center; font-size:27px; font-weight:800; padding:3px 8px 6px; }
-        .total-panel .bar { height:36px; background:#5fc878; margin:6px 0; display:flex; align-items:center; justify-content:center; font-size:25px; font-weight:900; }
-        .total-panel .total-values { text-align:center; font-size:25px; font-weight:800; }
+        .mode-value { background:#5fc878; text-align:center; font-size:27px; font-weight:400; padding:3px 8px 6px; }
+        .total-panel .bar { height:36px; background:#5fc878; margin:6px 0; display:flex; align-items:center; justify-content:center; font-size:25px; font-weight:400; }
+        .total-panel .total-values { text-align:center; font-size:25px; font-weight:400; }
         .phase-power { grid-row:span 4; }
-        .phase-list { display:grid; gap:11px; padding-top:7px; }
+        .phase-list { display:grid; gap:11px; padding-top:28px; }
         .phase-item { display:grid; grid-template-columns:64px 1fr; align-items:center; font-size:26px; }
-        .phase-item .phase { font-weight:900; }
-        .phase-item .nums { text-align:right; line-height:1.2; font-weight:700; }
+        .phase-item .phase { font-weight:400; }
+        .phase-item .nums { text-align:right; line-height:1.2; font-weight:400; }
+        .voltage-panel { grid-row:1; }
+        .current-panel { grid-row:2; }
+        .frequency-panel { grid-row:3; }
+        .pf-panel { grid-row:4; }
+        .freq-value { text-align:center; font-size:28px; font-weight:400; padding-top:6px; }
+        .pf-list { display:grid; gap:2px; font-size:25px; font-weight:400; padding-top:4px; }
+        .pf-row { display:grid; grid-template-columns:52px 16px 1fr; gap:6px; align-items:center; line-height:1.14; }
+        .pf-row span:last-child { text-align:right; }
         .span-left { grid-column:1; }
         .span-mid { grid-column:2; }
         .span-right { grid-column:3; }
@@ -392,7 +187,11 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
             .hmi-grid { grid-template-columns:1fr; }
             .span-left,.span-mid,.span-right,.phase-power { grid-column:auto; grid-row:auto; }
             .hmi-panel h3 { font-size:24px; }
-            .metric-row,.battery-time,.battery-percent,.date-panel,.mode-value,.total-panel .bar,.total-panel .total-values,.phase-item { font-size:22px; }
+            .metric-row,.battery-time-value,.battery-percent,.date-panel,.mode-value,.total-panel .bar,.total-panel .total-values,.phase-item { font-size:22px; }
+            .battery-time-title { font-size:18px; }
+            .battery-temp { font-size:17px; }
+            .freq-value { font-size:22px; }
+            .pf-list { font-size:22px; }
         }
     </style>
 </head>
@@ -422,7 +221,7 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
                 <% } %>
             </select>
         </form>
-        <div class="muted">자동 갱신 5초</div>
+        <div class="muted">자동 갱신 2초</div>
     </div>
 
         <div class="hmi-scale">
@@ -436,10 +235,10 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
                         </marker>
                     </defs>
 
-                    <rect x="18" y="28" width="58" height="58" class="mimic-device <%= uibClosed ? "active" : "" %>"></rect>
-                    <path d="M42 43 L66 57 L42 71 Z" fill="<%= uibClosed ? "#169b45" : "#9b9b9b" %>"></path>
+                    <rect x="24" y="28" width="58" height="58" class="mimic-device <%= uibClosed ? "active" : "" %>"></rect>
+                    <path d="M48 43 L72 57 L48 71 Z" fill="<%= uibClosed ? "#169b45" : "#9b9b9b" %>"></path>
                     <text x="120" y="42" class="mimic-text">UIB</text>
-                    <line x1="76" y1="57" x2="180" y2="57" class="mimic-line <%= uibPathClass %>"></line>
+                    <line x1="82" y1="57" x2="180" y2="57" class="mimic-line <%= uibPathClass %>"></line>
                     <circle cx="155" cy="57" r="7" class="mimic-dot <%= uibClosed ? "active" : "" %>"></circle>
 
                     <rect x="305" y="20" width="74" height="74" class="mimic-device <%= inverterPath ? "active" : "" %>"></rect>
@@ -467,16 +266,17 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
                     <line x1="452" y1="174" x2="452" y2="166" stroke="<%= bbClosed ? "#169b45" : "#9b9b9b" %>" stroke-width="4"></line>
                     <line x1="488" y1="174" x2="488" y2="166" stroke="<%= bbClosed ? "#169b45" : "#9b9b9b" %>" stroke-width="4"></line>
 
-                    <rect x="18" y="262" width="58" height="58" class="mimic-device <%= ssibClosed ? "active" : "" %>"></rect>
-                    <path d="M42 277 L66 291 L42 305 Z" fill="<%= ssibClosed ? "#169b45" : "#111" %>"></path>
-                    <text x="88" y="272" class="mimic-text">SSIB</text>
-                    <line x1="76" y1="291" x2="115" y2="291" class="mimic-line <%= ssibPathClass %>"></line>
-                    <line x1="115" y1="291" x2="<%= ssibClosed ? "175" : "145" %>" y2="<%= ssibClosed ? "291" : "268" %>" class="mimic-switch <%= ssibClosed ? "mimic-active" : "mimic-idle" %>"></line>
-                    <circle cx="115" cy="291" r="6" class="mimic-dot <%= ssibClosed ? "active" : "" %>"></circle>
-                    <circle cx="175" cy="291" r="6" class="mimic-dot <%= bf2Closed ? "active" : "" %>"></circle>
-                    <text x="172" y="258" class="mimic-text">BF2</text>
-                    <line x1="175" y1="291" x2="<%= bf2Closed ? "230" : "210" %>" y2="<%= bf2Closed ? "291" : "266" %>" class="mimic-switch <%= bf2Closed ? "mimic-active" : "mimic-idle" %>"></line>
-                    <line x1="175" y1="291" x2="425" y2="291" class="mimic-line <%= staticBypassPathClass %>"></line>
+                    <rect x="24" y="262" width="58" height="58" class="mimic-device <%= ssibClosed ? "active" : "" %>"></rect>
+                    <path d="M48 277 L72 291 L48 305 Z" fill="<%= ssibClosed ? "#169b45" : "#111" %>"></path>
+                    <text x="112" y="272" class="mimic-text">SSIB</text>
+                    <line x1="82" y1="291" x2="140" y2="291" class="mimic-line <%= ssibPathClass %>"></line>
+                    <line x1="100" y1="291" x2="100" y2="330" class="mimic-line <%= bypassInputBranchClass %>"></line>
+                    <line x1="140" y1="291" x2="<%= ssibClosed ? "200" : "170" %>" y2="<%= ssibClosed ? "291" : "268" %>" class="mimic-switch <%= ssibClosed ? "mimic-active" : "mimic-idle" %>"></line>
+                    <circle cx="140" cy="291" r="6" class="mimic-dot <%= ssibClosed ? "active" : "" %>"></circle>
+                    <circle cx="200" cy="291" r="6" class="mimic-dot <%= bf2Closed ? "active" : "" %>"></circle>
+                    <text x="197" y="258" class="mimic-text">BF2</text>
+                    <line x1="200" y1="291" x2="<%= bf2Closed ? "255" : "235" %>" y2="<%= bf2Closed ? "291" : "266" %>" class="mimic-switch <%= bf2Closed ? "mimic-active" : "mimic-idle" %>"></line>
+                    <line x1="200" y1="291" x2="425" y2="291" class="mimic-line <%= staticBypassPathClass %>"></line>
 
                     <rect x="425" y="250" width="90" height="82" class="mimic-device <%= staticBypassPath ? "active" : "" %>"></rect>
                     <path d="M470 267 v46" stroke="<%= staticBypassPath ? "#169b45" : "#9b9b9b" %>" stroke-width="4"></path>
@@ -484,11 +284,11 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
                     <line x1="515" y1="291" x2="735" y2="291" class="mimic-line <%= staticBypassPathClass %>"></line>
                     <line x1="735" y1="291" x2="735" y2="57" class="mimic-line <%= staticBypassPathClass %>"></line>
 
-                    <text x="88" y="356" class="mimic-text">MBB</text>
-                    <line x1="76" y1="330" x2="120" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
-                    <line x1="120" y1="330" x2="<%= mbbClosed ? "180" : "150" %>" y2="<%= mbbClosed ? "330" : "307" %>" class="mimic-switch <%= mbbClosed ? "mimic-active" : "mimic-idle" %>"></line>
-                    <circle cx="120" cy="330" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
-                    <line x1="120" y1="330" x2="910" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
+                    <text x="112" y="356" class="mimic-text">MBB</text>
+                    <line x1="100" y1="330" x2="145" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
+                    <line x1="145" y1="330" x2="<%= mbbClosed ? "205" : "175" %>" y2="<%= mbbClosed ? "330" : "307" %>" class="mimic-switch <%= mbbClosed ? "mimic-active" : "mimic-idle" %>"></line>
+                    <circle cx="145" cy="330" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
+                    <line x1="145" y1="330" x2="910" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
                     <line x1="910" y1="330" x2="910" y2="57" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
 
                     <rect x="770" y="120" width="220" height="120" class="mimic-mode-box"></rect>
@@ -504,33 +304,36 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
             </div>
 
             <div class="hmi-grid">
-                <div class="hmi-panel span-left">
+                <div class="hmi-panel span-left voltage-panel">
                     <h3>출력 전압</h3>
-                    <div class="metric-row"><span>L1-2</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_voltage_l12"), 0, "V") %></span></div>
-                    <div class="metric-row"><span>L2-3</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_voltage_l23"), 0, "V") %></span></div>
-                    <div class="metric-row"><span>L3-1</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_voltage_l31"), 0, "V") %></span></div>
+                    <div class="metric-row"><span>L1-2</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_voltage_l12"), 0, "V", commBad) %></span></div>
+                    <div class="metric-row"><span>L2-3</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_voltage_l23"), 0, "V", commBad) %></span></div>
+                    <div class="metric-row"><span>L3-1</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_voltage_l31"), 0, "V", commBad) %></span></div>
                 </div>
 
-            <div class="hmi-panel span-mid battery-panel" style="--charge:<%= m.get("battery_charge_percent") == null ? "0" : fmt(m.get("battery_charge_percent"), 0) %>%">
+            <div class="hmi-panel span-mid battery-panel" style="--charge:<%= commBad || m.get("battery_charge_percent") == null ? "0" : fmt(m.get("battery_charge_percent"), 0) %>%">
                 <div class="battery-time">
-                    <div><%= m.get("remaining_minutes") == null ? "--" : fmt(m.get("remaining_minutes"), 0) %> Mn</div>
-                    <div>-- Sec</div>
+                    <div class="battery-time-title">잔여시간</div>
+                    <div class="battery-time-value"><%= fmtPlainUnit(m.get("remaining_minutes"), 0, " Min", commBad) %></div>
                 </div>
                 <div class="battery-shape"></div>
-                <div class="battery-percent"><%= m.get("battery_charge_percent") == null ? "--" : fmt(m.get("battery_charge_percent"), 0) %>%</div>
+                <div class="battery-percent">
+                    <div><%= fmtPlainUnit(m.get("battery_charge_percent"), 0, "%", commBad) %></div>
+                    <div class="battery-temp"><%= fmtPlainUnit(m.get("battery_temperature"), 1, "&deg;C", commBad) %></div>
+                </div>
             </div>
 
             <div class="hmi-panel span-right total-panel">
                 <h3>총 출력 전력</h3>
-                <div class="bar"><%= totalLoad == null ? "--.-" : fmt(totalLoad, 1) %>%</div>
-                <div class="total-values"><%= fmt(totalKw, 0) %> kW&nbsp;&nbsp;-&nbsp;&nbsp;<%= fmt(totalKva, 0) %> kVA</div>
+                <div class="bar"><%= fmtPlainUnit(totalLoad, 1, "%", commBad) %></div>
+                <div class="total-values"><%= fmtPlainUnit(totalKw, 0, " kW", commBad) %>&nbsp;&nbsp;-&nbsp;&nbsp;<%= fmtPlainUnit(totalKva, 0, " kVA", commBad) %></div>
             </div>
 
-            <div class="hmi-panel span-left">
+            <div class="hmi-panel span-left current-panel">
                 <h3>출력 전류</h3>
-                <div class="metric-row"><span>L1</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_current_l1"), 0, "A") %></span></div>
-                <div class="metric-row"><span>L2</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_current_l2"), 0, "A") %></span></div>
-                <div class="metric-row"><span>L3</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_current_l3"), 0, "A") %></span></div>
+                <div class="metric-row"><span>L1</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_current_l1"), 0, "A", commBad) %></span></div>
+                <div class="metric-row"><span>L2</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_current_l2"), 0, "A", commBad) %></span></div>
+                <div class="metric-row"><span>L3</span><span>:</span><span class="val"><%= fmtUnit(m.get("output_current_l3"), 0, "A", commBad) %></span></div>
             </div>
 
             <div class="hmi-panel span-mid date-panel"><%= nowText() %></div>
@@ -538,9 +341,9 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
             <div class="hmi-panel span-right phase-power">
                 <h3>출력 전력</h3>
                 <div class="phase-list">
-                    <div class="phase-item"><span class="phase">L1</span><span class="nums"><%= fmt(m.get("output_power_l1_kw"), 0) %> kW<br><%= fmt(m.get("output_apparent_l1_kva"), 0) %> kVA</span></div>
-                    <div class="phase-item"><span class="phase">L2</span><span class="nums"><%= fmt(m.get("output_power_l2_kw"), 0) %> kW<br><%= fmt(m.get("output_apparent_l2_kva"), 0) %> kVA</span></div>
-                    <div class="phase-item"><span class="phase">L3</span><span class="nums"><%= fmt(m.get("output_power_l3_kw"), 0) %> kW<br><%= fmt(m.get("output_apparent_l3_kva"), 0) %> kVA</span></div>
+                    <div class="phase-item"><span class="phase">L1</span><span class="nums"><%= fmtPlainUnit(m.get("output_power_l1_kw"), 0, " kW", commBad) %><br><%= fmtPlainUnit(m.get("output_apparent_l1_kva"), 0, " kVA", commBad) %></span></div>
+                    <div class="phase-item"><span class="phase">L2</span><span class="nums"><%= fmtPlainUnit(m.get("output_power_l2_kw"), 0, " kW", commBad) %><br><%= fmtPlainUnit(m.get("output_apparent_l2_kva"), 0, " kVA", commBad) %></span></div>
+                    <div class="phase-item"><span class="phase">L3</span><span class="nums"><%= fmtPlainUnit(m.get("output_power_l3_kw"), 0, " kW", commBad) %><br><%= fmtPlainUnit(m.get("output_apparent_l3_kva"), 0, " kVA", commBad) %></span></div>
                 </div>
             </div>
 
@@ -549,9 +352,18 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
                 <div class="mode-value"><%= h(upsMode) %></div>
             </div>
 
-            <div class="hmi-panel span-left">
+            <div class="hmi-panel span-left frequency-panel">
                 <h3>출력 주파수</h3>
-                <div style="text-align:center;font-size:30px;font-weight:800;"><%= fmtUnit(m.get("frequency"), 1, "Hz") %></div>
+                <div class="freq-value"><%= fmtUnit(m.get("frequency"), 1, "Hz", commBad) %></div>
+            </div>
+
+            <div class="hmi-panel span-left pf-panel">
+                <h3>역률</h3>
+                <div class="pf-list">
+                    <div class="pf-row"><span>L1</span><span>:</span><span><%= fmtPlain(m.get("output_pf_l1"), 2, commBad) %></span></div>
+                    <div class="pf-row"><span>L2</span><span>:</span><span><%= fmtPlain(m.get("output_pf_l2"), 2, commBad) %></span></div>
+                    <div class="pf-row"><span>L3</span><span>:</span><span><%= fmtPlain(m.get("output_pf_l3"), 2, commBad) %></span></div>
+                </div>
             </div>
 
             <div class="hmi-panel span-mid mode-panel">
@@ -564,7 +376,7 @@ String batteryPathClass = batteryPath ? "mimic-active" : "mimic-idle";
 
     <div class="muted-note">
         <% if (selected != null) { %>
-        <%= h(selected.get("ups_name")) %> / <%= h(selected.get("location")) %> / <%= h(selected.get("ip_address")) %>:<%= h(selected.get("modbus_port")) %> / Unit <%= h(selected.get("unit_id")) %> / <%= h(selected.get("profile_name")) %> / 최근 수집: <%= fmtDate(m.get("measured_at")) %>
+        <%= h(selected.get("ups_name")) %> / <%= h(selected.get("location")) %> / <%= h(selected.get("ip_address")) %>:<%= h(selected.get("modbus_port")) %> / Unit <%= h(selected.get("unit_id")) %> / <%= h(selected.get("profile_name")) %> / 최근 수집: <%= fmtDate(m.get("measured_at"), commBad) %>
         <% } else { %>
         UPS 등록 후 Schneider Easy UPS 3-Phase Modular 프로파일을 선택하면 이 화면에서 값이 표시됩니다.
         <% } %>
