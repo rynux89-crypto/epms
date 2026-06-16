@@ -97,6 +97,27 @@ ALARM_TESTS = [
 
 ALARM_TEST_BY_CODE = {item["code"]: item for item in ALARM_TESTS}
 
+MANUAL_FIELDS = {
+    "output_frequency_hz": {"min": 45.0, "max": 65.0},
+    "output_voltage_l12": {"min": 0.0, "max": 600.0},
+    "output_voltage_l23": {"min": 0.0, "max": 600.0},
+    "output_voltage_l31": {"min": 0.0, "max": 600.0},
+    "output_current_l1": {"min": 0.0, "max": 1000.0},
+    "output_current_l2": {"min": 0.0, "max": 1000.0},
+    "output_current_l3": {"min": 0.0, "max": 1000.0},
+    "output_load_percent": {"min": 0.0, "max": 150.0},
+    "output_power_kw": {"min": 0.0, "max": 10000.0},
+    "output_apparent_total_kva": {"min": 0.0, "max": 10000.0},
+    "output_pf_l1": {"min": 0.0, "max": 1.0},
+    "output_pf_l2": {"min": 0.0, "max": 1.0},
+    "output_pf_l3": {"min": 0.0, "max": 1.0},
+    "battery_voltage": {"min": 0.0, "max": 1000.0},
+    "battery_current": {"min": -1000.0, "max": 1000.0},
+    "battery_charge_percent": {"min": 0.0, "max": 100.0},
+    "battery_temperature_c": {"min": -40.0, "max": 100.0},
+    "remaining_minutes": {"min": 0.0, "max": 1440.0},
+}
+
 
 def u16(value: int) -> int:
     return max(0, min(0xFFFF, int(value)))
@@ -139,6 +160,7 @@ class SimulatorState:
         "bb": True,
     })
     active_alarm_tests: set[str] = field(default_factory=set)
+    manual_values: dict[str, float] = field(default_factory=dict)
 
     def set_scenario(self, scenario: str) -> None:
         if scenario not in SCENARIOS:
@@ -190,6 +212,29 @@ class SimulatorState:
         with self.lock:
             return set(self.active_alarm_tests)
 
+    def set_manual_values(self, values: dict[str, float]) -> None:
+        cleaned: dict[str, float] = {}
+        for key, raw in values.items():
+            if key not in MANUAL_FIELDS:
+                raise ValueError(f"unknown manual field: {key}")
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid value for {key}: {raw}")
+            limits = MANUAL_FIELDS[key]
+            value = max(float(limits["min"]), min(float(limits["max"]), value))
+            cleaned[key] = value
+        with self.lock:
+            self.manual_values.update(cleaned)
+
+    def reset_manual_values(self) -> None:
+        with self.lock:
+            self.manual_values.clear()
+
+    def get_manual_values(self) -> dict[str, float]:
+        with self.lock:
+            return dict(self.manual_values)
+
     def snapshot(self) -> dict[str, object]:
         regs = self.registers()
         scenario = self.get_scenario()
@@ -239,6 +284,7 @@ class SimulatorState:
             "parallel_status": regs.get(13, 0),
             "battery_health_status": regs.get(4880, 0),
             "active_alarm_tests": sorted(self.get_alarm_tests()),
+            "manual_values": self.get_manual_values(),
         }
 
     def registers(self) -> dict[int, int]:
@@ -339,6 +385,18 @@ class SimulatorState:
                 battery_health = max(battery_health, int(test["value"]))
             elif metric == "output_load_total_percent":
                 output_load = max(output_load, int(test["value"]))
+
+        manual_values = self.get_manual_values()
+        if "output_load_percent" in manual_values:
+            output_load = manual_values["output_load_percent"]
+        if "battery_charge_percent" in manual_values:
+            battery_charge = int(round(manual_values["battery_charge_percent"]))
+        if "battery_temperature_c" in manual_values:
+            battery_temperature = manual_values["battery_temperature_c"]
+        if "battery_current" in manual_values:
+            battery_current = int(round(manual_values["battery_current"]))
+        if "remaining_minutes" in manual_values:
+            remaining_seconds = int(round(manual_values["remaining_minutes"] * 60))
 
         ups_status = status_values["ups_status_word"]
         bypass_status = status_values["bypass_status"]
@@ -444,6 +502,29 @@ class SimulatorState:
         regs[4880] = battery_health
         regs[4881] = 420
 
+        if "output_frequency_hz" in manual_values:
+            regs[4608] = u16(round(manual_values["output_frequency_hz"] * 10))
+        for key, address in {
+            "output_voltage_l12": 4612,
+            "output_voltage_l23": 4613,
+            "output_voltage_l31": 4614,
+            "output_current_l1": 4615,
+            "output_current_l2": 4616,
+            "output_current_l3": 4617,
+            "output_power_kw": 4627,
+            "output_apparent_total_kva": 4631,
+            "battery_voltage": 4865,
+        }.items():
+            if key in manual_values:
+                regs[address] = u16(round(manual_values[key]))
+        for key, address in {
+            "output_pf_l1": 4628,
+            "output_pf_l2": 4629,
+            "output_pf_l3": 4630,
+        }.items():
+            if key in manual_values:
+                regs[address] = u16(round(manual_values[key] * 100))
+
         # Parallel/system.
         regs[4902] = regs[4631]
         regs[4903] = regs[4632]
@@ -542,6 +623,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self.server.state.reset_alarm_tests()  # type: ignore[attr-defined]
                 self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
                 return
+            if parsed.path == "/api/manual-values":
+                self._post_manual_values()
+                return
+            if parsed.path == "/api/reset-manual-values":
+                self.server.state.reset_manual_values()  # type: ignore[attr-defined]
+                self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
+                return
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -588,6 +676,29 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": str(exc)}, status=400)
             return
         self._send_alarm_test(code, active)
+        self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
+
+    def _post_manual_values(self) -> None:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        data = urllib.parse.parse_qs(raw)
+        values: dict[str, float] = {}
+        for key in MANUAL_FIELDS:
+            if key not in data:
+                continue
+            raw_value = (data.get(key, [""])[0] or "").strip()
+            if raw_value == "":
+                continue
+            try:
+                values[key] = float(raw_value)
+            except ValueError:
+                self._json({"ok": False, "error": f"invalid value for {key}"}, status=400)
+                return
+        try:
+            self.server.state.set_manual_values(values)  # type: ignore[attr-defined]
+        except ValueError as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
         self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
 
     def _send_breaker_event(self, name: str, before: bool, after: bool) -> None:
@@ -681,6 +792,13 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
 .row {{ display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #edf2f7; font-size:14px; }}
 .row:last-child {{ border-bottom:none; }}
 .row strong {{ color:#0f172a; }}
+.row.editable {{ align-items:center; }}
+.metric-edit {{ width:112px; border:1px solid #cbd8e6; border-radius:6px; padding:7px 8px; text-align:right; font:700 13px Consolas,monospace; color:#0f172a; background:#fff; }}
+.metric-edit:focus {{ border-color:#1267b1; outline:none; box-shadow:0 0 0 2px rgba(18,103,177,.12); }}
+.metric-edit.dirty {{ border-color:#f59e0b; background:#fffbeb; }}
+.metric-unit {{ min-width:34px; color:#64748b; font-size:12px; }}
+.metric-control {{ display:flex; align-items:center; gap:6px; }}
+.metric-help {{ margin:0 0 10px; color:#64748b; font-size:12px; line-height:1.45; }}
 .status-word {{ font-family:Consolas,monospace; }}
 .links {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }}
 .links a {{ color:#1267b1; text-decoration:none; border:1px solid #cbd8e6; border-radius:6px; padding:7px 10px; background:#fff; font-size:13px; }}
@@ -716,13 +834,17 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
     </div>
     <div class="panel">
       <h2>현재 값</h2>
+      <p class="metric-help">입력 가능한 값은 변경 후 Enter 또는 포커스 이동 시 시뮬레이터에 즉시 반영됩니다.</p>
       <div class="metrics" id="metrics"></div>
+      <button class="reset" id="resetManualValues" type="button">현재 값 입력 초기화</button>
     </div>
   </div>
 </div>
 <script>
 const labels = {json.dumps(SCENARIO_LABELS, ensure_ascii=False)};
 const alarmTests = {json.dumps(ALARM_TESTS, ensure_ascii=False)};
+const editableMetrics = {json.dumps(sorted(MANUAL_FIELDS.keys()), ensure_ascii=False)};
+const editableMetricSet = new Set(editableMetrics);
 const metricNames = {{
   output_frequency_hz:'출력 주파수',
   output_voltage_l12:'출력 전압 L1-2',
@@ -732,11 +854,16 @@ const metricNames = {{
   output_current_l2:'출력 전류 L2',
   output_current_l3:'출력 전류 L3',
   output_load_percent:'부하율',
+  output_power_kw:'출력 전력',
+  output_apparent_total_kva:'피상 전력',
   output_pf_l1:'역률 L1',
   output_pf_l2:'역률 L2',
   output_pf_l3:'역률 L3',
+  battery_voltage:'배터리 전압',
+  battery_current:'배터리 전류',
   battery_charge_percent:'배터리 충전율',
   battery_temperature_c:'배터리 온도',
+  remaining_minutes:'남은 시간',
   ups_status_word:'UPS Status',
   bypass_status:'Bypass Status',
   energy_storage_status:'Energy Storage 1',
@@ -761,11 +888,31 @@ const breakerNames = {{
 const metricGroups = [
   ['Frequency', ['output_frequency_hz']],
   ['Voltage', ['output_voltage_l12', 'output_voltage_l23', 'output_voltage_l31']],
-  ['Current / Load', ['output_current_l1', 'output_current_l2', 'output_current_l3', 'output_load_percent']],
+  ['Current / Load', ['output_current_l1', 'output_current_l2', 'output_current_l3', 'output_load_percent', 'output_power_kw', 'output_apparent_total_kva']],
   ['Power Factor', ['output_pf_l1', 'output_pf_l2', 'output_pf_l3']],
-  ['Battery', ['battery_charge_percent', 'battery_temperature_c']],
+  ['Battery', ['battery_voltage', 'battery_current', 'battery_charge_percent', 'battery_temperature_c', 'remaining_minutes']],
   ['Status Word', ['ups_status_word', 'bypass_status', 'energy_storage_status', 'energy_storage_status_2', 'general_status', 'general_status_2', 'general_status_3', 'general_status_4', 'input_status', 'output_status', 'parallel_status', 'power_module_status']]
 ];
+const metricUnits = {{
+  output_frequency_hz:'Hz',
+  output_voltage_l12:'V',
+  output_voltage_l23:'V',
+  output_voltage_l31:'V',
+  output_current_l1:'A',
+  output_current_l2:'A',
+  output_current_l3:'A',
+  output_load_percent:'%',
+  output_power_kw:'kW',
+  output_apparent_total_kva:'kVA',
+  output_pf_l1:'',
+  output_pf_l2:'',
+  output_pf_l3:'',
+  battery_voltage:'V',
+  battery_current:'A',
+  battery_charge_percent:'%',
+  battery_temperature_c:'℃',
+  remaining_minutes:'min'
+}};
 function fmt(k, v) {{
   if (k.includes('status') || k === 'ups_status_word') return '0x' + Number(v).toString(16).toUpperCase().padStart(4, '0');
   if (k.includes('frequency')) return Number(v).toFixed(1) + ' Hz';
@@ -775,6 +922,20 @@ function fmt(k, v) {{
   if (k.includes('temperature')) return Number(v).toFixed(1) + ' ℃';
   if (k.includes('pf')) return Number(v).toFixed(2);
   return v;
+}}
+function inputValue(k, v) {{
+  const n = Number(v || 0);
+  if (k.includes('pf')) return n.toFixed(2);
+  if (k.includes('frequency') || k.includes('temperature') || k.includes('load') || k.includes('charge') || k === 'remaining_minutes') return n.toFixed(1).replace('.0','');
+  return n.toFixed(0);
+}}
+function renderMetricRow(k, s) {{
+  if (!editableMetricSet.has(k)) {{
+    return `<div class="row"><span>${{metricNames[k]}}</span><strong class="${{k.includes('status') ? 'status-word' : ''}}">${{fmt(k, s[k])}}</strong></div>`;
+  }}
+  const focused = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.metric === k;
+  const currentValue = focused ? document.activeElement.value : inputValue(k, s[k]);
+  return `<div class="row editable"><span>${{metricNames[k]}}</span><span class="metric-control"><input class="metric-edit" type="number" step="0.1" data-metric="${{k}}" value="${{currentValue}}"><span class="metric-unit">${{metricUnits[k] || ''}}</span></span></div>`;
 }}
 async function refresh() {{
   const r = await fetch('/api/status', {{cache:'no-store'}});
@@ -796,10 +957,26 @@ async function refresh() {{
     return heading + `<button class="alarm-test ${{active ? 'active' : ''}}" data-code="${{t.code}}" data-active="${{active ? '1' : '0'}}"><strong>${{t.label}}</strong><span class="sev-${{sev}}">${{t.severity}}</span><span>${{t.code}}</span></button>`;
   }}).join('');
   document.querySelectorAll('.alarm-test').forEach(b => b.addEventListener('click', () => setAlarmTest(b.dataset.code, b.dataset.active !== '1')));
-  document.getElementById('metrics').innerHTML = metricGroups.map(group =>
-    `<div class="metric-section-title">${{group[0]}}</div>` +
-    group[1].map(k => `<div class="row"><span>${{metricNames[k]}}</span><strong class="${{k.includes('status') ? 'status-word' : ''}}">${{fmt(k, s[k])}}</strong></div>`).join('')
-  ).join('');
+  const editingMetric = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('metric-edit');
+  if (!editingMetric) {{
+    document.getElementById('metrics').innerHTML = metricGroups.map(group =>
+      `<div class="metric-section-title">${{group[0]}}</div>` +
+      group[1].map(k => renderMetricRow(k, s)).join('')
+    ).join('');
+    document.querySelectorAll('.metric-edit').forEach(input => {{
+      input.addEventListener('input', () => input.classList.add('dirty'));
+      input.addEventListener('keydown', event => {{
+        if (event.key === 'Enter') {{
+          event.preventDefault();
+          saveManualValue(input);
+        }}
+      }});
+      input.addEventListener('change', () => saveManualValue(input));
+      input.addEventListener('blur', () => {{
+        if (input.classList.contains('dirty')) saveManualValue(input);
+      }});
+    }});
+  }}
 }}
 async function setScenario(name) {{
   await fetch('/api/scenario', {{
@@ -825,6 +1002,17 @@ async function setAlarmTest(code, active) {{
   }});
   refresh();
 }}
+async function saveManualValue(input) {{
+  const key = input.dataset.metric;
+  const value = input.value;
+  input.classList.remove('dirty');
+  await fetch('/api/manual-values', {{
+    method:'POST',
+    headers:{{'Content-Type':'application/x-www-form-urlencoded'}},
+    body:new URLSearchParams({{[key]:value}})
+  }});
+  refresh();
+}}
 document.querySelectorAll('.scenario').forEach(b => b.addEventListener('click', () => setScenario(b.dataset.scenario)));
 document.getElementById('resetBreakers').addEventListener('click', async () => {{
   await fetch('/api/reset-breakers', {{method:'POST'}});
@@ -832,6 +1020,10 @@ document.getElementById('resetBreakers').addEventListener('click', async () => {
 }});
 document.getElementById('resetAlarmTests').addEventListener('click', async () => {{
   await fetch('/api/reset-alarm-tests', {{method:'POST'}});
+  refresh();
+}});
+document.getElementById('resetManualValues').addEventListener('click', async () => {{
+  await fetch('/api/reset-manual-values', {{method:'POST'}});
   refresh();
 }});
 refresh();

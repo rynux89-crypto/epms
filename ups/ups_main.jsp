@@ -3,7 +3,7 @@
 <html>
 <head>
     <title>UPS 모니터링</title>
-    <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
+    <%@ include file="includes/ups_head_assets.jspf" %>
     <style>
         .ups-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-top:16px; }
         .ups-card { display:block; padding:18px; border:1px solid #dbe5f2; border-radius:8px; background:#fff; color:#1f3347; text-decoration:none; }
@@ -21,6 +21,10 @@
     </div>
 
     <div class="ups-grid">
+        <a class="ups-card" href="ups_dash.jsp">
+            <h3>UPS 통합 대시보드</h3>
+            <p>UPS 전체 상태, 전력 흐름, 실시간 추이, 알람과 배치도를 한 화면에서 확인합니다.</p>
+        </a>
         <a class="ups-card" href="monitoring/ups_overview.jsp">
             <h3>전체 현황</h3>
             <p>등록된 모든 UPS를 타일 또는 리스트 형태로 한 번에 확인합니다.</p>
@@ -63,5 +67,6 @@
         </a>
     </div>
 </div>
+<%@ include file="includes/ups_footer.jspf" %>
 </body>
 </html>

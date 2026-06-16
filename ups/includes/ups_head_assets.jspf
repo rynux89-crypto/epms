@@ -1,0 +1,6 @@
+<%
+String upsAssetBase = request.getContextPath();
+if (upsAssetBase == null) upsAssetBase = "";
+if (!upsAssetBase.endsWith("/ups")) upsAssetBase = upsAssetBase + "/ups";
+%>
+<link rel="stylesheet" type="text/css" href="<%= upsAssetBase %>/css/main.css">

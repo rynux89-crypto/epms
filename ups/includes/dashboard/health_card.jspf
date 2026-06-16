@@ -1,0 +1,15 @@
+﻿<div class="panel">
+                <div class="panel-head"><h2>UPS 건강 상태</h2><span><%= h(fragmentModel.hasDevices ? fragmentModel.selectedUpsName : "선택 UPS") %></span></div>
+                <div class="health">
+                    <div><div class="gauge" style="--gauge-score:<%= dashModel.healthScore %>%;--gauge-color:<%= dashModel.healthColor %>;"><strong><%= dashModel.healthScore %></strong></div><h2 style="color:<%= dashModel.healthColor %>;text-align:center;margin-top:12px"><%= h(dashModel.healthText) %></h2></div>
+                    <div class="health-list">
+                        <div class="health-row"><span>UPS 상태</span><b><%= h(dashModel.selectedUpsHealth) %></b></div>
+                        <div class="health-row"><span>배터리 상태</span><b><%= h(dashModel.selectedBatteryHealth) %></b></div>
+                        <div class="health-row"><span>부하 상태</span><b><%= h(dashModel.selectedLoadHealth) %></b></div>
+                        <div class="health-row"><span>통신 상태</span><b><%= h(dashModel.selectedCommHealth) %></b></div>
+                        <div class="health-row"><span>알람 상태</span><b><%= h(dashModel.selectedAlarmHealth) %></b></div>
+                        <div class="health-reason" title="<%= h(dashModel.healthReasonText) %>"><b><%= h(dashModel.healthReasonText) %></b></div>
+                    </div>
+                </div>
+            </div>
+

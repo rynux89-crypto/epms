@@ -11,30 +11,33 @@
         .container{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));align-items:start;gap:14px}
         .section{position:relative;padding:18px 18px 20px;border-width:2px;box-shadow:0 16px 30px rgba(15,23,42,.08)}
         .section::before{content:"";position:absolute;left:0;top:0;right:0;height:12px;border-radius:14px 14px 0 0}
-        .section.monitoring{background:linear-gradient(180deg,#ffffff 0%,#f4f9ff 100%);border-color:#cfe0ff}
-        .section.quality{background:linear-gradient(180deg,#ffffff 0%,#f7fbf6 100%);border-color:#cfe9d6}
-        .section.energy{background:linear-gradient(180deg,#ffffff 0%,#fff9f1 100%);border-color:#f2ddb1}
-        .section.remote{background:linear-gradient(180deg,#ffffff 0%,#fdf7ef 100%);border-color:#efcf9a}
-        .section.billing{background:linear-gradient(180deg,#ffffff 0%,#f8f4ec 100%);border-color:#e4c7a8}
-        .section.peak{background:linear-gradient(180deg,#ffffff 0%,#eefaf4 100%);border-color:#b9e0c7}
-        .section.system{background:linear-gradient(180deg,#ffffff 0%,#f8f7ff 100%);border-color:#d8cef7}
-        .section.plc{background:linear-gradient(180deg,#ffffff 0%,#f6fbfb 100%);border-color:#c8e9e8}
-        .section.monitoring::before{background:linear-gradient(90deg,#7da7e8 0%,#bfd6fb 100%)}
-        .section.quality::before{background:linear-gradient(90deg,#7fc48f 0%,#caead1 100%)}
-        .section.energy::before{background:linear-gradient(90deg,#e7b85c 0%,#f6dfac 100%)}
-        .section.remote::before{background:linear-gradient(90deg,#da9c3d 0%,#f4d8a5 100%)}
-        .section.billing::before{background:linear-gradient(90deg,#b98445 0%,#e8cfaf 100%)}
-        .section.peak::before{background:linear-gradient(90deg,#4ba86b 0%,#c8ebd3 100%)}
-        .section.system::before{background:linear-gradient(90deg,#9f8ae0 0%,#ddd4f8 100%)}
-        .section.plc::before{background:linear-gradient(90deg,#6cc8c5 0%,#c8efed 100%)}
-        .section.monitoring .section-eyebrow{background:#eaf2ff;border-color:#cfe0ff;color:#1f4f97}
-        .section.quality .section-eyebrow{background:#ecf8ef;border-color:#cfe9d6;color:#1d6a43}
-        .section.energy .section-eyebrow{background:#fff3dd;border-color:#f2ddb1;color:#9a6200}
-        .section.remote .section-eyebrow{background:#fff1da;border-color:#efcf9a;color:#8a5600}
-        .section.billing .section-eyebrow{background:#f8ecdf;border-color:#e4c7a8;color:#87521a}
-        .section.peak .section-eyebrow{background:#e9f8ee;border-color:#b9e0c7;color:#17633a}
-        .section.system .section-eyebrow{background:#f0ecff;border-color:#d8cef7;color:#5d49a8}
-        .section.plc .section-eyebrow{background:#e8f7f7;border-color:#c8e9e8;color:#126b6a}
+        .section.monitoring{background:linear-gradient(180deg,#ffffff 0%,#f3f7ff 100%);border-color:#c7d7fe}
+        .section.ups{background:linear-gradient(180deg,#ffffff 0%,#f0fdf4 100%);border-color:#bbf7d0}
+        .section.quality{background:linear-gradient(180deg,#ffffff 0%,#f0fdfa 100%);border-color:#99f6e4}
+        .section.energy{background:linear-gradient(180deg,#ffffff 0%,#fffbeb 100%);border-color:#fde68a}
+        .section.remote{background:linear-gradient(180deg,#ffffff 0%,#fff7ed 100%);border-color:#fed7aa}
+        .section.billing{background:linear-gradient(180deg,#ffffff 0%,#fdf2f8 100%);border-color:#fbcfe8}
+        .section.peak{background:linear-gradient(180deg,#ffffff 0%,#fef2f2 100%);border-color:#fecaca}
+        .section.system{background:linear-gradient(180deg,#ffffff 0%,#f5f3ff 100%);border-color:#ddd6fe}
+        .section.plc{background:linear-gradient(180deg,#ffffff 0%,#ecfeff 100%);border-color:#a5f3fc}
+        .section.monitoring::before{background:linear-gradient(90deg,#3b82f6 0%,#93c5fd 100%)}
+        .section.ups::before{background:linear-gradient(90deg,#16a34a 0%,#86efac 100%)}
+        .section.quality::before{background:linear-gradient(90deg,#0d9488 0%,#5eead4 100%)}
+        .section.energy::before{background:linear-gradient(90deg,#d97706 0%,#fcd34d 100%)}
+        .section.remote::before{background:linear-gradient(90deg,#ea580c 0%,#fdba74 100%)}
+        .section.billing::before{background:linear-gradient(90deg,#db2777 0%,#f9a8d4 100%)}
+        .section.peak::before{background:linear-gradient(90deg,#dc2626 0%,#fca5a5 100%)}
+        .section.system::before{background:linear-gradient(90deg,#7c3aed 0%,#c4b5fd 100%)}
+        .section.plc::before{background:linear-gradient(90deg,#0891b2 0%,#67e8f9 100%)}
+        .section.monitoring .section-eyebrow{background:#eff6ff;border-color:#c7d7fe;color:#1d4ed8}
+        .section.ups .section-eyebrow{background:#ecfdf5;border-color:#bbf7d0;color:#15803d}
+        .section.quality .section-eyebrow{background:#f0fdfa;border-color:#99f6e4;color:#0f766e}
+        .section.energy .section-eyebrow{background:#fffbeb;border-color:#fde68a;color:#92400e}
+        .section.remote .section-eyebrow{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+        .section.billing .section-eyebrow{background:#fdf2f8;border-color:#fbcfe8;color:#be185d}
+        .section.peak .section-eyebrow{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+        .section.system .section-eyebrow{background:#f5f3ff;border-color:#ddd6fe;color:#6d28d9}
+        .section.plc .section-eyebrow{background:#ecfeff;border-color:#a5f3fc;color:#0e7490}
         .section-eyebrow .eyebrow-icon{width:14px;height:14px;display:inline-block;vertical-align:middle}
         .section-eyebrow .eyebrow-icon svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
         .section-header{padding-top:6px}
@@ -46,25 +49,27 @@
         .tile-head{display:flex;align-items:flex-start;gap:10px}
         .tile-icon{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:#eef4fb;flex:0 0 34px}
         .tile-icon svg{width:18px;height:18px;stroke:#23415f;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-        .section.monitoring .tile-icon{background:#eaf2ff}
-        .section.quality .tile-icon{background:#ecf8ef}
-        .section.energy .tile-icon{background:#fff3dd}
-        .section.remote .tile-icon{background:#fff1da}
-        .section.billing .tile-icon{background:#f8ecdf}
-        .section.peak .tile-icon{background:#e9f8ee}
-        .section.system .tile-icon{background:#f0ecff}
-        .section.plc .tile-icon{background:#e8f7f7}
+        .section.monitoring .tile-icon{background:#eff6ff}
+        .section.ups .tile-icon{background:#ecfdf5}
+        .section.quality .tile-icon{background:#f0fdfa}
+        .section.energy .tile-icon{background:#fffbeb}
+        .section.remote .tile-icon{background:#fff7ed}
+        .section.billing .tile-icon{background:#fdf2f8}
+        .section.peak .tile-icon{background:#fef2f2}
+        .section.system .tile-icon{background:#f5f3ff}
+        .section.plc .tile-icon{background:#ecfeff}
         .app-card h3{font-size:15px;line-height:1.35;margin:0}
         .app-card p{font-size:12px;line-height:1.5;color:#5f7287}
         .sub-card-meta{margin-top:auto;font-size:11px;font-weight:800;color:var(--primary);letter-spacing:.04em;text-transform:uppercase}
-        .section.monitoring .app-card a.sub-card-link{border-top-color:#7da7e8}
-        .section.quality .app-card a.sub-card-link{border-top-color:#7fc48f}
-        .section.energy .app-card a.sub-card-link{border-top-color:#e7b85c}
-        .section.remote .app-card a.sub-card-link{border-top-color:#da9c3d}
-        .section.billing .app-card a.sub-card-link{border-top-color:#b98445}
-        .section.peak .app-card a.sub-card-link{border-top-color:#4ba86b}
-        .section.system .app-card a.sub-card-link{border-top-color:#9f8ae0}
-        .section.plc .app-card a.sub-card-link{border-top-color:#6cc8c5}
+        .section.monitoring .app-card a.sub-card-link{border-top-color:#3b82f6}
+        .section.ups .app-card a.sub-card-link{border-top-color:#16a34a}
+        .section.quality .app-card a.sub-card-link{border-top-color:#0d9488}
+        .section.energy .app-card a.sub-card-link{border-top-color:#d97706}
+        .section.remote .app-card a.sub-card-link{border-top-color:#ea580c}
+        .section.billing .app-card a.sub-card-link{border-top-color:#db2777}
+        .section.peak .app-card a.sub-card-link{border-top-color:#dc2626}
+        .section.system .app-card a.sub-card-link{border-top-color:#7c3aed}
+        .section.plc .app-card a.sub-card-link{border-top-color:#0891b2}
         @media (max-width:1600px){.container{grid-template-columns:repeat(3,minmax(0,1fr))}}
         @media (max-width:1100px){.container{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media (max-width:768px){.page-head{flex-direction:column;align-items:flex-start}.container{grid-template-columns:1fr;gap:18px}.section{padding:16px}}
@@ -119,6 +124,93 @@
                 <a href="monitoring/alarm_view.jsp" class="sub-card-link">
                     <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 4v8"/><path d="M9 20h6"/><path d="M5 15a7 7 0 0 0 14 0"/><path d="M7 9a5 5 0 0 1 10 0"/></svg></span><h3>알람 목록</h3></div>
                     <p>현재 및 과거 알람을 조건별로 조회합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="section ups">
+        <div class="section-header">
+            <div class="section-eyebrow"><span class="eyebrow-icon"><svg viewBox="0 0 24 24"><path d="M13 2L6 13h5l-1 9 8-12h-5l0-8z"/><path d="M4 18h4"/><path d="M16 6h4"/></svg></span>UPS Monitoring</div>
+            <h2>UPS 관리</h2>
+            <p>UPS 통합 대시보드, 장비 상태, Phasor, 알람, 이력, 보고서와 등록/시스템 설정 화면으로 이동합니다.</p>
+        </div>
+        <div class="section-links">
+            <div class="app-card">
+                <a href="/ups/ups_main.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 13l2-2 3 3 4-6"/><path d="M8 17h8"/></svg></span><h3>UPS 메인</h3></div>
+                    <p>UPS 시스템의 주요 화면으로 이동하는 시작 화면입니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/ups_dash.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 2 4-6"/></svg></span><h3>UPS 통합 대시보드</h3></div>
+                    <p>전체 상태, 전력 흐름, 실시간 추이, 배치도와 알람을 한 화면에서 확인합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/monitoring/ups_overview.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></span><h3>UPS 전체 현황</h3></div>
+                    <p>등록된 UPS의 상태, 용량, 통신 상태와 활성 여부를 목록으로 확인합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/monitoring/ups_status.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></span><h3>UPS 실시간 상태</h3></div>
+                    <p>선택한 UPS의 전압, 전류, 역률, 배터리와 스위치 상태를 상세 확인합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/monitoring/phasor_diagram.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 12l5-2"/><path d="M12 12l-3 5"/><path d="M12 12V6"/></svg></span><h3>UPS Phasor 화면</h3></div>
+                    <p>출력 전압과 전류의 위상 관계와 파형을 시각적으로 확인합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/alarm/alarm_view.jsp?status=ACTIVE" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 4v8"/><path d="M9 20h6"/><path d="M5 15a7 7 0 0 0 14 0"/><path d="M7 9a5 5 0 0 1 10 0"/></svg></span><h3>UPS 경고 알람</h3></div>
+                    <p>현재 활성 UPS 알람을 우선 확인하고 알람 이력으로 이동합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/alarm/event_view.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg></span><h3>UPS 이벤트</h3></div>
+                    <p>UPS 운전 상태, 통신, 스위치 관련 이벤트 이력을 조회합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/history/measurement_history.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 15V9"/><path d="M12 15V5"/><path d="M17 15v-3"/></svg></span><h3>UPS 측정 이력</h3></div>
+                    <p>수집된 UPS 측정 데이터를 기간 조건과 CSV 다운로드로 확인합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/report/ups_report.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h6"/><path d="M10 17h4"/></svg></span><h3>UPS 보고서</h3></div>
+                    <p>UPS별 평균/최대/최소 측정값과 운전 현황을 보고서로 조회합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/system/ups_register.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M20 10l-8 8-8-8V4h6l10 6z"/><circle cx="7.5" cy="7.5" r="1"/></svg></span><h3>UPS 등록/수정</h3></div>
+                    <p>UPS 접속 정보, 프로파일, 용량, 수집주기와 활성 여부를 관리합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
+            <div class="app-card">
+                <a href="/ups/system/setup.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19 12h2"/><path d="M3 12h2"/><path d="M12 3v2"/><path d="M12 19v2"/></svg></span><h3>UPS 시스템 설정</h3></div>
+                    <p>UPS DB 초기화, 프로파일, 상태 점검 등 시스템 관리 기능을 실행합니다.</p>
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>

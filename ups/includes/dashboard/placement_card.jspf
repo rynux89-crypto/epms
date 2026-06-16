@@ -1,0 +1,14 @@
+﻿<div class="panel">
+                <div class="panel-head"><h2>UPS 배치도</h2><span><%= h(dashModel.placementSummary) %></span></div>
+                <div class="rack">
+                    <div class="floor">
+                        <% if (fragmentModel.placementItems.isEmpty()) { %>
+                        <div class="rack-empty">등록된 UPS 위치가 없습니다.</div>
+                        <% } else { for (epms.ups.UpsDashboardFragmentRenderModel.PlacementItem item : fragmentModel.placementItems) { %>
+                        <div class="rack-room <%= h(item.stateClass) %>" title="<%= h(item.names) %>"><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></div>
+                        <% }} %>
+                    </div>
+                    <div class="legend"><span><i style="background:var(--dash-green)"></i>정상</span><span><i style="background:var(--dash-yellow)"></i>경고</span><span><i style="background:var(--dash-red)"></i>장애</span><span><i style="background:#8090a3"></i>오프라인</span></div>
+                </div>
+            </div>
+

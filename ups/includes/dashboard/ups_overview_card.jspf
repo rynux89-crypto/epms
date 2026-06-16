@@ -1,0 +1,37 @@
+﻿<div class="panel">
+                <div class="panel-head">
+                    <h2>UPS 개요</h2>
+                    <details class="ups-picker">
+                        <summary><%= h(fragmentModel.selectedUpsName) %></summary>
+                        <div class="ups-menu">
+                            <% if (dashModel.devices.isEmpty()) { %>
+                            <a class="active" href="ups_dash.jsp">등록된 UPS 없음</a>
+                            <% } %>
+                            <% for (epms.ups.UpsDashboardFragmentRenderModel.DeviceOption option : fragmentModel.deviceOptions) { %>
+                            <a class="<%= option.active ? "active" : "" %>" href="ups_dash.jsp?ups_id=<%= h(option.id) %>"><%= h(option.name) %></a>
+                            <% } %>
+                        </div>
+                    </details>
+                </div>
+                <div class="device-card">
+                    <div class="ups-visual"><div class="glow-base"></div><div class="ups-cabinet"></div></div>
+                    <div class="device-info">
+                        <div class="ok-dot">● <%= h(fragmentModel.selectedStatusText) %></div>
+                        <h2><%= h(fragmentModel.hasDevices ? fragmentModel.selectedUpsName : "UPS-01") %></h2>
+                        <div class="spec">
+                            <span>모델명</span><b><%= h(fragmentModel.selectedProfileName) %></b>
+                            <span>정격 용량</span><b><%= h(fragmentModel.selectedCapacityText) %></b>
+                            <span>운전 모드</span><b><%= h(fragmentModel.selectedOperationModeText) %></b>
+                            <span>입력 전압</span><b><%= h(fragmentModel.selectedInputVoltageText) %></b>
+                            <span>출력 전압</span><b><%= h(fragmentModel.selectedOutputVoltageText) %></b>
+                            <span>주파수</span><b><%= h(fragmentModel.selectedFrequencyText) %></b>
+                            <span>설치 위치</span><b><%= h(fragmentModel.selectedLocationText) %></b>
+                        </div>
+                        <div class="device-actions">
+                            <button class="dark-btn" onclick="location.href='monitoring/ups_status.jsp<%= h(fragmentModel.selectedLinkQuery) %>'">상세 보기 →</button>
+                            <button class="dark-btn" onclick="location.href='monitoring/phasor_diagram.jsp<%= h(fragmentModel.selectedLinkQuery) %>'">페이저 보기 →</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+

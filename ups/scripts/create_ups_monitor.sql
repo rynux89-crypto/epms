@@ -67,17 +67,36 @@ BEGIN
         unit_id int NOT NULL CONSTRAINT DF_ups_device_unit_id DEFAULT (1),
         profile_id int NULL,
         rated_capacity_kva decimal(12,3) NULL,
+        poll_interval_seconds int NOT NULL CONSTRAINT DF_ups_device_poll_interval_seconds DEFAULT (2),
         enabled bit NOT NULL CONSTRAINT DF_ups_device_enabled DEFAULT (1),
         last_comm_status varchar(20) NOT NULL CONSTRAINT DF_ups_device_last_comm_status DEFAULT ('UNKNOWN'),
-        last_success_at datetime2(0) NULL,
-        last_error_at datetime2(0) NULL,
+        last_success_at datetime2(3) NULL,
+        last_error_at datetime2(3) NULL,
         last_error_message nvarchar(500) NULL,
-        created_at datetime2(0) NOT NULL CONSTRAINT DF_ups_device_created_at DEFAULT (sysdatetime()),
-        updated_at datetime2(0) NOT NULL CONSTRAINT DF_ups_device_updated_at DEFAULT (sysdatetime()),
+        created_at datetime2(3) NOT NULL CONSTRAINT DF_ups_device_created_at DEFAULT (sysdatetime()),
+        updated_at datetime2(3) NOT NULL CONSTRAINT DF_ups_device_updated_at DEFAULT (sysdatetime()),
         CONSTRAINT FK_ups_device_profile FOREIGN KEY (profile_id) REFERENCES dbo.ups_modbus_profile(profile_id)
     );
 
     CREATE UNIQUE INDEX UX_ups_device_ip_unit ON dbo.ups_device(ip_address, modbus_port, unit_id);
+END
+GO
+
+IF OBJECT_ID(N'dbo.ups_device', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.ups_device', 'poll_interval_seconds') IS NULL
+    BEGIN
+        ALTER TABLE dbo.ups_device ADD poll_interval_seconds int NOT NULL CONSTRAINT DF_ups_device_poll_interval_seconds DEFAULT (2);
+    END
+END
+GO
+
+IF OBJECT_ID(N'dbo.ups_device', N'U') IS NOT NULL
+BEGIN
+    ALTER TABLE dbo.ups_device ALTER COLUMN last_success_at datetime2(3) NULL;
+    ALTER TABLE dbo.ups_device ALTER COLUMN last_error_at datetime2(3) NULL;
+    ALTER TABLE dbo.ups_device ALTER COLUMN created_at datetime2(3) NOT NULL;
+    ALTER TABLE dbo.ups_device ALTER COLUMN updated_at datetime2(3) NOT NULL;
 END
 GO
 
@@ -86,7 +105,7 @@ BEGIN
     CREATE TABLE dbo.ups_measurement (
         measurement_id bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_ups_measurement PRIMARY KEY,
         ups_id int NOT NULL,
-        measured_at datetime2(0) NOT NULL,
+        measured_at datetime2(3) NOT NULL,
         input_voltage decimal(12,3) NULL,
         output_voltage decimal(12,3) NULL,
         output_voltage_l12 decimal(12,3) NULL,
@@ -123,7 +142,7 @@ BEGIN
         switchgear_status_code int NULL,
         battery_breaker_status_code int NULL,
         raw_status int NULL,
-        created_at datetime2(0) NOT NULL CONSTRAINT DF_ups_measurement_created_at DEFAULT (sysdatetime()),
+        created_at datetime2(3) NOT NULL CONSTRAINT DF_ups_measurement_created_at DEFAULT (sysdatetime()),
         CONSTRAINT FK_ups_measurement_device FOREIGN KEY (ups_id) REFERENCES dbo.ups_device(ups_id)
     );
 
@@ -162,6 +181,18 @@ GO
 
 IF OBJECT_ID(N'dbo.ups_measurement', N'U') IS NOT NULL
 BEGIN
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_measurement_device_time' AND object_id = OBJECT_ID(N'dbo.ups_measurement'))
+        DROP INDEX IX_ups_measurement_device_time ON dbo.ups_measurement;
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_measurement_time' AND object_id = OBJECT_ID(N'dbo.ups_measurement'))
+        DROP INDEX IX_ups_measurement_time ON dbo.ups_measurement;
+
+    ALTER TABLE dbo.ups_measurement ALTER COLUMN measured_at datetime2(3) NOT NULL;
+    ALTER TABLE dbo.ups_measurement ALTER COLUMN created_at datetime2(3) NOT NULL;
+END
+GO
+
+IF OBJECT_ID(N'dbo.ups_measurement', N'U') IS NOT NULL
+BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_measurement_device_time' AND object_id = OBJECT_ID(N'dbo.ups_measurement'))
         CREATE INDEX IX_ups_measurement_device_time ON dbo.ups_measurement(ups_id, measured_at DESC);
     IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ups_measurement_time' AND object_id = OBJECT_ID(N'dbo.ups_measurement'))
@@ -175,13 +206,22 @@ BEGIN
         ups_id int NOT NULL CONSTRAINT PK_ups_comm_status PRIMARY KEY,
         status varchar(20) NOT NULL,
         consecutive_fail_count int NOT NULL CONSTRAINT DF_ups_comm_status_fail_count DEFAULT (0),
-        last_poll_at datetime2(0) NULL,
-        last_success_at datetime2(0) NULL,
-        last_error_at datetime2(0) NULL,
+        last_poll_at datetime2(3) NULL,
+        last_success_at datetime2(3) NULL,
+        last_error_at datetime2(3) NULL,
         last_error_message nvarchar(500) NULL,
-        updated_at datetime2(0) NOT NULL CONSTRAINT DF_ups_comm_status_updated_at DEFAULT (sysdatetime()),
+        updated_at datetime2(3) NOT NULL CONSTRAINT DF_ups_comm_status_updated_at DEFAULT (sysdatetime()),
         CONSTRAINT FK_ups_comm_status_device FOREIGN KEY (ups_id) REFERENCES dbo.ups_device(ups_id)
     );
+END
+GO
+
+IF OBJECT_ID(N'dbo.ups_comm_status', N'U') IS NOT NULL
+BEGIN
+    ALTER TABLE dbo.ups_comm_status ALTER COLUMN last_poll_at datetime2(3) NULL;
+    ALTER TABLE dbo.ups_comm_status ALTER COLUMN last_success_at datetime2(3) NULL;
+    ALTER TABLE dbo.ups_comm_status ALTER COLUMN last_error_at datetime2(3) NULL;
+    ALTER TABLE dbo.ups_comm_status ALTER COLUMN updated_at datetime2(3) NOT NULL;
 END
 GO
 

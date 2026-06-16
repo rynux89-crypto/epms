@@ -1,55 +1,8 @@
-<%@ page import="java.io.*" %>
-<%@ page import="java.sql.*" %>
-<%@ page import="java.util.*" %>
-<%@ page import="javax.servlet.ServletContext" %>
+<%@ page import="java.sql.Timestamp" %>
+<%@ page import="java.util.Map" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
-<%@ include file="../includes/ups_dbconfig.jspf" %>
 <%@ include file="../includes/ups_html.jspf" %>
 <%!
-    private String readUpsSqlFile(ServletContext ctx, String webPath) throws Exception {
-        String path = ctx.getRealPath(webPath);
-        if (path == null) throw new FileNotFoundException(webPath);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(path), "UTF-8"));
-        StringBuilder sb = new StringBuilder();
-        try {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.trim().equalsIgnoreCase("GO")) {
-                    sb.append("\n--GO--\n");
-                } else {
-                    sb.append(line).append('\n');
-                }
-            }
-        } finally {
-            try { reader.close(); } catch (Exception ignore) {}
-        }
-        return sb.toString();
-    }
-
-    private String readUpsSchemaSql(ServletContext ctx) throws Exception {
-        return readUpsSqlFile(ctx, "/scripts/create_ups_monitor.sql")
-            + "\n--GO--\n"
-            + readUpsSqlFile(ctx, "/scripts/create_schneider_easy_ups_profile.sql");
-    }
-
-    private List<String> splitUpsSqlBatches(String sql) {
-        List<String> out = new ArrayList<String>();
-        if (sql == null) return out;
-        String[] chunks = sql.split("(?m)^--GO--$");
-        for (String chunk : chunks) {
-            String x = chunk == null ? "" : chunk.trim();
-            if (!x.isEmpty()) out.add(x);
-        }
-        return out;
-    }
-
-    private int countUpsTable(Connection conn, String tableName) throws Exception {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT COUNT(1) FROM " + tableName);
-             ResultSet rs = ps.executeQuery()) {
-            return rs.next() ? rs.getInt(1) : 0;
-        }
-    }
-
     private String displayDateTime(Object value) {
         if (value == null) return "-";
         if (value instanceof Timestamp) {
@@ -65,99 +18,38 @@ String action = request.getParameter("action");
 String msg = null;
 String err = null;
 
-if ("init_schema".equals(action)) {
-    Connection adminConn = null;
-    try {
-        Map<String, String> cfg = loadUpsConfigToml();
-        String server = upsFirstNonBlank(System.getenv("UPS_DB_SERVER"), cfg.get("ups_database.server"));
-        String user = upsFirstNonBlank(System.getenv("UPS_DB_USER"), cfg.get("ups_database.user"));
-        String password = upsFirstNonNull(System.getenv("UPS_DB_PASSWORD"), cfg.get("ups_database.password"));
-        String encrypt = upsFirstNonBlank(System.getenv("UPS_DB_ENCRYPT"), cfg.get("ups_database.encrypt"));
-        String trust = upsFirstNonBlank(System.getenv("UPS_DB_TRUST_SERVER_CERTIFICATE"), cfg.get("ups_database.trust_server_certificate"));
-        if (encrypt == null || encrypt.trim().isEmpty()) encrypt = "true";
-        if (trust == null || trust.trim().isEmpty()) trust = "true";
-
-        Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
-        String url = "jdbc:sqlserver://" + normalizeUpsSqlServerJdbcHost(server) +
-            ";databaseName=master;encrypt=" + encrypt + ";trustServerCertificate=" + trust + ";loginTimeout=5;";
-        adminConn = DriverManager.getConnection(url, user, password);
-        String sql = readUpsSchemaSql(application);
-        List<String> batches = splitUpsSqlBatches(sql);
-        for (String batch : batches) {
-            try (Statement st = adminConn.createStatement()) {
-                st.execute(batch);
-            }
-        }
-        msg = "UPS_MONITOR 데이터베이스와 기본 테이블을 초기화했습니다.";
-    } catch (Exception e) {
-        err = e.getMessage();
-    } finally {
-        closeUpsQuietly(adminConn);
+try {
+    if ("init_schema".equals(action)) {
+        msg = epms.ups.UpsSystemSetupService.initSchema(application);
+    } else if ("clear_history".equals(action)) {
+        msg = epms.ups.UpsSystemSetupService.clearHistory();
     }
-}
-
-if ("clear_history".equals(action)) {
-    Connection conn = null;
-    try {
-        conn = openUpsDbConnection();
-        conn.setAutoCommit(false);
-        int alarmDeleted = 0;
-        int measurementDeleted = 0;
-        int commDeleted = 0;
-        try (Statement st = conn.createStatement()) {
-            alarmDeleted = st.executeUpdate("DELETE FROM dbo.ups_alarm_log");
-            commDeleted = st.executeUpdate("DELETE FROM dbo.ups_comm_status");
-            measurementDeleted = st.executeUpdate("DELETE FROM dbo.ups_measurement");
-            st.executeUpdate("UPDATE dbo.ups_device SET last_comm_status='UNKNOWN', last_success_at=NULL, last_error_at=NULL, last_error_message=NULL, updated_at=sysdatetime()");
-        }
-        conn.commit();
-        msg = "UPS 이력 데이터를 삭제했습니다. 측정 " + measurementDeleted + "건, 알람 " + alarmDeleted + "건, 통신상태 " + commDeleted + "건";
-    } catch (Exception e) {
-        if (conn != null) {
-            try { conn.rollback(); } catch (Exception ignore) {}
-        }
-        err = e.getMessage();
-    } finally {
-        if (conn != null) {
-            try { conn.setAutoCommit(true); } catch (Exception ignore) {}
-        }
-        closeUpsQuietly(conn);
-    }
-}
-
-boolean canConnect = false;
-String connectError = null;
-int deviceCount = 0;
-int profileCount = 0;
-int pointCount = 0;
-int alarmCount = 0;
-int measurementCount = 0;
-int commCount = 0;
-String collectorStatus = String.valueOf(application.getAttribute("ups.collector.status"));
-if (collectorStatus == null || "null".equals(collectorStatus)) collectorStatus = "UNKNOWN";
-Object collectorLastStart = application.getAttribute("ups.collector.lastStartAt");
-Object collectorLastSuccess = application.getAttribute("ups.collector.lastSuccessAt");
-Object collectorLastErrorAt = application.getAttribute("ups.collector.lastErrorAt");
-Object collectorLastDuration = application.getAttribute("ups.collector.lastDurationMs");
-Object collectorLastError = application.getAttribute("ups.collector.lastError");
-Object collectorInterval = application.getAttribute("ups.collector.intervalSeconds");
-try (Connection conn = openUpsDbConnection()) {
-    canConnect = true;
-    deviceCount = countUpsTable(conn, "dbo.ups_device");
-    profileCount = countUpsTable(conn, "dbo.ups_modbus_profile");
-    pointCount = countUpsTable(conn, "dbo.ups_modbus_point");
-    alarmCount = countUpsTable(conn, "dbo.ups_alarm_log");
-    measurementCount = countUpsTable(conn, "dbo.ups_measurement");
-    commCount = countUpsTable(conn, "dbo.ups_comm_status");
 } catch (Exception e) {
-    connectError = e.getMessage();
+    err = e.getMessage();
 }
+
+Map<String, Object> setupStatus = epms.ups.UpsSystemSetupService.loadStatus(application);
+boolean canConnect = Boolean.TRUE.equals(setupStatus.get("canConnect"));
+String connectError = String.valueOf(setupStatus.get("connectError"));
+int deviceCount = ((Number)setupStatus.get("deviceCount")).intValue();
+int profileCount = ((Number)setupStatus.get("profileCount")).intValue();
+int pointCount = ((Number)setupStatus.get("pointCount")).intValue();
+int alarmCount = ((Number)setupStatus.get("alarmCount")).intValue();
+int measurementCount = ((Number)setupStatus.get("measurementCount")).intValue();
+int commCount = ((Number)setupStatus.get("commCount")).intValue();
+String collectorStatus = String.valueOf(setupStatus.get("collectorStatus"));
+Object collectorLastStart = setupStatus.get("collectorLastStart");
+Object collectorLastSuccess = setupStatus.get("collectorLastSuccess");
+Object collectorLastErrorAt = setupStatus.get("collectorLastErrorAt");
+Object collectorLastDuration = setupStatus.get("collectorLastDuration");
+Object collectorLastError = setupStatus.get("collectorLastError");
+Object collectorInterval = setupStatus.get("collectorInterval");
 %>
 <!doctype html>
 <html>
 <head>
     <title>UPS 초기 설정</title>
-    <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
+    <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         .status-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:16px 0; }
         .status-card { padding:14px; border:1px solid #dbe5f2; border-radius:8px; background:#fff; }
@@ -174,7 +66,7 @@ try (Connection conn = openUpsDbConnection()) {
     <div class="title-bar">
         <div>
             <h2>UPS 초기 설정</h2>
-            <p class="muted">기본 SQL Server 인스턴스의 UPS_MONITOR 데이터베이스를 확인합니다.</p>
+            <p class="muted">UPS_MONITOR 데이터베이스와 수집기 상태를 확인합니다.</p>
         </div>
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
@@ -222,5 +114,6 @@ try (Connection conn = openUpsDbConnection()) {
         </form>
     </div>
 </div>
+<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

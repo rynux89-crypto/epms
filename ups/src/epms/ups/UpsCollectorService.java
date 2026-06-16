@@ -18,6 +18,8 @@ import java.util.Map;
 
 public final class UpsCollectorService {
     private static final int MAX_READ_REGISTERS = 120;
+    private static final int COMM_FAIL_OFFLINE_THRESHOLD = 3;
+    private static final int POLL_DUE_GRACE_MS = 250;
 
     private static final class Device {
         int upsId;
@@ -25,6 +27,7 @@ public final class UpsCollectorService {
         int port;
         int unitId;
         Integer profileId;
+        int pollIntervalSeconds;
     }
 
     private static final class Point {
@@ -52,6 +55,7 @@ public final class UpsCollectorService {
         List<Device> devices;
         Map<Integer, List<Point>> pointsByProfile = new HashMap<Integer, List<Point>>();
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection()) {
+            ensurePollIntervalColumn(conn);
             devices = loadDevices(conn);
             for (Device d : devices) {
                 if (d.profileId != null && !pointsByProfile.containsKey(d.profileId)) {
@@ -61,20 +65,21 @@ public final class UpsCollectorService {
         }
 
         for (Device device : devices) {
+            Timestamp pollStartedAt = new Timestamp(System.currentTimeMillis());
             List<Point> points = device.profileId == null ? null : pointsByProfile.get(device.profileId);
             if (points == null || points.isEmpty()) {
-                updateFailure(device.upsId, "No enabled Modbus points for profile.");
+                updateFailure(device.upsId, pollStartedAt, "No enabled Modbus points for profile.");
                 continue;
             }
             try {
                 Map<String, BigDecimal> values = readDevice(device, points);
                 BreakerState previousBreakers = loadLastBreakerState(device.upsId);
-                persistMeasurement(device.upsId, values);
+                persistMeasurement(device.upsId, pollStartedAt, values);
                 syncValueAlarms(device.upsId, values);
                 syncBreakerEvents(device.upsId, previousBreakers, values);
-                updateSuccess(device.upsId);
+                updateSuccess(device.upsId, pollStartedAt);
             } catch (Exception e) {
-                updateFailure(device.upsId, e.getMessage());
+                updateFailure(device.upsId, pollStartedAt, e.getMessage());
             }
         }
     }
@@ -82,8 +87,12 @@ public final class UpsCollectorService {
     private static List<Device> loadDevices(Connection conn) throws Exception {
         List<Device> out = new ArrayList<Device>();
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT ups_id, ip_address, modbus_port, unit_id, profile_id " +
-                "FROM dbo.ups_device WHERE enabled = 1 ORDER BY ups_id");
+                "SELECT d.ups_id, d.ip_address, d.modbus_port, d.unit_id, d.profile_id, d.poll_interval_seconds " +
+                "FROM dbo.ups_device d " +
+                "LEFT JOIN dbo.ups_comm_status cs ON cs.ups_id = d.ups_id " +
+                "WHERE d.enabled = 1 " +
+                "AND (cs.last_poll_at IS NULL OR DATEADD(millisecond, (CASE WHEN d.poll_interval_seconds < 1 THEN 1 ELSE d.poll_interval_seconds END * 1000) - " + POLL_DUE_GRACE_MS + ", cs.last_poll_at) <= SYSDATETIME()) " +
+                "ORDER BY d.ups_id");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 Device d = new Device();
@@ -93,10 +102,20 @@ public final class UpsCollectorService {
                 d.unitId = rs.getInt("unit_id");
                 int profileId = rs.getInt("profile_id");
                 d.profileId = rs.wasNull() ? null : Integer.valueOf(profileId);
+                d.pollIntervalSeconds = Math.max(1, rs.getInt("poll_interval_seconds"));
                 out.add(d);
             }
         }
         return out;
+    }
+
+    private static void ensurePollIntervalColumn(Connection conn) throws Exception {
+        try (java.sql.Statement st = conn.createStatement()) {
+            st.execute(
+                "IF COL_LENGTH('dbo.ups_device', 'poll_interval_seconds') IS NULL " +
+                "ALTER TABLE dbo.ups_device ADD poll_interval_seconds int NOT NULL CONSTRAINT DF_ups_device_poll_interval_seconds DEFAULT (2)"
+            );
+        }
     }
 
     private static List<Point> loadPoints(Connection conn, int profileId) throws Exception {
@@ -285,7 +304,7 @@ public final class UpsCollectorService {
         }
     }
 
-    private static void persistMeasurement(int upsId, Map<String, BigDecimal> v) throws Exception {
+    private static void persistMeasurement(int upsId, Timestamp measuredAt, Map<String, BigDecimal> v) throws Exception {
         BigDecimal outV12 = v.get("output_voltage_l12");
         BigDecimal outV23 = v.get("output_voltage_l23");
         BigDecimal outV31 = v.get("output_voltage_l31");
@@ -304,9 +323,10 @@ public final class UpsCollectorService {
                 "load_percent, frequency, battery_voltage, battery_current, battery_charge_percent, battery_temperature, remaining_minutes, " +
                 "ups_operation_mode_code, system_operation_mode_code, bypass_status_code, energy_storage_status_code, input_status_code, output_status_code, " +
                 "switchgear_status_code, battery_breaker_status_code, raw_status) " +
-                "VALUES (?, sysdatetime(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             int i = 1;
             ps.setInt(i++, upsId);
+            ps.setTimestamp(i++, measuredAt);
             setDecimal(ps, i++, avg(v.get("input_voltage_l1n"), v.get("input_voltage_l2n"), v.get("input_voltage_l3n")));
             setDecimal(ps, i++, avg(outV12, outV23, outV31));
             setDecimal(ps, i++, outV12);
@@ -390,7 +410,7 @@ public final class UpsCollectorService {
         boolean before = (previous.intValue() & (1 << bit)) != 0;
         boolean after = (current.intValue() & (1 << bit)) != 0;
         if (before != after) {
-            insertEvent(conn, upsId, "BREAKER_" + name + "_CHANGE", metricKey, "차단기 " + name + " " + stateText(before) + " -> " + stateText(after));
+            insertEvent(conn, upsId, "BREAKER_" + name + "_CHANGE", metricKey, breakerMessage(name, before, after), 3);
         }
     }
 
@@ -399,8 +419,12 @@ public final class UpsCollectorService {
         boolean before = previous.intValue() != 0;
         boolean after = current.intValue() != 0;
         if (before != after) {
-            insertEvent(conn, upsId, "BREAKER_" + name + "_CHANGE", metricKey, "차단기 " + name + " " + stateText(before) + " -> " + stateText(after));
+            insertEvent(conn, upsId, "BREAKER_" + name + "_CHANGE", metricKey, breakerMessage(name, before, after), 3);
         }
+    }
+
+    private static String breakerMessage(String name, boolean before, boolean after) {
+        return name + " " + stateText(before) + " -> " + stateText(after);
     }
 
     private static String stateText(boolean closed) {
@@ -474,6 +498,11 @@ public final class UpsCollectorService {
     }
 
     private static void insertEvent(Connection conn, int upsId, String ruleCode, String metricKey, String message) throws Exception {
+        insertEvent(conn, upsId, ruleCode, metricKey, message, 0);
+    }
+
+    private static void insertEvent(Connection conn, int upsId, String ruleCode, String metricKey, String message, int duplicateSeconds) throws Exception {
+        if (duplicateSeconds > 0 && recentEventExists(conn, upsId, ruleCode, message, duplicateSeconds)) return;
         try (PreparedStatement ps = conn.prepareStatement(
                 "INSERT INTO dbo.ups_alarm_log (ups_id, rule_code, metric_key, severity, alarm_message, occurred_at, status) " +
                 "VALUES (?, ?, ?, 'INFO', ?, sysdatetime(), 'EVENT')")) {
@@ -482,6 +511,21 @@ public final class UpsCollectorService {
             ps.setString(3, metricKey);
             ps.setString(4, message == null ? "Breaker event" : (message.length() > 500 ? message.substring(0, 500) : message));
             ps.executeUpdate();
+        }
+    }
+
+    private static boolean recentEventExists(Connection conn, int upsId, String ruleCode, String message, int seconds) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT TOP 1 1 FROM dbo.ups_alarm_log " +
+                "WHERE ups_id=? AND rule_code=? AND REPLACE(alarm_message, N'차단기 ', N'')=? AND status='EVENT' " +
+                "AND occurred_at >= DATEADD(second, ?, sysdatetime())")) {
+            ps.setInt(1, upsId);
+            ps.setString(2, ruleCode);
+            ps.setString(3, message);
+            ps.setInt(4, -Math.abs(seconds));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 
@@ -495,7 +539,31 @@ public final class UpsCollectorService {
         else ps.setInt(idx, value.intValue());
     }
 
-    private static void updateSuccess(int upsId) throws Exception {
+    private static int upsertFailureStatus(Connection conn, int upsId, Timestamp pollStartedAt, String msg) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "MERGE dbo.ups_comm_status AS t USING (SELECT ? AS ups_id) AS s ON t.ups_id=s.ups_id " +
+                "WHEN MATCHED THEN UPDATE SET status=CASE WHEN ISNULL(consecutive_fail_count, 0) + 1 >= ? THEN 'ERROR' ELSE 'RETRY' END, " +
+                "consecutive_fail_count=ISNULL(consecutive_fail_count, 0)+1, last_poll_at=?, last_error_at=sysdatetime(), last_error_message=?, updated_at=sysdatetime() " +
+                "WHEN NOT MATCHED THEN INSERT (ups_id, status, consecutive_fail_count, last_poll_at, last_error_at, last_error_message, updated_at) VALUES (?, 'RETRY', 1, ?, sysdatetime(), ?, sysdatetime());")) {
+            ps.setInt(1, upsId);
+            ps.setInt(2, COMM_FAIL_OFFLINE_THRESHOLD);
+            ps.setTimestamp(3, pollStartedAt);
+            ps.setString(4, msg);
+            ps.setInt(5, upsId);
+            ps.setTimestamp(6, pollStartedAt);
+            ps.setString(7, msg);
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT ISNULL(consecutive_fail_count, 0) FROM dbo.ups_comm_status WHERE ups_id=?")) {
+            ps.setInt(1, upsId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 1;
+            }
+        }
+    }
+
+    private static void updateSuccess(int upsId, Timestamp pollStartedAt) throws Exception {
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection()) {
             try (PreparedStatement ps = conn.prepareStatement(
                     "UPDATE dbo.ups_device SET last_comm_status='OK', last_success_at=sysdatetime(), last_error_message=NULL, updated_at=sysdatetime() WHERE ups_id=?")) {
@@ -504,37 +572,45 @@ public final class UpsCollectorService {
             }
             try (PreparedStatement ps = conn.prepareStatement(
                     "MERGE dbo.ups_comm_status AS t USING (SELECT ? AS ups_id) AS s ON t.ups_id=s.ups_id " +
-                    "WHEN MATCHED THEN UPDATE SET status='OK', consecutive_fail_count=0, last_poll_at=sysdatetime(), last_success_at=sysdatetime(), last_error_message=NULL, updated_at=sysdatetime() " +
-                    "WHEN NOT MATCHED THEN INSERT (ups_id, status, consecutive_fail_count, last_poll_at, last_success_at, updated_at) VALUES (?, 'OK', 0, sysdatetime(), sysdatetime(), sysdatetime());")) {
+                    "WHEN MATCHED THEN UPDATE SET status='OK', consecutive_fail_count=0, last_poll_at=?, last_success_at=sysdatetime(), last_error_message=NULL, updated_at=sysdatetime() " +
+                    "WHEN NOT MATCHED THEN INSERT (ups_id, status, consecutive_fail_count, last_poll_at, last_success_at, updated_at) VALUES (?, 'OK', 0, ?, sysdatetime(), sysdatetime());")) {
                 ps.setInt(1, upsId);
-                ps.setInt(2, upsId);
+                ps.setTimestamp(2, pollStartedAt);
+                ps.setInt(3, upsId);
+                ps.setTimestamp(4, pollStartedAt);
                 ps.executeUpdate();
             }
             clearAlarm(conn, upsId, "UPS_COMM_FAIL");
         }
     }
 
-    private static void updateFailure(int upsId, String error) {
+    private static void updateFailure(int upsId, Timestamp pollStartedAt, String error) {
         String msg = error == null ? "Unknown UPS polling error" : error;
         if (msg.length() > 500) msg = msg.substring(0, 500);
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection()) {
+            int failCount = upsertFailureStatus(conn, upsId, pollStartedAt, msg);
             try (PreparedStatement ps = conn.prepareStatement(
-                    "UPDATE dbo.ups_device SET last_comm_status='ERROR', last_error_at=sysdatetime(), last_error_message=?, updated_at=sysdatetime() WHERE ups_id=?")) {
-                ps.setString(1, msg);
-                ps.setInt(2, upsId);
+                    "UPDATE dbo.ups_device SET last_comm_status=CASE WHEN ? >= ? THEN 'ERROR' ELSE last_comm_status END, last_error_at=sysdatetime(), last_error_message=?, updated_at=sysdatetime() WHERE ups_id=?")) {
+                ps.setInt(1, failCount);
+                ps.setInt(2, COMM_FAIL_OFFLINE_THRESHOLD);
+                ps.setString(3, msg);
+                ps.setInt(4, upsId);
                 ps.executeUpdate();
             }
             try (PreparedStatement ps = conn.prepareStatement(
                     "MERGE dbo.ups_comm_status AS t USING (SELECT ? AS ups_id) AS s ON t.ups_id=s.ups_id " +
-                    "WHEN MATCHED THEN UPDATE SET status='ERROR', consecutive_fail_count=consecutive_fail_count+1, last_poll_at=sysdatetime(), last_error_at=sysdatetime(), last_error_message=?, updated_at=sysdatetime() " +
+                    "WHEN MATCHED THEN UPDATE SET status=CASE WHEN consecutive_fail_count >= ? THEN 'ERROR' ELSE 'RETRY' END, last_error_message=?, updated_at=sysdatetime() " +
                     "WHEN NOT MATCHED THEN INSERT (ups_id, status, consecutive_fail_count, last_poll_at, last_error_at, last_error_message, updated_at) VALUES (?, 'ERROR', 1, sysdatetime(), sysdatetime(), ?, sysdatetime());")) {
                 ps.setInt(1, upsId);
-                ps.setString(2, msg);
-                ps.setInt(3, upsId);
-                ps.setString(4, msg);
+                ps.setInt(2, COMM_FAIL_OFFLINE_THRESHOLD);
+                ps.setString(3, msg);
+                ps.setInt(4, upsId);
+                ps.setString(5, msg);
                 ps.executeUpdate();
             }
-            openAlarm(conn, upsId, "UPS_COMM_FAIL", "communication", "CRITICAL", "UPS 통신 실패: " + msg);
+            if (failCount >= COMM_FAIL_OFFLINE_THRESHOLD) {
+                openAlarm(conn, upsId, "UPS_COMM_FAIL", "communication", "CRITICAL", "UPS communication failed: " + msg);
+            }
         } catch (Exception ignore) {
         }
     }

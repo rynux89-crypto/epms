@@ -1,0 +1,5 @@
+﻿        <section class="content-grid">
+            <%@ include file="ups_overview_card.jspf" %>
+            <%@ include file="power_flow_card.jspf" %>
+            <%@ include file="trend_card.jspf" %>
+        </section>

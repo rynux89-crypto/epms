@@ -26,7 +26,7 @@ boolean running = isOpen("http://127.0.0.1:1503/api/status");
 <html>
 <head>
     <title>UPS 시뮬레이터</title>
-    <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
+    <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         .sim-box { max-width:760px; margin:0 auto; }
         .sim-status { display:flex; align-items:center; gap:10px; margin:14px 0; font-weight:800; }
@@ -64,5 +64,6 @@ boolean running = isOpen("http://127.0.0.1:1503/api/status");
         <% } %>
     </div>
 </div>
+<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

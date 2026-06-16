@@ -78,7 +78,7 @@
         <p>역률, 주파수, 전압, 전류를 하나의 화면에서 동시에 분석.</p>
         <a href="pq_overview.jsp" class="link-button right">통합 품질 모니터링</a>
     </div>
-    
+
 </div>
 
 <footer>© EPMS Dashboard | SNUT CNT</footer>

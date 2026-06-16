@@ -1,4 +1,4 @@
-﻿<%@ page import="java.util.*" %>
+<%@ page import="java.util.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="../includes/ups_html.jspf" %>
 <%!
@@ -32,12 +32,49 @@
 
     private boolean commBad(Map<String, Object> selected) {
         if (selected == null || selected.get("last_comm_status") == null) return false;
+        int failCount = intValue(selected.get("consecutive_fail_count"), 0);
+        if (failCount > 0 && failCount < 3) return false;
         String comm = String.valueOf(selected.get("last_comm_status"));
         return !("OK".equalsIgnoreCase(comm) || "NORMAL".equalsIgnoreCase(comm) || "ONLINE".equalsIgnoreCase(comm));
     }
 
+    private int intValue(Object value, int fallback) {
+        if (value == null) return fallback;
+        try {
+            return value instanceof Number ? ((Number)value).intValue() : Integer.parseInt(String.valueOf(value).trim());
+        } catch (Exception ignore) {
+            return fallback;
+        }
+    }
+
     private String nowText() {
         return new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new java.util.Date());
+    }
+
+    private boolean enabledDevice(Map<String, Object> device) {
+        if (device == null) return false;
+        Object enabled = device.get("enabled");
+        if (enabled == null) return false;
+        if (enabled instanceof Boolean) return Boolean.TRUE.equals(enabled);
+        String value = String.valueOf(enabled).trim();
+        return "1".equals(value) || "true".equalsIgnoreCase(value) || "Y".equalsIgnoreCase(value);
+    }
+
+    private List<Map<String, Object>> activeDevices(List<Map<String, Object>> devices) {
+        List<Map<String, Object>> out = new ArrayList<Map<String, Object>>();
+        if (devices == null) return out;
+        for (Map<String, Object> device : devices) {
+            if (enabledDevice(device)) out.add(device);
+        }
+        return out;
+    }
+
+    private boolean containsDeviceId(List<Map<String, Object>> devices, String selectedId) {
+        if (selectedId == null || selectedId.trim().length() == 0) return false;
+        for (Map<String, Object> device : devices) {
+            if (selectedId.equals(String.valueOf(device.get("ups_id")))) return true;
+        }
+        return false;
     }
 
 %>
@@ -51,7 +88,7 @@ Map<String, Object> m = new HashMap<String, Object>();
 Map<String, Object> statusView = new HashMap<String, Object>();
 
 try {
-    statusView = epms.ups.UpsQueryService.realtimeStatus(selectedId, application);
+    statusView = epms.ups.UpsRealtimeService.realtimeStatus(selectedId, application);
     devices = (List<Map<String, Object>>) statusView.get("devices");
     selectedId = String.valueOf(statusView.get("selectedId"));
     selected = (Map<String, Object>) statusView.get("selected");
@@ -61,10 +98,24 @@ try {
 }
 
 if (devices == null) devices = new ArrayList<Map<String, Object>>();
+devices = activeDevices(devices);
+if (!devices.isEmpty() && !containsDeviceId(devices, selectedId)) {
+    response.sendRedirect("ups_status.jsp?ups_id=" + java.net.URLEncoder.encode(String.valueOf(devices.get(0).get("ups_id")), "UTF-8"));
+    return;
+}
 if (m == null) m = new HashMap<String, Object>();
+if (devices.isEmpty()) {
+    selectedId = "";
+    selected = null;
+    m = new HashMap<String, Object>();
+}
 String upsMode = String.valueOf(statusView.get("upsMode"));
 String systemMode = String.valueOf(statusView.get("systemMode"));
 boolean commBad = commBad(selected);
+if (devices.isEmpty()) {
+    upsMode = "-";
+    systemMode = "-";
+}
 if (commBad) {
     upsMode = "통신불량";
     systemMode = "-";
@@ -94,7 +145,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
 <head>
     <title>UPS 모니터링</title>
     <meta http-equiv="refresh" content="2">
-    <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
+    <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         body { background:#f2f4f7; }
         .ups-shell { max-width:1180px; margin:0 auto; }
@@ -382,5 +433,6 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         <% } %>
     </div>
 </div>
+<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

@@ -20,8 +20,8 @@ public final class UpsCollectorListener implements ServletContextListener {
             return t;
         });
         sce.getServletContext().setAttribute("ups.collector.status", "STARTED");
-        sce.getServletContext().setAttribute("ups.collector.intervalSeconds", Long.valueOf(5L));
-        scheduler.scheduleAtFixedRate(this::safePoll, 2L, 5L, TimeUnit.SECONDS);
+        sce.getServletContext().setAttribute("ups.collector.intervalSeconds", Long.valueOf(1L));
+        scheduler.scheduleAtFixedRate(this::safePoll, 1L, 1L, TimeUnit.SECONDS);
     }
 
     @Override

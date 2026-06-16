@@ -13,15 +13,6 @@
         return 200;
     }
 
-    private String csv(Object value) {
-        if (value == null) return "";
-        String s = String.valueOf(value).replace("\r", " ").replace("\n", " ");
-        if (s.startsWith("=") || s.startsWith("+") || s.startsWith("-") || s.startsWith("@")) s = "'" + s;
-        if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0) {
-            s = "\"" + s.replace("\"", "\"\"") + "\"";
-        }
-        return s;
-    }
 %>
 <%
 request.setCharacterEncoding("UTF-8");
@@ -30,66 +21,30 @@ String selectedId = request.getParameter("ups_id");
 String upsSearch = request.getParameter("ups");
 String searchText = upsSearch == null ? "" : upsSearch.trim();
 String normalizedSearchText = searchText.replaceAll("\\s+", "");
-String fromRaw = request.getParameter("from");
-String toRaw = request.getParameter("to");
-boolean explicitTo = toRaw != null && !toRaw.trim().isEmpty();
 String export = request.getParameter("export");
 int limit = parseLimit(request.getParameter("limit"));
-java.util.Calendar nowCal = java.util.Calendar.getInstance();
-String defaultTo = epms.util.UpsFormatSupport.htmlDateTime(nowCal);
-java.util.Calendar fromCal = (java.util.Calendar) nowCal.clone();
-fromCal.add(java.util.Calendar.DAY_OF_MONTH, -1);
-String defaultFrom = epms.util.UpsFormatSupport.htmlDateTime(fromCal);
-if (fromRaw == null || fromRaw.trim().isEmpty()) fromRaw = defaultFrom;
-if (toRaw == null || toRaw.trim().isEmpty()) toRaw = defaultTo;
-Timestamp fromTs = epms.util.UpsFormatSupport.parseDateTime(fromRaw, false);
-Timestamp toTs = epms.util.UpsFormatSupport.parseDateTime(toRaw, true);
+epms.util.UpsDateRangeSupport.DateRange range = epms.util.UpsDateRangeSupport.lastDays(request, 1);
+String fromRaw = range.fromRaw;
+String toRaw = range.toRaw;
+boolean explicitTo = range.explicitTo;
+Timestamp fromTs = range.fromTs;
+Timestamp toTs = range.toTs;
 
 List<Map<String, Object>> devices = new ArrayList<Map<String, Object>>();
 List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
 
 try {
-    devices = epms.ups.UpsQueryService.listDevicesBasic();
-    rows = epms.ups.UpsQueryService.measurementHistory(selectedId, searchText, fromTs, toTs, limit);
+    devices = epms.ups.UpsDeviceLookupService.listDevicesBasic();
+    rows = epms.ups.UpsMeasurementHistoryService.measurementHistory(selectedId, searchText, fromTs, toTs, limit);
 } catch (Exception e) {
     err = e.getMessage();
 }
 
 if ("csv".equalsIgnoreCase(export)) {
-    response.reset();
-    response.setCharacterEncoding("UTF-8");
-    response.setContentType("text/csv;charset=UTF-8");
-    response.setHeader("Content-Disposition", "attachment; filename=\"ups_measurement_history.csv\"");
-    out.print("\uFEFF");
-    out.println("UPS,IP,Port,Measured At,V L1-2,V L2-3,V L3-1,I L1,I L2,I L3,Frequency,Load %,kW,kVA,PF L1,PF L2,PF L3,Battery V,Battery A,Battery %,Battery Temp,Remain Min,UPS Mode,System Mode,Raw Status");
+    epms.util.CsvDownloadSupport.begin(response, out, "ups_measurement_history.csv");
+    epms.util.CsvDownloadSupport.writeRow(out, "UPS", "IP", "Port", "Measured At", "V L1-2", "V L2-3", "V L3-1", "I L1", "I L2", "I L3", "Frequency", "Load %", "kW", "kVA", "PF L1", "PF L2", "PF L3", "Battery V", "Battery A", "Battery %", "Battery Temp", "Remain Min", "UPS Mode", "System Mode", "Raw Status");
     for (Map<String, Object> r : rows) {
-        out.println(
-            csv(r.get("ups_name")) + "," +
-            csv(r.get("ip_address")) + "," +
-            csv(r.get("modbus_port")) + "," +
-            csv(r.get("measured_at")) + "," +
-            csv(r.get("output_voltage_l12")) + "," +
-            csv(r.get("output_voltage_l23")) + "," +
-            csv(r.get("output_voltage_l31")) + "," +
-            csv(r.get("output_current_l1")) + "," +
-            csv(r.get("output_current_l2")) + "," +
-            csv(r.get("output_current_l3")) + "," +
-            csv(r.get("frequency")) + "," +
-            csv(r.get("load_percent")) + "," +
-            csv(r.get("output_power_kw")) + "," +
-            csv(r.get("output_apparent_total_kva")) + "," +
-            csv(r.get("output_pf_l1")) + "," +
-            csv(r.get("output_pf_l2")) + "," +
-            csv(r.get("output_pf_l3")) + "," +
-            csv(r.get("battery_voltage")) + "," +
-            csv(r.get("battery_current")) + "," +
-            csv(r.get("battery_charge_percent")) + "," +
-            csv(r.get("battery_temperature")) + "," +
-            csv(r.get("remaining_minutes")) + "," +
-            csv(r.get("ups_operation_mode_code")) + "," +
-            csv(r.get("system_operation_mode_code")) + "," +
-            csv(r.get("raw_status"))
-        );
+        epms.util.CsvDownloadSupport.writeRow(out, r.get("ups_name"), r.get("ip_address"), r.get("modbus_port"), r.get("measured_at"), r.get("output_voltage_l12"), r.get("output_voltage_l23"), r.get("output_voltage_l31"), r.get("output_current_l1"), r.get("output_current_l2"), r.get("output_current_l3"), r.get("frequency"), r.get("load_percent"), r.get("output_power_kw"), r.get("output_apparent_total_kva"), r.get("output_pf_l1"), r.get("output_pf_l2"), r.get("output_pf_l3"), r.get("battery_voltage"), r.get("battery_current"), r.get("battery_charge_percent"), r.get("battery_temperature"), r.get("remaining_minutes"), r.get("ups_operation_mode_code"), r.get("system_operation_mode_code"), r.get("raw_status"));
     }
     return;
 }
@@ -98,10 +53,10 @@ if ("csv".equalsIgnoreCase(export)) {
 <html>
 <head>
     <title>UPS 측정 이력</title>
-    <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/main.css">
+    <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         body { background:#f2f4f7; }
-        .history-shell { max-width:1320px; margin:0 auto; }
+        .history-shell { max-width:none; width:100%; margin:0 auto; }
         .history-filter { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:#fff; border:1px solid #dbe5f2; border-radius:8px; padding:12px; margin-bottom:12px; }
         .history-filter label { font-size:13px; color:#475569; font-weight:800; }
         .history-filter input, .history-filter select { min-height:36px; border:1px solid #cbd8e6; border-radius:6px; padding:8px 10px; background:#fff; color:#111827; }
@@ -110,22 +65,22 @@ if ("csv".equalsIgnoreCase(export)) {
         .history-filter select[name="limit"] { min-width:82px; }
         .history-filter button { min-height:36px; padding:8px 12px; }
         .history-table-wrap { overflow:auto; max-height:calc(100vh - 230px); background:#fff; border:1px solid #d7e1ec; border-radius:8px; }
-        .history-table { width:max-content; min-width:1780px; border-collapse:collapse; font-size:12px; white-space:nowrap; table-layout:fixed; }
-        .history-table th, .history-table td { border-bottom:1px solid #e6edf5; border-right:1px solid #edf2f7; padding:7px 10px; text-align:right; }
+        .history-table { width:100%; min-width:1960px; border-collapse:collapse; font-size:12px; white-space:nowrap; table-layout:fixed; }
+        .history-table th, .history-table td { border-bottom:1px solid #e6edf5; border-right:1px solid #edf2f7; padding:7px 8px; text-align:right; }
         .history-table th:last-child, .history-table td:last-child { border-right:none; }
         .history-table th { position:sticky; top:0; background:#eef4fb; color:#1f3347; z-index:1; }
         .history-table th:first-child, .history-table td:first-child,
         .history-table th:nth-child(2), .history-table td:nth-child(2) { text-align:left; }
         .history-table th, .history-table td { overflow:hidden; text-overflow:ellipsis; }
-        .col-ups { width:160px; }
-        .col-time { width:170px; }
-        .col-v { width:78px; }
-        .col-a { width:72px; }
-        .col-small { width:70px; }
-        .col-pf { width:68px; }
-        .col-battery { width:86px; }
-        .col-mode { width:96px; }
-        .col-status { width:82px; }
+        .col-ups { width:180px; }
+        .col-time { width:168px; }
+        .col-v { width:82px; }
+        .col-a { width:78px; }
+        .col-small { width:76px; }
+        .col-pf { width:72px; }
+        .col-battery { width:92px; }
+        .col-mode { width:118px; }
+        .col-status { width:110px; }
         .empty { padding:22px; text-align:center; color:#64748b; }
         .summary { margin:0 0 8px; color:#64748b; font-size:13px; }
     </style>
@@ -244,5 +199,6 @@ if ("csv".equalsIgnoreCase(export)) {
     }
 })();
 </script>
+<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

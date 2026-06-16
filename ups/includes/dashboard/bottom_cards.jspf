@@ -1,0 +1,5 @@
+﻿        <section class="bottom-grid">
+            <%@ include file="health_card.jspf" %>
+            <%@ include file="placement_card.jspf" %>
+            <%@ include file="alarm_device_cards.jspf" %>
+        </section>

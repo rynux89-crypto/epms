@@ -1,0 +1,54 @@
+<%@ page pageEncoding="UTF-8" %>
+<div class="stack">
+                <div class="mini-stack">
+                <div class="panel alarm-panel">
+                    <div class="panel-head"><h2>경고 알림</h2><a href="alarm/alarm_view.jsp?status=ACTIVE">전체 보기 ››</a></div>
+                    <div class="alarm-list">
+                        <% int alarmRowCount = 0; %>
+                        <% if (fragmentModel.alarmItems.isEmpty()) { %>
+                        <div class="alarm-row"><span class="state-normal">● 알림 없음</span><span>현재 표시할 경고가 없습니다.</span><span>--</span></div>
+                        <% alarmRowCount++; } else { for (epms.ups.UpsDashboardFragmentRenderModel.AlarmItem item : fragmentModel.alarmItems) { alarmRowCount++; %>
+                        <div class="alarm-row"><span class="sev <%= item.critical ? "critical" : "" %>">▲ <%= h(item.upsName) %></span><span><%= h(item.message) %></span><span><%= h(item.occurredAtText) %></span></div>
+                        <% }} %>
+                        <% for (; alarmRowCount < 3; alarmRowCount++) { %>
+                        <div class="alarm-row empty"><span>--</span><span></span><span></span></div>
+                        <% } %>
+                    </div>
+                </div>
+
+                <div class="panel event-panel">
+                    <div class="panel-head"><h2>최근 이벤트</h2><a href="alarm/event_view.jsp">전체 보기 ››</a></div>
+                    <div class="event-list">
+                        <% int eventRowCount = 0; %>
+                        <% if (fragmentModel.eventItems.isEmpty()) { %>
+                        <div class="event-row empty"><span>◇ 이벤트 없음</span><span>최근 표시할 이벤트가 없습니다.</span><span>--</span></div>
+                        <% eventRowCount++; } else { for (epms.ups.UpsDashboardFragmentRenderModel.EventItem item : fragmentModel.eventItems) { eventRowCount++; %>
+                        <div class="event-row"><span class="event-ups">◇ <%= h(item.upsName) %></span><span><%= h(item.message) %></span><span><%= h(item.occurredAtText) %></span></div>
+                        <% }} %>
+                        <% for (; eventRowCount < 3; eventRowCount++) { %>
+                        <div class="event-row empty"><span>--</span><span></span><span></span></div>
+                        <% } %>
+                    </div>
+                </div>
+                </div>
+
+                <div class="panel device-table">
+                    <div class="panel-head"><h2>장비 현황 <small>(활성화된 UPS만)</small></h2><a href="monitoring/ups_overview.jsp">전체 보기 ››</a></div>
+                    <div class="table-head"><span>장비명</span><span>모델명</span><span>부하율</span><span>부하</span><span>배터리</span><span>상태</span><span>위치</span></div>
+                    <div class="device-table-body">
+                    <% if (fragmentModel.deviceItems.isEmpty()) { %>
+                    <div class="table-row"><span>등록된 UPS 없음</span><span>--</span><span>--</span><span>--</span><span>--</span><span class="state-offline">미등록</span><span>--</span></div>
+                    <% } else { for (epms.ups.UpsDashboardFragmentRenderModel.DeviceItem item : fragmentModel.deviceItems) { %>
+                    <div class="table-row">
+                        <span><%= h(item.name) %></span>
+                        <span><%= h(item.profileName) %></span>
+                        <span><%= h(item.loadText) %></span>
+                        <span><%= h(item.loadText) %><div class="bar"><i style="<%= h(item.loadStyle) %>"></i></div></span>
+                        <span><%= h(item.batteryText) %><div class="bar battery"><i style="<%= h(item.batteryStyle) %>"></i></div></span>
+                        <span class="state-<%= h(item.statusClass) %>"><%= h(item.statusText) %></span>
+                        <span><%= h(item.location) %></span>
+                    </div>
+                    <% }} %>
+                    </div>
+                </div>
+            </div>

@@ -107,4 +107,5 @@ public final class UpsFormatSupport {
         if ("critical".equals(scenario)) return "\uC911\uC694 \uC54C\uB78C";
         return scenario == null ? "" : scenario;
     }
+
 }
