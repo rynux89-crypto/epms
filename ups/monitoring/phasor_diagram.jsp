@@ -23,6 +23,15 @@
         }
     }
 
+    private int intValue(Object value, int fallback) {
+        if (value == null) return fallback;
+        try {
+            return value instanceof Number ? ((Number)value).intValue() : Integer.parseInt(String.valueOf(value).trim());
+        } catch (Exception ignore) {
+            return fallback;
+        }
+    }
+
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
@@ -154,6 +163,8 @@ if (!devices.isEmpty() && !containsDeviceId(devices, selectedId)) {
 }
 Map<String, Object> m = devices.isEmpty() ? new HashMap<String, Object>() : phasorModel.measurement;
 boolean hideData = devices.isEmpty() || phasorModel.hideData;
+int refreshSeconds = phasorModel.selected == null ? 2 : intValue(phasorModel.selected.get("poll_interval_seconds"), 2);
+if (refreshSeconds < 1) refreshSeconds = 1;
 double cx = 330d;
 double cy = 250d;
 double vMax = Math.max(1d, Math.max(dbl(m.get("output_voltage_l12"), 0d), Math.max(dbl(m.get("output_voltage_l23"), 0d), dbl(m.get("output_voltage_l31"), 0d))));
@@ -269,7 +280,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                 <% } %>
             </select>
         </form>
-        <div class="muted">최근 수집: <span id="phasorRecentAt"><%= h(dateText(m.get("measured_at"), hideData)) %></span> / 자동 갱신 2초</div>
+        <div class="muted">최근 수집: <span id="phasorRecentAt"><%= h(dateText(m.get("measured_at"), hideData)) %></span> / 자동 갱신 <span id="phasorRefreshSeconds"><%= refreshSeconds %></span>초</div>
     </div>
 
     <div class="phasor-hmi" id="phasorHmi">
@@ -464,6 +475,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
     var hmi = document.getElementById('phasorHmi');
     var recent = document.getElementById('phasorRecentAt');
     var form = document.querySelector('.phasor-toolbar form');
+    var refreshMs = Math.max(1000, <%= refreshSeconds %> * 1000);
     if (!hmi || !window.fetch || !window.DOMParser) return;
     var busy = false;
     var lastOk = Date.now();
@@ -504,7 +516,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                 busy = false;
             });
     }
-    setInterval(refreshPhasor, 2000);
+    setInterval(refreshPhasor, refreshMs);
 })();
 </script>
 </body>
