@@ -37,6 +37,15 @@ if ("csv".equalsIgnoreCase(export)) {
         .event-filter input[type="datetime-local"] { min-width:190px; }
         .event-filter button { padding:8px 12px; }
         .event-count { color:#64748b; font-size:13px; }
+        .event-table { min-width:980px; }
+        .event-table .col-id { width:72px; }
+        .event-table .col-ups { width:150px; }
+        .event-table .col-severity { width:98px; }
+        .event-table .col-message { width:auto; }
+        .event-table .col-time { width:156px; }
+        .event-table .col-status { width:90px; }
+        .event-table th, .event-table td { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .event-table th:nth-child(4), .event-table td:nth-child(4) { text-align:left; }
     </style>
 </head>
 <body>
@@ -55,7 +64,10 @@ if ("csv".equalsIgnoreCase(export)) {
         <span class="event-count" id="eventCount">조회 <%= rows.size() %>건</span>
     </form>
     <div class="panel" id="eventContent">
-        <table class="data-table">
+        <table class="data-table event-table">
+            <colgroup>
+                <col class="col-id"><col class="col-ups"><col class="col-severity"><col class="col-message"><col class="col-time"><col class="col-status">
+            </colgroup>
             <thead><tr><th>ID</th><th>UPS</th><th>등급</th><th>메시지</th><th>발생</th><th>상태</th></tr></thead>
             <tbody>
             <% if (rows.isEmpty()) { %><tr><td colspan="6">이벤트 이력이 없습니다.</td></tr><% } %>

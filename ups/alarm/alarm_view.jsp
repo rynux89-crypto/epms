@@ -45,6 +45,15 @@ if ("csv".equalsIgnoreCase(export)) {
         .alarm-filter input[type="datetime-local"] { min-width:190px; }
         .alarm-filter button { padding:8px 12px; }
         .alarm-count { color:#64748b; font-size:13px; }
+        .alarm-table { min-width:1120px; }
+        .alarm-table .col-id { width:72px; }
+        .alarm-table .col-ups { width:150px; }
+        .alarm-table .col-severity { width:98px; }
+        .alarm-table .col-message { width:auto; }
+        .alarm-table .col-time { width:156px; }
+        .alarm-table .col-status { width:90px; }
+        .alarm-table th, .alarm-table td { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .alarm-table th:nth-child(4), .alarm-table td:nth-child(4) { text-align:left; }
     </style>
 </head>
 <body>
@@ -64,7 +73,10 @@ if ("csv".equalsIgnoreCase(export)) {
         <span class="alarm-count" id="alarmCount"><%= alarmModel.activeOnly ? "활성" : "조회" %> <%= rows.size() %>건</span>
     </form>
     <div class="panel" id="alarmContent">
-        <table class="data-table">
+        <table class="data-table alarm-table">
+            <colgroup>
+                <col class="col-id"><col class="col-ups"><col class="col-severity"><col class="col-message"><col class="col-time"><col class="col-time"><col class="col-status">
+            </colgroup>
             <thead><tr><th>ID</th><th>UPS</th><th>등급</th><th>메시지</th><th>발생</th><th>해제</th><th>상태</th></tr></thead>
             <tbody>
             <% if (rows.isEmpty()) { %><tr><td colspan="7">알람 이력이 없습니다.</td></tr><% } %>
