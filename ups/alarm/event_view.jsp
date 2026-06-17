@@ -41,12 +41,6 @@ if ("csv".equalsIgnoreCase(export)) {
 </head>
 <body>
 <div class="page-wrap">
-    <div class="title-bar">
-        
-        <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='alarm_view.jsp'">알람</button>
-        </div>
-    </div>
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
     <form class="event-filter" method="get" id="eventFilter">
         <label for="ups">UPS 검색</label>

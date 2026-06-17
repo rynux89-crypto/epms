@@ -49,12 +49,6 @@ if ("csv".equalsIgnoreCase(export)) {
 </head>
 <body>
 <div class="page-wrap">
-    <div class="title-bar">
-        
-        <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='event_view.jsp'">이벤트</button>
-        </div>
-    </div>
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
     <form class="alarm-filter" method="get" id="alarmFilter">
         <% if (alarmModel.activeOnly) { %><input type="hidden" name="status" value="ACTIVE"><% } %>
