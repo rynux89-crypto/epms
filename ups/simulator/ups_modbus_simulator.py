@@ -766,6 +766,15 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .badge {{ display:inline-flex; align-items:center; min-height:34px; padding:6px 12px; border-radius:999px; background:#fff; border:1px solid #d7e1ec; font-weight:700; }}
 .grid {{ display:grid; grid-template-columns:1fr 340px; gap:16px; align-items:start; }}
 .panel {{ background:#fff; border:1px solid #d7e1ec; border-radius:8px; padding:16px; }}
+.status-panel {{ margin-bottom:16px; }}
+.status-panel h2 {{ margin:0 0 10px; }}
+.status-summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }}
+.status-card {{ border:1px solid #d7e1ec; border-radius:8px; background:#f8fafc; padding:10px 12px; }}
+.status-card strong {{ display:block; margin-bottom:5px; color:#0f172a; font-size:13px; }}
+.status-value {{ font:800 18px Consolas,monospace; color:#1267b1; }}
+.status-dec {{ margin-left:6px; color:#475569; font:700 12px Consolas,monospace; }}
+.status-bits {{ margin-top:6px; color:#64748b; font-size:12px; line-height:1.35; }}
+.status-bits b {{ color:#b91c1c; }}
 .scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }}
 button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:14px; text-align:left; cursor:pointer; min-height:74px; }}
 button.scenario strong {{ display:block; font-size:16px; margin-bottom:5px; }}
@@ -813,6 +822,10 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
       <div class="muted">Modbus TCP 127.0.0.1:1502 / Control UI 127.0.0.1:1503</div>
     </div>
     <div class="badge" id="current">...</div>
+  </div>
+  <div class="panel status-panel">
+    <h2>Status Word</h2>
+    <div class="status-summary" id="statusSummary"></div>
   </div>
   <div class="grid">
     <div class="panel">
@@ -890,8 +903,21 @@ const metricGroups = [
   ['Voltage', ['output_voltage_l12', 'output_voltage_l23', 'output_voltage_l31']],
   ['Current / Load', ['output_current_l1', 'output_current_l2', 'output_current_l3', 'output_load_percent', 'output_power_kw', 'output_apparent_total_kva']],
   ['Power Factor', ['output_pf_l1', 'output_pf_l2', 'output_pf_l3']],
-  ['Battery', ['battery_voltage', 'battery_current', 'battery_charge_percent', 'battery_temperature_c', 'remaining_minutes']],
-  ['Status Word', ['ups_status_word', 'bypass_status', 'energy_storage_status', 'energy_storage_status_2', 'general_status', 'general_status_2', 'general_status_3', 'general_status_4', 'input_status', 'output_status', 'parallel_status', 'power_module_status']]
+  ['Battery', ['battery_voltage', 'battery_current', 'battery_charge_percent', 'battery_temperature_c', 'remaining_minutes']]
+];
+const statusMetricKeys = [
+  'ups_status_word',
+  'input_status',
+  'output_status',
+  'bypass_status',
+  'energy_storage_status',
+  'energy_storage_status_2',
+  'general_status',
+  'general_status_2',
+  'general_status_3',
+  'general_status_4',
+  'parallel_status',
+  'power_module_status'
 ];
 const metricUnits = {{
   output_frequency_hz:'Hz',
@@ -937,10 +963,28 @@ function renderMetricRow(k, s) {{
   const currentValue = focused ? document.activeElement.value : inputValue(k, s[k]);
   return `<div class="row editable"><span>${{metricNames[k]}}</span><span class="metric-control"><input class="metric-edit" type="number" step="0.1" data-metric="${{k}}" value="${{currentValue}}"><span class="metric-unit">${{metricUnits[k] || ''}}</span></span></div>`;
 }}
+function activeBits(value) {{
+  const n = Number(value || 0);
+  const bits = [];
+  for (let i = 0; i < 16; i++) {{
+    if (n & (1 << i)) bits.push(i);
+  }}
+  return bits;
+}}
+function renderStatusSummary(s) {{
+  document.getElementById('statusSummary').innerHTML = statusMetricKeys.map(k => {{
+    const n = Number(s[k] || 0);
+    const hex = '0x' + n.toString(16).toUpperCase().padStart(4, '0');
+    const bits = activeBits(n);
+    const bitText = bits.length ? `<b>ON bit</b> ${{bits.join(', ')}}` : 'ON bit 없음';
+    return `<div class="status-card"><strong>${{metricNames[k]}}</strong><span class="status-value">${{hex}}</span><span class="status-dec">${{n}}</span><div class="status-bits">${{bitText}}</div></div>`;
+  }}).join('');
+}}
 async function refresh() {{
   const r = await fetch('/api/status', {{cache:'no-store'}});
   const s = await r.json();
   document.getElementById('current').textContent = labels[s.scenario] + ' / ' + s.scenario;
+  renderStatusSummary(s);
   document.querySelectorAll('.scenario').forEach(b => b.classList.toggle('active', b.dataset.scenario === s.scenario));
   document.getElementById('breakers').innerHTML = Object.keys(breakerNames).map(k => {{
     const closed = !!s.breakers[k];
