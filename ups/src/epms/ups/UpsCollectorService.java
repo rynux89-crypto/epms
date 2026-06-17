@@ -2,6 +2,7 @@ package epms.ups;
 
 import epms.util.ModbusSupport;
 import epms.util.UpsDataSourceProvider;
+import epms.util.UpsFormatSupport;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -47,9 +48,16 @@ public final class UpsCollectorService {
         final List<Point> points = new ArrayList<Point>();
     }
 
-    private static final class BreakerState {
+    private static final class LastStatusState {
         Integer switchgearStatus;
         Integer batteryBreakerStatus;
+        Integer upsOperationMode;
+        Integer systemOperationMode;
+        Integer bypassStatus;
+        Integer energyStorageStatus;
+        Integer inputStatus;
+        Integer outputStatus;
+        BigDecimal batteryCurrent;
     }
 
     public void pollEnabledDevices() throws Exception {
@@ -74,11 +82,13 @@ public final class UpsCollectorService {
             }
             try {
                 Map<String, BigDecimal> values = readDevice(device, points);
-                BreakerState previousBreakers = loadLastBreakerState(device.upsId);
+                LastStatusState previousStatus = loadLastStatusState(device.upsId);
                 syncValueAlarms(device.upsId, values);
-                boolean breakerChanged = breakerStateChanged(previousBreakers, values);
-                syncBreakerEvents(device.upsId, previousBreakers, values);
-                if (device.measurementDue || breakerChanged) {
+                boolean breakerChanged = breakerStateChanged(previousStatus, values);
+                boolean operationalChanged = operationalStateChanged(previousStatus, values);
+                syncBreakerEvents(device.upsId, previousStatus, values);
+                syncOperationalEvents(device.upsId, previousStatus, values);
+                if (device.measurementDue || breakerChanged || operationalChanged) {
                     persistMeasurement(device.upsId, pollStartedAt, values);
                     updateSuccess(device.upsId, pollStartedAt);
                 }
@@ -291,19 +301,28 @@ public final class UpsCollectorService {
         return seconds.divide(BigDecimal.valueOf(60L), 3, java.math.RoundingMode.HALF_UP);
     }
 
-    private static BreakerState loadLastBreakerState(int upsId) throws Exception {
+    private static LastStatusState loadLastStatusState(int upsId) throws Exception {
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                    "SELECT TOP 1 switchgear_status_code, battery_breaker_status_code " +
+                    "SELECT TOP 1 switchgear_status_code, battery_breaker_status_code, " +
+                    "ups_operation_mode_code, system_operation_mode_code, bypass_status_code, " +
+                    "energy_storage_status_code, input_status_code, output_status_code, battery_current " +
                     "FROM dbo.ups_measurement WHERE ups_id = ? ORDER BY measured_at DESC")) {
             ps.setInt(1, upsId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
-                BreakerState state = new BreakerState();
+                LastStatusState state = new LastStatusState();
                 int switchgear = rs.getInt("switchgear_status_code");
                 state.switchgearStatus = rs.wasNull() ? null : Integer.valueOf(switchgear);
                 int battery = rs.getInt("battery_breaker_status_code");
                 state.batteryBreakerStatus = rs.wasNull() ? null : Integer.valueOf(battery);
+                state.upsOperationMode = nullableInt(rs, "ups_operation_mode_code");
+                state.systemOperationMode = nullableInt(rs, "system_operation_mode_code");
+                state.bypassStatus = nullableInt(rs, "bypass_status_code");
+                state.energyStorageStatus = nullableInt(rs, "energy_storage_status_code");
+                state.inputStatus = nullableInt(rs, "input_status_code");
+                state.outputStatus = nullableInt(rs, "output_status_code");
+                state.batteryCurrent = rs.getBigDecimal("battery_current");
                 return state;
             }
         }
@@ -396,7 +415,7 @@ public final class UpsCollectorService {
         }
     }
 
-    private static void syncBreakerEvents(int upsId, BreakerState previous, Map<String, BigDecimal> values) throws Exception {
+    private static void syncBreakerEvents(int upsId, LastStatusState previous, Map<String, BigDecimal> values) throws Exception {
         if (previous == null || values == null) return;
         Integer currentSwitchgear = intOrNull(values.get("switchgear_status"));
         Integer currentBattery = intOrNull(values.get("battery_breaker_status"));
@@ -410,7 +429,7 @@ public final class UpsCollectorService {
         }
     }
 
-    private static boolean breakerStateChanged(BreakerState previous, Map<String, BigDecimal> values) {
+    private static boolean breakerStateChanged(LastStatusState previous, Map<String, BigDecimal> values) {
         if (previous == null || values == null) return false;
         Integer currentSwitchgear = intOrNull(values.get("switchgear_status"));
         Integer currentBattery = intOrNull(values.get("battery_breaker_status"));
@@ -420,6 +439,52 @@ public final class UpsCollectorService {
         }
         return previous.batteryBreakerStatus != null && currentBattery != null
                 && previous.batteryBreakerStatus.intValue() != currentBattery.intValue();
+    }
+
+    private static boolean operationalStateChanged(LastStatusState previous, Map<String, BigDecimal> values) {
+        if (previous == null || values == null) return false;
+        return changed(previous.upsOperationMode, intOrNull(values.get("ups_operation_mode")))
+            || changed(previous.systemOperationMode, intOrNull(values.get("system_operation_mode")))
+            || changed(previous.inputStatus, intOrNull(values.get("input_status")))
+            || changed(previous.outputStatus, intOrNull(values.get("output_status")))
+            || changed(previous.bypassStatus, intOrNull(values.get("bypass_status")))
+            || changed(previous.energyStorageStatus, intOrNull(values.get("energy_storage_status")))
+            || changed(Integer.valueOf(batteryFlowState(previous.batteryCurrent)), Integer.valueOf(batteryFlowState(values.get("battery_current"))));
+    }
+
+    private static void syncOperationalEvents(int upsId, LastStatusState previous, Map<String, BigDecimal> values) throws Exception {
+        if (previous == null || values == null) return;
+        try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection()) {
+            compareCodeEvent(conn, upsId, "UPS_MODE_CHANGE", "ups_operation_mode",
+                    "UPS 운전 모드", previous.upsOperationMode, intOrNull(values.get("ups_operation_mode")), true);
+            compareCodeEvent(conn, upsId, "SYSTEM_MODE_CHANGE", "system_operation_mode",
+                    "시스템 운전 모드", previous.systemOperationMode, intOrNull(values.get("system_operation_mode")), true);
+            compareCodeEvent(conn, upsId, "INPUT_STATUS_CHANGE", "input_status",
+                    "입력 상태", previous.inputStatus, intOrNull(values.get("input_status")), false);
+            compareCodeEvent(conn, upsId, "OUTPUT_STATUS_CHANGE", "output_status",
+                    "출력 상태", previous.outputStatus, intOrNull(values.get("output_status")), false);
+            compareCodeEvent(conn, upsId, "BYPASS_STATUS_CHANGE", "bypass_status",
+                    "바이패스 상태", previous.bypassStatus, intOrNull(values.get("bypass_status")), false);
+            compareCodeEvent(conn, upsId, "ENERGY_STORAGE_STATUS_CHANGE", "energy_storage_status",
+                    "배터리/에너지 저장 상태", previous.energyStorageStatus, intOrNull(values.get("energy_storage_status")), false);
+            compareBatteryFlowEvent(conn, upsId, previous.batteryCurrent, values.get("battery_current"));
+        }
+    }
+
+    private static void compareCodeEvent(Connection conn, int upsId, String ruleCode, String metricKey,
+            String label, Integer previous, Integer current, boolean modeLabel) throws Exception {
+        if (!changed(previous, current)) return;
+        String before = modeLabel ? modeText(metricKey, previous) : statusCodeText(previous);
+        String after = modeLabel ? modeText(metricKey, current) : statusCodeText(current);
+        insertEvent(conn, upsId, ruleCode, metricKey, label + " " + before + " -> " + after, 3);
+    }
+
+    private static void compareBatteryFlowEvent(Connection conn, int upsId, BigDecimal previous, BigDecimal current) throws Exception {
+        int before = batteryFlowState(previous);
+        int after = batteryFlowState(current);
+        if (before == after) return;
+        insertEvent(conn, upsId, "BATTERY_FLOW_CHANGE", "battery_current",
+                "배터리 상태 " + batteryFlowText(before) + " -> " + batteryFlowText(after), 3);
     }
 
     private static void compareSwitchgearBreaker(Connection conn, int upsId, String name, String metricKey, Integer previous, Integer current, int bit) throws Exception {
@@ -448,8 +513,44 @@ public final class UpsCollectorService {
         return closed ? "Close" : "Open";
     }
 
+    private static Integer nullableInt(ResultSet rs, String column) throws Exception {
+        int value = rs.getInt(column);
+        return rs.wasNull() ? null : Integer.valueOf(value);
+    }
+
     private static Integer intOrNull(BigDecimal value) {
         return value == null ? null : Integer.valueOf(value.intValue());
+    }
+
+    private static boolean changed(Integer previous, Integer current) {
+        return previous != null && current != null && previous.intValue() != current.intValue();
+    }
+
+    private static String modeText(String metricKey, Integer value) {
+        if ("system_operation_mode".equals(metricKey)) {
+            String label = UpsFormatSupport.systemModeLabel(value);
+            return label == null || label.length() == 0 ? statusCodeText(value) : label;
+        }
+        String label = UpsFormatSupport.upsModeLabel(value);
+        return label == null || label.length() == 0 ? statusCodeText(value) : label;
+    }
+
+    private static String statusCodeText(Integer value) {
+        if (value == null) return "미수집";
+        return value.intValue() == 0 ? "정상(0)" : "상태값 " + value;
+    }
+
+    private static int batteryFlowState(BigDecimal current) {
+        if (current == null) return 0;
+        if (current.compareTo(new BigDecimal("0.1")) > 0) return 1;
+        if (current.compareTo(new BigDecimal("-0.1")) < 0) return -1;
+        return 0;
+    }
+
+    private static String batteryFlowText(int state) {
+        if (state > 0) return "충전";
+        if (state < 0) return "방전";
+        return "대기";
     }
 
     private static boolean compare(BigDecimal value, String operator, BigDecimal threshold) {

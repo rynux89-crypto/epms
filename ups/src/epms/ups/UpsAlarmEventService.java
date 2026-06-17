@@ -60,13 +60,7 @@ public final class UpsAlarmEventService {
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT TOP 200 a.alarm_id, d.ups_name, d.enabled AS device_enabled, a.severity, a.alarm_message, a.occurred_at, a.status ")
            .append("FROM dbo.ups_alarm_log a INNER JOIN dbo.ups_device d ON d.ups_id = a.ups_id ")
-           .append("WHERE a.status = 'EVENT' ")
-           .append("AND a.rule_code <> 'UPS_SCENARIO_CHANGE' ")
-           .append("AND NOT (a.rule_code = 'UPS_SCENARIO_CHANGE' AND (")
-           .append("a.alarm_message LIKE N'%배터리 부족%' OR a.alarm_message LIKE N'%과부하%' OR ")
-           .append("a.alarm_message LIKE N'%입력 이상%' OR a.alarm_message LIKE N'%출력 이상%' OR ")
-           .append("a.alarm_message LIKE N'%바이패스 이상%' OR a.alarm_message LIKE N'%파워 모듈 이상%' OR ")
-           .append("a.alarm_message LIKE N'%중요 알람%')) ");
+           .append("WHERE a.status = 'EVENT' ");
         List<Object> params = new ArrayList<Object>();
         appendEventSearch(sql, params, searchText, normalizedSearchText);
         appendTimeRange(sql, params, fromTs, toTs);
