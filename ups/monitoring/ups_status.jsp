@@ -284,7 +284,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         <div class="hmi">
             <div class="mimic-panel">
                 <div class="mimic-wrap">
-                <svg class="mimic-svg" viewBox="0 0 1040 360" role="img" aria-label="UPS mimic diagram">
+                <svg class="mimic-svg" viewBox="0 0 1040 382" role="img" aria-label="UPS mimic diagram">
                     <defs>
                         <marker id="mimicArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
                             <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"></path>
@@ -341,13 +341,13 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
                     <line x1="515" y1="291" x2="735" y2="291" class="mimic-line <%= staticBypassPathClass %>"></line>
                     <line x1="735" y1="291" x2="735" y2="57" class="mimic-line <%= staticBypassPathClass %>"></line>
 
-                    <text x="112" y="356" class="mimic-text">MBB</text>
-                    <line x1="100" y1="330" x2="145" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
-                    <line x1="145" y1="330" x2="<%= mbbClosed ? "205" : "175" %>" y2="<%= mbbClosed ? "330" : "307" %>" class="mimic-switch <%= mbbClosed ? "mimic-active" : "mimic-idle" %>"></line>
-                    <circle cx="145" cy="330" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
-                    <circle cx="205" cy="330" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
-                    <line x1="205" y1="330" x2="910" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
-                    <line x1="910" y1="330" x2="910" y2="57" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
+                    <text x="112" y="374" class="mimic-text">MBB</text>
+                    <line x1="100" y1="348" x2="145" y2="348" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
+                    <line x1="145" y1="348" x2="<%= mbbClosed ? "205" : "175" %>" y2="<%= mbbClosed ? "348" : "325" %>" class="mimic-switch <%= mbbClosed ? "mimic-active" : "mimic-idle" %>"></line>
+                    <circle cx="145" cy="348" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
+                    <circle cx="205" cy="348" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
+                    <line x1="205" y1="348" x2="910" y2="348" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
+                    <line x1="910" y1="348" x2="910" y2="57" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
 
                     <rect x="770" y="120" width="220" height="120" class="mimic-mode-box"></rect>
                     <text x="812" y="155" class="mimic-text">UPS 모드</text>
