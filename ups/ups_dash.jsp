@@ -161,6 +161,7 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
         var link = event.target.closest('a.kpi-link, a.row-link, .panel-head a, .meta .icon-btn');
         if (!link || link.classList.contains('dash-nav-link')) return;
         if (!root.contains(link) && !link.closest('.meta')) return;
+        if (link.closest('.ups-picker')) return;
         event.preventDefault();
         showFrameHref(link.getAttribute('href'), link.getAttribute('title'));
     });
