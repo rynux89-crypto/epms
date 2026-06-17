@@ -2,6 +2,8 @@ package epms.ups;
 
 import epms.util.UpsFormatSupport;
 import epms.util.UpsEventFormatSupport;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -116,7 +118,12 @@ public final class UpsDashboardFragmentRenderModel {
     }
 
     private static String displayDateTime(Object value) {
-        return value == null ? "--" : UpsFormatSupport.displaySlashDateTime(value);
+        if (value == null) return "--";
+        if (value instanceof Timestamp) {
+            return new SimpleDateFormat("HH:mm:ss").format((Timestamp)value);
+        }
+        String text = UpsFormatSupport.displaySlashDateTime(value);
+        return text.length() >= 8 ? text.substring(text.length() - 8) : text;
     }
 
     private static String valueOrDefault(Object value, String fallback) {
