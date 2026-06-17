@@ -68,7 +68,7 @@ public final class UpsDashboardFragmentRenderModel {
         for (Map<String, Object> row : d.alarms) {
             if (!"ACTIVE".equalsIgnoreCase(stringValue(row.get("status")))) continue;
             if (!alarmDeviceEnabled(row)) continue;
-            if (alarmsAdded >= 3) break;
+            if (alarmsAdded >= 4) break;
             alarmItems.add(new AlarmItem(
                 "CRITICAL".equalsIgnoreCase(stringValue(row.get("severity"))),
                 stringValue(row.get("ups_name")),
@@ -79,7 +79,7 @@ public final class UpsDashboardFragmentRenderModel {
         int eventsAdded = 0;
         for (Map<String, Object> row : d.events) {
             if (!"EVENT".equalsIgnoreCase(stringValue(row.get("status")))) continue;
-            if (eventsAdded >= 3) break;
+            if (eventsAdded >= 4) break;
             eventItems.add(new EventItem(
                 stringValue(row.get("ups_name")),
                 UpsEventFormatSupport.displayEventMessage(row.get("alarm_message")),

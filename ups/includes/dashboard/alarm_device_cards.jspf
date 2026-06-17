@@ -10,7 +10,7 @@
                         <% alarmRowCount++; } else { for (epms.ups.UpsDashboardFragmentRenderModel.AlarmItem item : fragmentModel.alarmItems) { alarmRowCount++; %>
                         <div class="alarm-row"><span class="sev <%= item.critical ? "critical" : "" %>">▲ <%= h(item.upsName) %></span><span><%= h(item.message) %></span><span><%= h(item.occurredAtText) %></span></div>
                         <% }} %>
-                        <% for (; alarmRowCount < 3; alarmRowCount++) { %>
+                        <% for (; alarmRowCount < 4; alarmRowCount++) { %>
                         <div class="alarm-row empty"><span>--</span><span></span><span></span></div>
                         <% } %>
                     </div>
@@ -25,7 +25,7 @@
                         <% eventRowCount++; } else { for (epms.ups.UpsDashboardFragmentRenderModel.EventItem item : fragmentModel.eventItems) { eventRowCount++; %>
                         <div class="event-row"><span class="event-ups">◇ <%= h(item.upsName) %></span><span><%= h(item.message) %></span><span><%= h(item.occurredAtText) %></span></div>
                         <% }} %>
-                        <% for (; eventRowCount < 3; eventRowCount++) { %>
+                        <% for (; eventRowCount < 4; eventRowCount++) { %>
                         <div class="event-row empty"><span>--</span><span></span><span></span></div>
                         <% } %>
                     </div>
