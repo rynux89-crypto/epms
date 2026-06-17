@@ -29,28 +29,28 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .summary-item { background:#fff; border:1px solid #dbe5f2; border-radius:8px; padding:9px 11px; }
         .summary-item span { display:block; color:#64748b; font-size:11px; margin-bottom:2px; }
         .summary-item strong { font-size:21px; color:#172033; }
-        .tiles-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(205px,1fr)); gap:9px; }
+        .tiles-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:10px; }
         .ups-board.tiles { display:block; }
-        .ups-tile { display:block; color:#172033; text-decoration:none; background:#fff; border:1px solid #dbe5f2; border-left:5px solid #94a3b8; border-radius:8px; padding:10px; min-height:134px; }
+        .ups-tile { display:block; color:#172033; text-decoration:none; background:#fff; border:1px solid #dbe5f2; border-left:6px solid #94a3b8; border-radius:8px; padding:12px; min-height:158px; }
         .ups-tile.normal { border-left-color:#16a34a; }
         .ups-tile.alarm { border-left-color:#f59e0b; }
         .ups-tile.comm { border-left-color:#dc2626; }
         .ups-tile.unknown { border-left-color:#64748b; }
         .ups-tile.disabled { border-left-color:#94a3b8; opacity:.72; }
-        .tile-head { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; margin-bottom:7px; }
-        .tile-name { font-size:15px; font-weight:800; line-height:1.2; }
-        .tile-meta { color:#64748b; font-size:11px; margin-top:2px; line-height:1.25; }
-        .status-badge { display:inline-flex; align-items:center; min-width:54px; justify-content:center; border-radius:999px; padding:3px 7px; font-size:11px; font-weight:800; background:#eef2f7; color:#334155; white-space:nowrap; }
+        .tile-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:8px; }
+        .tile-name { font-size:16px; font-weight:800; line-height:1.22; }
+        .tile-meta { color:#64748b; font-size:12px; margin-top:3px; line-height:1.32; }
+        .status-badge { display:inline-flex; align-items:center; min-width:60px; justify-content:center; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:800; background:#eef2f7; color:#334155; white-space:nowrap; }
         .status-badge.normal { background:#dcfce7; color:#166534; }
         .status-badge.alarm { background:#fef3c7; color:#92400e; }
         .status-badge.comm { background:#fee2e2; color:#991b1b; }
         .status-badge.unknown { background:#e2e8f0; color:#334155; }
         .status-badge.disabled { background:#e5e7eb; color:#4b5563; }
-        .tile-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; margin-top:7px; }
-        .metric { border-top:1px solid #edf2f7; padding-top:5px; min-width:0; }
-        .metric span { display:block; color:#64748b; font-size:10px; margin-bottom:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .metric strong { display:block; font-size:14px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .tile-footer { display:flex; justify-content:space-between; gap:8px; color:#64748b; font-size:11px; margin-top:7px; padding-top:6px; border-top:1px solid #edf2f7; }
+        .tile-metrics { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:9px; }
+        .metric { border-top:1px solid #edf2f7; padding-top:6px; min-width:0; }
+        .metric span { display:block; color:#64748b; font-size:11px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .metric strong { display:block; font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .tile-footer { display:flex; justify-content:space-between; gap:8px; color:#64748b; font-size:12px; margin-top:9px; padding-top:7px; border-top:1px solid #edf2f7; }
         .list-panel { display:none; background:#fff; border:1px solid #dbe5f2; border-radius:8px; overflow:auto; }
         .ups-board.list { display:block; }
         .ups-board.list .tiles-wrap { display:none; }
