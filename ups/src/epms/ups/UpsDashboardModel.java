@@ -42,9 +42,11 @@ public final class UpsDashboardModel {
     public double avgVoltage = 220.0;
     public double avgFreq = 60.0;
     public double powerSum;
+    public double apparentPowerSum;
     public double selectedLoad;
     public double selectedBattery;
     public double selectedPower;
+    public double selectedApparentPower;
     public double selectedInputVoltage;
     public double selectedVoltage;
     public double selectedFreq;

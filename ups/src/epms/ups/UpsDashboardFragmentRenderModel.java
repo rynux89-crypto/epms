@@ -22,6 +22,7 @@ public final class UpsDashboardFragmentRenderModel {
     public final String avgLoadText;
     public final String avgBatteryText;
     public final String powerSumText;
+    public final String apparentPowerSumText;
     public final String kpiLoadMiniPoints;
     public final String kpiBatteryMiniBars;
     public final List<DeviceOption> deviceOptions = new ArrayList<DeviceOption>();
@@ -53,6 +54,7 @@ public final class UpsDashboardFragmentRenderModel {
         this.avgLoadText = fmt(Double.valueOf(d.avgLoad), 0);
         this.avgBatteryText = fmt(Double.valueOf(d.avgBattery), 0);
         this.powerSumText = fmt(Double.valueOf(d.powerSum), 0);
+        this.apparentPowerSumText = fmt(Double.valueOf(d.apparentPowerSum), 0);
         this.kpiLoadMiniPoints = UpsDashboardRenderSupport.kpiLoadMiniPoints(d.avgLoad);
         this.kpiBatteryMiniBars = UpsDashboardRenderSupport.kpiBatteryMiniBars(d.avgBattery);
 

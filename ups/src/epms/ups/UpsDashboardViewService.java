@@ -123,6 +123,9 @@ public final class UpsDashboardViewService {
             if (measurement != null && measurement.get("output_power_kw") != null) {
                 model.powerSum += num(measurement.get("output_power_kw"), 0);
             }
+            if (measurement != null && measurement.get("output_apparent_total_kva") != null) {
+                model.apparentPowerSum += num(measurement.get("output_apparent_total_kva"), 0);
+            }
             if (measurement != null && measurement.get("output_voltage") != null) {
                 voltageSum += num(measurement.get("output_voltage"), 0);
                 voltageCount++;
@@ -143,6 +146,7 @@ public final class UpsDashboardViewService {
         model.selectedLoad = num(model.selectedMeasurementModel.get("load_percent"), model.avgLoad);
         model.selectedBattery = num(model.selectedMeasurementModel.get("battery_charge_percent"), model.avgBattery);
         model.selectedPower = num(model.selectedMeasurementModel.get("output_power_kw"), model.powerSum);
+        model.selectedApparentPower = num(model.selectedMeasurementModel.get("output_apparent_total_kva"), model.apparentPowerSum);
         model.selectedInputVoltage = num(model.selectedMeasurementModel.get("input_voltage"), model.avgVoltage);
         model.selectedVoltage = num(model.selectedMeasurementModel.get("output_voltage"), model.avgVoltage);
         model.selectedFreq = num(model.selectedMeasurementModel.get("frequency"), model.avgFreq);
@@ -198,7 +202,7 @@ public final class UpsDashboardViewService {
             : (model.batteryCharging ? "상용전원 공급 / 배터리 충전" : "상용전원 공급")))));
 
         model.flowUtilityDisplay = model.selectedOnline ? fmt(model.selectedInputVoltage, 0) + " V / " + fmt(model.selectedFreq, 1) + " Hz" : "--";
-        model.flowLoadDisplay = model.selectedOnline ? fmt(model.selectedPower, 0) + " kW / " + fmt(model.selectedLoad, 0) + "%" : "--";
+        model.flowLoadDisplay = model.selectedOnline ? fmt(model.selectedPower, 0) + " kW / " + fmt(model.selectedApparentPower, 0) + " kVA / " + fmt(model.selectedLoad, 0) + "%" : "--";
         model.flowBatteryDisplay = model.selectedOnline ? fmt(model.selectedBattery, 0) + "% / " + fmt(model.selectedBatteryCurrent, 0) + " A" : "--";
     }
 
