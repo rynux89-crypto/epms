@@ -205,8 +205,8 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
             box-shadow:0 8px 22px rgba(15,23,42,.06);
         }
         .hmi-panel h3 { margin:0 0 8px; text-align:center; font-size:24px; font-weight:900; color:#0f172a; line-height:1.08; }
-        .metric-row { display:grid; grid-template-columns:70px 18px 1fr; gap:8px; align-items:center; font-size:23px; line-height:1.2; }
-        .metric-row .val { text-align:right; font-weight:700; color:#111827; }
+        .metric-row { display:grid; grid-template-columns:70px 18px 1fr; gap:8px; align-items:center; font-size:22px; font-weight:700; line-height:1.2; color:#334155; }
+        .metric-row .val { text-align:right; font-weight:800; color:#111827; }
         .battery-panel { display:grid; grid-template-columns:1fr 120px 1fr; align-items:center; gap:10px; }
         .battery-time { text-align:center; line-height:1.18; }
         .battery-time-title { font-size:19px; font-weight:900; margin-bottom:5px; color:#334155; }
