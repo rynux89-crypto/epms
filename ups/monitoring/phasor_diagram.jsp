@@ -195,7 +195,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         .phasor-toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; min-height:30px; }
         .phasor-toolbar form { margin:0; }
         .phasor-toolbar select { min-width:240px; height:28px; padding:2px 8px; border:1px solid #9aa3ad; border-radius:5px; background:#fff; font-size:13px; }
-        .phasor-hmi { background:#18251f; border:4px solid #ecf2f6; box-shadow:0 14px 34px rgba(22,35,48,.18); padding:7px 10px 6px; color:#23ff35; font-family:Consolas,"Segoe UI",monospace; }
+        .phasor-hmi { position:relative; background:#18251f; border:4px solid #ecf2f6; box-shadow:0 14px 34px rgba(22,35,48,.18); padding:7px 88px 6px 10px; color:#23ff35; font-family:Consolas,"Segoe UI",monospace; }
         .hmi-title { height:26px; margin:-7px -10px 6px; padding:4px 10px; background:linear-gradient(90deg,#1f8fd6 0%,#58c5f4 46%,#dff7ff 100%); color:#fff; font-size:16px; line-height:18px; font-weight:900; letter-spacing:.2px; text-shadow:0 1px 2px rgba(0,0,0,.72),0 0 4px rgba(0,0,0,.42); }
         .scope-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); border-left:1px solid rgba(43,255,65,.32); border-top:1px solid rgba(43,255,65,.32); background-color:#15221c; }
         .scope-cell { min-width:0; height:calc(54vh - 86px); min-height:250px; max-height:310px; border-right:1px solid rgba(43,255,65,.32); border-bottom:1px solid rgba(43,255,65,.32); padding:6px 8px; position:relative; background:#15221c; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; }
@@ -222,7 +222,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         .phase-arrow.phase-yellow { fill:#ffe84a; }
         .phase-arrow.phase-blue { fill:#1678ff; }
         .wave-line { fill:none; stroke-width:1.45; stroke-linecap:round; }
-        .phase-legend { display:flex; align-items:center; flex-wrap:wrap; gap:6px 13px; margin:0 0 5px; padding:0 2px; font-size:13px; font-weight:900; color:#d8ffe0; }
+        .phase-legend { position:absolute; top:34px; right:12px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin:0; padding:8px 6px; font-size:13px; font-weight:900; color:#d8ffe0; background:rgba(21,34,28,.82); border-left:1px solid rgba(43,255,65,.28); z-index:2; }
         .phase-legend span { display:inline-flex; align-items:center; gap:5px; }
         .phase-dot { width:10px; height:10px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
         .phase-tag { font:900 13px Consolas,"Segoe UI",monospace; text-anchor:middle; dominant-baseline:middle; paint-order:stroke; stroke:#15221c; stroke-width:4px; stroke-linejoin:round; }
@@ -236,9 +236,9 @@ double waveITop = Math.max(1d, iMax * 1.2d);
             .phasor-shell { padding-top:4px; padding-bottom:4px; }
             .phasor-toolbar { min-height:28px; }
             .phasor-toolbar select { height:26px; }
-            .phasor-hmi { padding:6px 8px 5px; }
+            .phasor-hmi { padding:6px 76px 5px 8px; }
             .hmi-title { height:23px; margin:-6px -8px 4px; padding:3px 9px; font-size:15px; line-height:17px; }
-            .phase-legend { margin-bottom:3px; font-size:12px; }
+            .phase-legend { top:28px; right:8px; gap:6px; padding:6px 4px; font-size:12px; }
             .scope-cell { min-height:220px; }
             .scope-cell.wave { min-height:165px; }
             .note { display:none; }
@@ -246,6 +246,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         @media (max-width: 900px) {
             .scope-grid { grid-template-columns:1fr; }
             .phasor-toolbar { align-items:flex-start; flex-direction:column; }
+            .phasor-hmi { padding-right:8px; }
+            .phase-legend { position:static; flex-direction:row; flex-wrap:wrap; margin-bottom:5px; padding:0 2px; background:transparent; border-left:0; }
             .scope-cell, .scope-cell.wave { height:auto; min-height:0; max-height:none; }
             .dial-svg, .wave-svg { height:auto; }
         }
@@ -298,8 +300,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="8" y="10" class="scope-label">Nominal voltage</text>
-                    <text x="8" y="27" class="scope-small"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
+                    <text x="2" y="10" class="scope-label">Nominal voltage</text>
+                    <text x="2" y="27" class="scope-small"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
@@ -343,8 +345,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="8" y="10" class="scope-label">Max scale current</text>
-                    <text x="8" y="27" class="scope-small"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
+                    <text x="2" y="10" class="scope-label">Max scale current</text>
+                    <text x="2" y="27" class="scope-small"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
