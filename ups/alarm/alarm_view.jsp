@@ -114,6 +114,5 @@ if ("csv".equalsIgnoreCase(export)) {
     }, refreshMs);
 })();
 </script>
-<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

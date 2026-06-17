@@ -194,6 +194,5 @@ if (message.length() > 0) {
         <% } %>
     </div>
 </div>
-<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

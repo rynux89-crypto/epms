@@ -1,4 +1,4 @@
-﻿<%@ page import="java.util.*" %>
+<%@ page import="java.util.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="includes/ups_html.jspf" %>
 <%
@@ -66,9 +66,9 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
             <%@ include file="includes/dashboard/bottom_cards.jspf" %>
         </section>
         <iframe id="dashContentFrame" class="dash-content-frame" title="UPS 화면" src="about:blank"></iframe>
+        <%@ include file="includes/ups_footer.jspf" %>
     </main>
 </div>
-<%@ include file="includes/ups_footer.jspf" %>
 <script>
 (function () {
     var root = document.getElementById('dashboardRefresh');

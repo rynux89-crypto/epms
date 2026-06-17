@@ -111,6 +111,5 @@ Object collectorInterval = setupStatus.get("collectorInterval");
         </form>
     </div>
 </div>
-<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

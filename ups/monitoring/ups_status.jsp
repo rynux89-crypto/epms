@@ -439,6 +439,5 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         <% } %>
     </div>
 </div>
-<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>

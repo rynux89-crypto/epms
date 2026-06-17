@@ -1,4 +1,4 @@
-﻿<%@ page import="java.util.*" %>
+<%@ page import="java.util.*" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="../includes/ups_html.jspf" %>
 <%!
@@ -452,7 +452,6 @@ double waveITop = Math.max(1d, iMax * 1.2d);
     </div>
     <div class="note">역률 기반 추정 위상도입니다. 별도의 leading/lagging 정보가 없으면 전류가 전압보다 늦는 지상(lagging) 부하로 가정합니다.</div>
 </div>
-<%@ include file="../includes/ups_footer.jspf" %>
 <script>
 (function () {
     var hmi = document.getElementById('phasorHmi');

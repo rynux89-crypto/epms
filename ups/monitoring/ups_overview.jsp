@@ -1,4 +1,4 @@
-﻿<%@ page import="java.util.*" %>
+<%@ page import="java.util.*" %>
 <%@ page import="epms.ups.UpsOverviewItem" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="../includes/ups_html.jspf" %>
@@ -275,7 +275,6 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
     setInterval(tick, 1000);
 })();
 </script>
-<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>
 

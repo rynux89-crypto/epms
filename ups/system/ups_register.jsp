@@ -231,6 +231,5 @@ boolean editMode = editDevice != null;
         </div>
     </div>
 </div>
-<%@ include file="../includes/ups_footer.jspf" %>
 </body>
 </html>
