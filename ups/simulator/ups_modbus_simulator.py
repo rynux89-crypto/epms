@@ -789,13 +789,13 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .section-head {{ display:flex; justify-content:space-between; align-items:center; gap:12px; min-height:36px; margin-bottom:12px; }}
 .section-head h2 {{ margin:0; }}
 .scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }}
-button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:12px; text-align:center; cursor:pointer; min-height:72px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
-button.scenario strong {{ display:block; font-size:15px; margin-bottom:4px; }}
+button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:9px 10px; text-align:center; cursor:pointer; min-height:58px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
+button.scenario strong {{ display:block; font-size:14px; margin-bottom:3px; }}
 button.scenario span {{ color:#64748b; font-size:12px; }}
 button.scenario.active {{ border-color:#1267b1; background:#eaf4ff; box-shadow:inset 0 0 0 1px #1267b1; }}
 .breaker-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:10px; margin-top:0; }}
-button.breaker {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:12px; cursor:pointer; text-align:center; min-height:72px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
-button.breaker strong {{ display:block; font-size:15px; margin-bottom:4px; }}
+button.breaker {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:9px 10px; cursor:pointer; text-align:center; min-height:58px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
+button.breaker strong {{ display:block; font-size:14px; margin-bottom:3px; }}
 button.breaker span {{ display:block; font-size:12px; color:#64748b; }}
 button.breaker.closed {{ border-color:#169b45; background:#ecfdf3; }}
 button.breaker.open {{ border-color:#9ca3af; background:#f8fafc; }}
