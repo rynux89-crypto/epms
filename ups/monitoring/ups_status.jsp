@@ -329,10 +329,11 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
                     <line x1="100" y1="291" x2="100" y2="330" class="mimic-line <%= bypassInputBranchClass %>"></line>
                     <line x1="140" y1="291" x2="<%= ssibClosed ? "200" : "170" %>" y2="<%= ssibClosed ? "291" : "268" %>" class="mimic-switch <%= ssibClosed ? "mimic-active" : "mimic-idle" %>"></line>
                     <circle cx="140" cy="291" r="6" class="mimic-dot <%= ssibClosed ? "active" : "" %>"></circle>
-                    <circle cx="200" cy="291" r="6" class="mimic-dot <%= bf2Closed ? "active" : "" %>"></circle>
+                    <circle cx="200" cy="291" r="6" class="mimic-dot <%= ssibClosed ? "active" : "" %>"></circle>
                     <text x="197" y="258" class="mimic-text">BF2</text>
                     <line x1="200" y1="291" x2="<%= bf2Closed ? "255" : "235" %>" y2="<%= bf2Closed ? "291" : "266" %>" class="mimic-switch <%= bf2Closed ? "mimic-active" : "mimic-idle" %>"></line>
-                    <line x1="200" y1="291" x2="425" y2="291" class="mimic-line <%= staticBypassPathClass %>"></line>
+                    <circle cx="255" cy="291" r="6" class="mimic-dot <%= staticBypassPath ? "active" : "" %>"></circle>
+                    <line x1="255" y1="291" x2="425" y2="291" class="mimic-line <%= staticBypassPathClass %>"></line>
 
                     <rect x="425" y="250" width="90" height="82" class="mimic-device <%= staticBypassPath ? "active" : "" %>"></rect>
                     <path d="M470 267 v46" stroke="<%= staticBypassPath ? "#169b45" : "#9b9b9b" %>" stroke-width="4"></path>
