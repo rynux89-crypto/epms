@@ -777,6 +777,7 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .panel + .panel {{ margin-top:12px; }}
 .scenario-breaker-row {{ display:grid; grid-template-columns:minmax(0, 1.45fr) minmax(520px, 1fr); gap:12px; margin-top:12px; align-items:start; }}
 .scenario-breaker-row .panel {{ margin-top:0; height:100%; }}
+.scenario-breaker-row + .panel {{ margin-top:12px; }}
 .status-panel {{ margin-bottom:0; padding:12px; }}
 .status-panel h2 {{ margin:0 0 8px; font-size:18px; }}
 .status-summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(138px,1fr)); gap:6px; }}
@@ -827,7 +828,7 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
 .links {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }}
 .links a {{ color:#1267b1; text-decoration:none; border:1px solid #cbd8e6; border-radius:6px; padding:7px 10px; background:#fff; font-size:13px; }}
 @media (max-width: 1100px) {{ .scenario-breaker-row {{ grid-template-columns:1fr; }} }}
-@media (max-width: 860px) {{ .wrap {{ padding:14px; }} .top {{ display:block; }} .top-actions {{ justify-content:flex-start; margin-top:12px; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} .scenario-breaker-row {{ margin-top:0; gap:0; }} .metrics {{ grid-template-columns:1fr; }} }}
+@media (max-width: 860px) {{ .wrap {{ padding:14px; }} .top {{ display:block; }} .top-actions {{ justify-content:flex-start; margin-top:12px; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} .scenario-breaker-row {{ margin-top:0; gap:0; }} .scenario-breaker-row + .panel {{ margin-top:0; }} .metrics {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
 <body>
