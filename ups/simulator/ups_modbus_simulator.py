@@ -630,6 +630,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self.server.state.reset_manual_values()  # type: ignore[attr-defined]
                 self._json({"ok": True, **self.server.state.snapshot()})  # type: ignore[attr-defined]
                 return
+            if parsed.path == "/api/shutdown":
+                self._json({"ok": True})
+                self.server.stop_event.set()  # type: ignore[attr-defined]
+                return
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -1097,9 +1101,10 @@ setInterval(refresh, 2000);
 
 
 class ControlServer(ThreadingHTTPServer):
-    def __init__(self, server_address: tuple[str, int], state: SimulatorState):
+    def __init__(self, server_address: tuple[str, int], state: SimulatorState, stop_event: threading.Event):
         super().__init__(server_address, ControlHandler)
         self.state = state
+        self.stop_event = stop_event
 
 
 def console_loop(state: SimulatorState, server: ThreadedTcpServer) -> None:
@@ -1139,6 +1144,7 @@ def main() -> int:
 
     state = SimulatorState(scenario=args.scenario)
     control_server = None
+    stop_event = threading.Event()
     try:
         server = ThreadedTcpServer((args.host, args.port), ModbusHandler, state)
     except OSError as exc:
@@ -1152,7 +1158,7 @@ def main() -> int:
 
     if not args.no_control:
         try:
-            control_server = ControlServer((args.control_host, args.control_port), state)
+            control_server = ControlServer((args.control_host, args.control_port), state, stop_event)
         except OSError as exc:
             print(f"failed to bind control UI {args.control_host}:{args.control_port}: {exc}", file=sys.stderr)
         else:
@@ -1165,8 +1171,8 @@ def main() -> int:
 
     try:
         if args.no_console:
-            while True:
-                time.sleep(1)
+            while not stop_event.is_set():
+                time.sleep(0.2)
         else:
             console_loop(state, server)
     except KeyboardInterrupt:
