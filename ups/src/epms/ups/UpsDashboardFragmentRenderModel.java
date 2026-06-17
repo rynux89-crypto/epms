@@ -94,6 +94,7 @@ public final class UpsDashboardFragmentRenderModel {
             Object load = measurement == null ? null : measurement.get("load_percent");
             Object battery = measurement == null ? null : measurement.get("battery_charge_percent");
             deviceItems.add(new DeviceItem(
+                stringValue(row.get("ups_id")),
                 stringValue(row.get("ups_name")),
                 stringValue(row.get("profile_name")),
                 fmt(load, 0),
@@ -184,6 +185,7 @@ public final class UpsDashboardFragmentRenderModel {
     }
 
     public static final class DeviceItem {
+        public final String id;
         public final String name;
         public final String profileName;
         public final String loadText;
@@ -194,9 +196,10 @@ public final class UpsDashboardFragmentRenderModel {
         public final String statusText;
         public final String location;
 
-        DeviceItem(String name, String profileName, String loadText, String loadStyle,
+        DeviceItem(String id, String name, String profileName, String loadText, String loadStyle,
                 String batteryText, String batteryStyle, String statusClass,
                 String statusText, String location) {
+            this.id = id;
             this.name = name;
             this.profileName = profileName;
             this.loadText = loadText;
