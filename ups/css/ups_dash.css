@@ -31,7 +31,7 @@
         .main { padding:24px 28px 28px; min-width:0; }
         #dashboardRefresh { display:flex; flex-direction:column; gap:var(--dash-gap); min-width:0; }
         #dashboardRefresh.hidden { display:none; }
-        .dash-content-frame { display:none; width:100%; min-height:calc(100vh - 118px); border:1px solid var(--dash-line); border-radius:8px; background:#edf2f7; box-shadow:0 18px 38px rgba(0,0,0,.22); }
+        .dash-content-frame { display:none; width:100%; min-height:calc(100vh - 96px); border:1px solid var(--dash-line); border-radius:8px; background:#edf2f7; box-shadow:0 18px 38px rgba(0,0,0,.22); }
         .dash-content-frame.active { display:block; }
         .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; gap:16px; }
         .topbar h1 { color:#fff; font-size:28px; margin:0; }
@@ -210,6 +210,7 @@
             .avatar { width:30px; height:30px; }
             .main { height:100vh; padding:16px 20px; overflow:hidden; display:flex; flex-direction:column; gap:var(--dash-gap); }
             #dashboardRefresh { flex:1 1 auto; min-height:0; gap:var(--dash-gap); }
+            .dash-content-frame.active { flex:1 1 auto; min-height:0; height:100%; }
             .topbar { margin-bottom:0; }
             .topbar h1 { font-size:24px; }
             .meta { font-size:13px; gap:12px; }
