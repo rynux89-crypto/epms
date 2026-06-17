@@ -99,6 +99,22 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
             item.classList.toggle('active', item === link);
         });
     }
+    function sameDashboardTarget(link, href) {
+        try {
+            var linkUrl = new URL(link.getAttribute('href'), window.location.href);
+            var targetUrl = new URL(href, window.location.href);
+            return linkUrl.pathname === targetUrl.pathname && linkUrl.search === targetUrl.search;
+        } catch (e) {
+            return false;
+        }
+    }
+    function setActiveByHref(href) {
+        var matched = navLinks.find(function (link) {
+            return sameDashboardTarget(link, href);
+        });
+        if (matched) setActive(matched);
+        return matched;
+    }
     function showDashboard(link) {
         dashboardVisible = true;
         root.classList.remove('hidden');
@@ -123,6 +139,15 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
         url.searchParams.set('embed', '1');
         return url.pathname + url.search + url.hash;
     }
+    function showFrameHref(href, frameTitle) {
+        if (!frame || !href) return;
+        var matched = setActiveByHref(href);
+        dashboardVisible = false;
+        root.classList.add('hidden');
+        frame.classList.add('active');
+        frame.setAttribute('src', embedUrl(href));
+        if (title) title.textContent = frameTitle || (matched && matched.getAttribute('data-title')) || '';
+    }
     navLinks.forEach(function (link) {
         link.addEventListener('click', function (event) {
             if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
@@ -130,6 +155,14 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
             if (link.getAttribute('data-dashboard') === 'true') showDashboard(link);
             else showFrame(link);
         });
+    });
+    document.addEventListener('click', function (event) {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
+        var link = event.target.closest('a.kpi-link, .panel-head a, .meta .icon-btn');
+        if (!link || link.classList.contains('dash-nav-link')) return;
+        if (!root.contains(link) && !link.closest('.meta')) return;
+        event.preventDefault();
+        showFrameHref(link.getAttribute('href'), link.getAttribute('title'));
     });
     function selectedUpsId() {
         var params = new URLSearchParams(window.location.search);
