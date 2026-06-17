@@ -24,16 +24,17 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
             <div><strong>UPS WATCH</strong><span>통합 모니터링 시스템</span></div>
         </div>
         <nav class="nav">
-            <a class="active" href="ups_main.jsp">▣ 대시보드</a>
-            <a href="monitoring/ups_overview.jsp">▤ 장비 현황</a>
-            <a href="monitoring/ups_status.jsp">⌁ 실시간 상태</a>
-            <a href="monitoring/phasor_diagram.jsp<%= h(fragmentModel.selectedLinkQuery) %>">◌ 페이저 다이어그램</a>
-            <a href="alarm/alarm_view.jsp?status=ACTIVE">△ 경고 알림</a>
-            <a href="alarm/event_view.jsp">◇ 이벤트</a>
-            <a href="history/measurement_history.jsp">▦ 이력 관리</a>
-            <a href="report/ups_report.jsp">□ 보고서</a>
-            <a href="system/ups_register.jsp">⚙ 설정 관리</a>
-            <a href="system/setup.jsp">⚙ 시스템 관리</a>
+            <a href="ups_main.jsp">▣ UPS 메인</a>
+            <a class="active" href="ups_dash.jsp<%= h(fragmentModel.selectedLinkQuery) %>">▣ UPS 통합 모니터링</a>
+            <a href="monitoring/ups_overview.jsp">▤ UPS 전체 현황</a>
+            <a href="monitoring/ups_status.jsp">⌁ UPS 모니터링</a>
+            <a href="monitoring/phasor_diagram.jsp<%= h(fragmentModel.selectedLinkQuery) %>">◌ UPS Phasor Diagram</a>
+            <a href="alarm/alarm_view.jsp?status=ACTIVE">△ UPS 알람</a>
+            <a href="alarm/event_view.jsp">◇ UPS 이벤트</a>
+            <a href="history/measurement_history.jsp">▦ UPS 측정 이력</a>
+            <a href="report/ups_report.jsp">□ UPS 레포트</a>
+            <a href="system/ups_register.jsp">⚙ UPS 등록</a>
+            <a href="system/setup.jsp">⚙ UPS 초기 설정</a>
         </nav>
         <div class="side-status">
             <small>시스템 상태</small>
