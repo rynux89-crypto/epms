@@ -239,13 +239,6 @@ double waveITop = Math.max(1d, iMax * 1.2d);
 </head>
 <body>
 <div class="page-wrap phasor-shell">
-    <div class="title-bar">
-        
-        <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='ups_status.jsp'">실시간 상태</button>
-        </div>
-    </div>
-
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <div class="phasor-toolbar">
