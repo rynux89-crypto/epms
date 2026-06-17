@@ -186,7 +186,9 @@ public final class UpsApiService {
             || "output_fault".equals(scenario)
             || "bypass_fault".equals(scenario)
             || "power_module_fault".equals(scenario)
-            || "critical".equals(scenario);
+            || "critical".equals(scenario)
+            || "epo".equals(scenario)
+            || "output_off".equals(scenario);
     }
 
     private static String insertSimulatorEvent(String ruleCode, String metricKey, String message, int duplicateSeconds) {
@@ -289,7 +291,9 @@ public final class UpsApiService {
             return "";
         }
         String s = raw.trim().toLowerCase(java.util.Locale.ROOT);
-        if ("normal".equals(s) || "battery".equals(s) || "bypass".equals(s) || "low_battery".equals(s) ||
+        if ("normal".equals(s) || "battery".equals(s) || "bypass".equals(s) ||
+            "output_off".equals(s) || "maintenance_bypass".equals(s) || "battery_test".equals(s) ||
+            "epo".equals(s) || "battery_charging".equals(s) || "low_battery".equals(s) ||
             "overload".equals(s) || "input_fault".equals(s) || "output_fault".equals(s) ||
             "bypass_fault".equals(s) || "power_module_fault".equals(s) || "critical".equals(s)) {
             return s;
@@ -301,6 +305,11 @@ public final class UpsApiService {
         if ("normal".equals(s)) return "정상";
         if ("battery".equals(s)) return "배터리 운전";
         if ("bypass".equals(s)) return "바이패스 운전";
+        if ("output_off".equals(s)) return "출력 OFF";
+        if ("maintenance_bypass".equals(s)) return "유지보수 바이패스";
+        if ("battery_test".equals(s)) return "배터리 테스트";
+        if ("epo".equals(s)) return "EPO 동작";
+        if ("battery_charging".equals(s)) return "배터리 충전";
         if ("low_battery".equals(s)) return "배터리 부족";
         if ("overload".equals(s)) return "과부하";
         if ("input_fault".equals(s)) return "입력 이상";

@@ -99,6 +99,11 @@ public final class UpsFormatSupport {
         if ("normal".equals(scenario)) return "\uC815\uC0C1";
         if ("battery".equals(scenario)) return "\uBC30\uD130\uB9AC \uC6B4\uC804";
         if ("bypass".equals(scenario)) return "\uBC14\uC774\uD328\uC2A4 \uC6B4\uC804";
+        if ("output_off".equals(scenario)) return "\uCD9C\uB825 OFF";
+        if ("maintenance_bypass".equals(scenario)) return "\uC720\uC9C0\uBCF4\uC218 \uBC14\uC774\uD328\uC2A4";
+        if ("battery_test".equals(scenario)) return "\uBC30\uD130\uB9AC \uD14C\uC2A4\uD2B8";
+        if ("epo".equals(scenario)) return "EPO \uB3D9\uC791";
+        if ("battery_charging".equals(scenario)) return "\uBC30\uD130\uB9AC \uCDA9\uC804";
         if ("low_battery".equals(scenario)) return "\uBC30\uD130\uB9AC \uBD80\uC871";
         if ("overload".equals(scenario)) return "\uACFC\uBD80\uD558";
         if ("input_fault".equals(scenario)) return "\uC785\uB825 \uC774\uC0C1";

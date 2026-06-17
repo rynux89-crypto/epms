@@ -30,6 +30,11 @@ SCENARIOS = {
     "normal",
     "battery",
     "bypass",
+    "output_off",
+    "maintenance_bypass",
+    "battery_test",
+    "epo",
+    "battery_charging",
     "low_battery",
     "overload",
     "input_fault",
@@ -43,6 +48,11 @@ SCENARIO_LABELS = {
     "normal": "정상",
     "battery": "배터리 운전",
     "bypass": "바이패스 운전",
+    "output_off": "출력 OFF",
+    "maintenance_bypass": "유지보수 바이패스",
+    "battery_test": "배터리 테스트",
+    "epo": "EPO 동작",
+    "battery_charging": "배터리 충전",
     "low_battery": "배터리 부족",
     "overload": "과부하",
     "input_fault": "입력 이상",
@@ -270,8 +280,19 @@ class SimulatorState:
             "battery_charge_percent": regs.get(4871, 0),
             "battery_temperature_c": regs.get(4864, 0) / 10,
             "remaining_minutes": get_u32(regs, 4872) / 60,
-            "ups_operation_mode_code": 5 if scenario == "bypass" else (4 if scenario in ("battery", "low_battery") else 2),
-            "system_operation_mode_code": 5 if scenario == "bypass" else 2,
+            "ups_operation_mode_code": (
+                6 if scenario in ("output_off", "epo")
+                else 7 if scenario == "battery_test"
+                else 5 if scenario in ("bypass", "maintenance_bypass")
+                else 4 if scenario in ("battery", "low_battery")
+                else 2
+            ),
+            "system_operation_mode_code": (
+                6 if scenario in ("output_off", "epo")
+                else 8 if scenario == "maintenance_bypass"
+                else 5 if scenario == "bypass"
+                else 2
+            ),
             "ups_status_word": regs.get(1, 0),
             "input_status": regs.get(11, 0),
             "output_status": regs.get(12, 0),
@@ -310,6 +331,20 @@ class SimulatorState:
         power_module_status = 0
 
         output_load = 43
+        output_voltage_l12 = 380
+        output_voltage_l23 = 381
+        output_voltage_l31 = 379
+        output_current_l1 = 38
+        output_current_l2 = 37
+        output_current_l3 = 39
+        output_power_total = 40
+        output_power_l1 = 13
+        output_power_l2 = 13
+        output_power_l3 = 14
+        output_kva_total = 43
+        output_kva_l1 = 14
+        output_kva_l2 = 14
+        output_kva_l3 = 15
         battery_charge = 96
         battery_current = 4
         remaining_seconds = 7200
@@ -328,6 +363,37 @@ class SimulatorState:
         elif scenario == "bypass":
             ups_mode = 5
             system_mode = 5
+        elif scenario == "output_off":
+            ups_mode = 6
+            system_mode = 6
+            output_load = 0
+            output_voltage_l12 = output_voltage_l23 = output_voltage_l31 = 0
+            output_current_l1 = output_current_l2 = output_current_l3 = 0
+            output_power_total = output_power_l1 = output_power_l2 = output_power_l3 = 0
+            output_kva_total = output_kva_l1 = output_kva_l2 = output_kva_l3 = 0
+        elif scenario == "maintenance_bypass":
+            ups_mode = 5
+            system_mode = 8
+        elif scenario == "battery_test":
+            ups_mode = 7
+            battery_current = -12
+            remaining_seconds = 5400
+            battery_charge = 88
+        elif scenario == "epo":
+            ups_status |= 1 << 15
+            general_status |= 1 << 0
+            output_status |= 1 << 0
+            ups_mode = 6
+            system_mode = 6
+            output_load = 0
+            output_voltage_l12 = output_voltage_l23 = output_voltage_l31 = 0
+            output_current_l1 = output_current_l2 = output_current_l3 = 0
+            output_power_total = output_power_l1 = output_power_l2 = output_power_l3 = 0
+            output_kva_total = output_kva_l1 = output_kva_l2 = output_kva_l3 = 0
+        elif scenario == "battery_charging":
+            battery_current = 25
+            battery_charge = 88
+            remaining_seconds = 7200
         elif scenario == "low_battery":
             ups_status |= (1 << 0) | (1 << 1) | (1 << 14)
             energy_status |= (1 << 4) | (1 << 6) | (1 << 12)
@@ -471,26 +537,26 @@ class SimulatorState:
         regs[4609] = 220
         regs[4610] = 221
         regs[4611] = 219
-        regs[4612] = 380 + wave
-        regs[4613] = 381
-        regs[4614] = 379
-        regs[4615] = 38 + max(wave, 0)
-        regs[4616] = 37
-        regs[4617] = 39
-        regs[4618] = 13
-        regs[4619] = 13
-        regs[4620] = 14
-        regs[4621] = 14
-        regs[4622] = 14
-        regs[4623] = 15
+        regs[4612] = u16(output_voltage_l12 + wave)
+        regs[4613] = u16(output_voltage_l23)
+        regs[4614] = u16(output_voltage_l31)
+        regs[4615] = u16(output_current_l1 + max(wave, 0))
+        regs[4616] = u16(output_current_l2)
+        regs[4617] = u16(output_current_l3)
+        regs[4618] = u16(output_power_l1)
+        regs[4619] = u16(output_power_l2)
+        regs[4620] = u16(output_power_l3)
+        regs[4621] = u16(output_kva_l1)
+        regs[4622] = u16(output_kva_l2)
+        regs[4623] = u16(output_kva_l3)
         regs[4624] = u16(output_load * 10)
         regs[4625] = u16((output_load - 1) * 10)
         regs[4626] = u16((output_load + 1) * 10)
-        regs[4627] = 40
+        regs[4627] = u16(output_power_total)
         regs[4628] = 96
         regs[4629] = 95
         regs[4630] = 97
-        regs[4631] = 43
+        regs[4631] = u16(output_kva_total)
         regs[4632] = u16(output_load * 10)
 
         # Battery.
@@ -757,7 +823,7 @@ class ControlHandler(BaseHTTPRequestHandler):
     def _html(self) -> None:
         scenarios = "\n".join(
             f'<button class="scenario" data-scenario="{name}"><strong>{SCENARIO_LABELS[name]}</strong><span>{name}</span></button>'
-            for name in ["normal", "battery", "bypass", "low_battery", "overload", "input_fault", "output_fault", "bypass_fault", "power_module_fault", "critical"]
+            for name in ["normal", "battery", "battery_charging", "bypass", "maintenance_bypass", "output_off", "battery_test", "epo", "low_battery", "overload", "input_fault", "output_fault", "bypass_fault", "power_module_fault", "critical"]
         )
         body = f"""<!doctype html>
 <html lang="ko">
@@ -1140,8 +1206,9 @@ class ControlServer(ThreadingHTTPServer):
 
 
 def console_loop(state: SimulatorState, server: ThreadedTcpServer) -> None:
-    print("Commands: normal, battery, bypass, low_battery, overload, input_fault, output_fault,")
-    print("          bypass_fault, power_module_fault, critical, status, quit")
+    print("Commands: normal, battery, battery_charging, bypass, maintenance_bypass,")
+    print("          output_off, battery_test, epo, low_battery, overload, input_fault,")
+    print("          output_fault, bypass_fault, power_module_fault, critical, status, quit")
     while True:
         try:
             cmd = input("ups-sim> ").strip()

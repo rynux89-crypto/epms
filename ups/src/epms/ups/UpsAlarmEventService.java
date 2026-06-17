@@ -94,7 +94,9 @@ public final class UpsAlarmEventService {
             || "output_fault".equals(scenario)
             || "bypass_fault".equals(scenario)
             || "power_module_fault".equals(scenario)
-            || "critical".equals(scenario);
+            || "critical".equals(scenario)
+            || "epo".equals(scenario)
+            || "output_off".equals(scenario);
     }
 
     private static void insertScenarioEvent(String before, String after) {

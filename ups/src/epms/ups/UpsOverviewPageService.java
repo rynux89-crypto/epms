@@ -150,7 +150,10 @@ public final class UpsOverviewPageService {
         applySimulatorDefaults(row, scenario);
         row.put("measured_at", new Timestamp(System.currentTimeMillis()));
         row.put("last_comm_status", "OK");
-        if ("normal".equals(scenario) || "bypass".equals(scenario)) {
+        if ("normal".equals(scenario) || "bypass".equals(scenario)
+                || "maintenance_bypass".equals(scenario)
+                || "battery_test".equals(scenario)
+                || "battery_charging".equals(scenario)) {
             row.put("active_alarm_count", Integer.valueOf(0));
         } else if (intValue(row.get("active_alarm_count")) == 0) {
             row.put("active_alarm_count", Integer.valueOf(1));
@@ -166,11 +169,23 @@ public final class UpsOverviewPageService {
         if ("battery".equals(scenario)) {
             target.put("remaining_minutes", new BigDecimal("45"));
             target.put("battery_charge_percent", new BigDecimal("72"));
+        } else if ("battery_charging".equals(scenario)) {
+            target.put("remaining_minutes", new BigDecimal("120"));
+            target.put("battery_charge_percent", new BigDecimal("88"));
+        } else if ("battery_test".equals(scenario)) {
+            target.put("remaining_minutes", new BigDecimal("90"));
+            target.put("battery_charge_percent", new BigDecimal("88"));
         } else if ("low_battery".equals(scenario)) {
             target.put("remaining_minutes", new BigDecimal("7"));
             target.put("battery_charge_percent", new BigDecimal("8"));
-        } else if ("bypass".equals(scenario)) {
+        } else if ("bypass".equals(scenario) || "maintenance_bypass".equals(scenario)) {
             target.put("remaining_minutes", new BigDecimal("120"));
+            if (target.get("battery_charge_percent") == null) target.put("battery_charge_percent", new BigDecimal("96"));
+        } else if ("output_off".equals(scenario) || "epo".equals(scenario)) {
+            target.put("remaining_minutes", new BigDecimal("120"));
+            target.put("load_percent", BigDecimal.ZERO);
+            target.put("output_power_kw", BigDecimal.ZERO);
+            target.put("output_apparent_total_kva", BigDecimal.ZERO);
             if (target.get("battery_charge_percent") == null) target.put("battery_charge_percent", new BigDecimal("96"));
         } else if ("critical".equals(scenario)) {
             target.put("remaining_minutes", new BigDecimal("120"));

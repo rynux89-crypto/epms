@@ -65,9 +65,18 @@ public final class UpsRealtimeService {
             systemModeCode = UpsSimulatorSupport.jsonInt(simStatus, "system_operation_mode_code", systemModeCode);
             if ("normal".equals(simScenario)) upsModeCode = 2;
             if ("battery".equals(simScenario) || "low_battery".equals(simScenario)) upsModeCode = 4;
+            if ("battery_test".equals(simScenario)) upsModeCode = 7;
+            if ("output_off".equals(simScenario) || "epo".equals(simScenario)) {
+                upsModeCode = 6;
+                systemModeCode = 6;
+            }
             if ("bypass".equals(simScenario)) {
                 upsModeCode = 5;
                 systemModeCode = 5;
+            }
+            if ("maintenance_bypass".equals(simScenario)) {
+                upsModeCode = 5;
+                systemModeCode = 8;
             }
             uibClosed = UpsSimulatorSupport.jsonBool(simStatus, "uib", uibClosed);
             uobClosed = UpsSimulatorSupport.jsonBool(simStatus, "uob", uobClosed);
@@ -210,14 +219,29 @@ public final class UpsRealtimeService {
             putIfMissing(target, "remaining_minutes", "45");
             putIfMissing(target, "battery_current", "-35");
             putIfMissing(target, "battery_charge_percent", "72");
+        } else if ("battery_charging".equals(scenario)) {
+            putIfMissing(target, "remaining_minutes", "120");
+            putIfMissing(target, "battery_current", "25");
+            putIfMissing(target, "battery_charge_percent", "88");
+        } else if ("battery_test".equals(scenario)) {
+            putIfMissing(target, "remaining_minutes", "90");
+            putIfMissing(target, "battery_current", "-12");
+            putIfMissing(target, "battery_charge_percent", "88");
         } else if ("low_battery".equals(scenario)) {
             putIfMissing(target, "remaining_minutes", "7");
             putIfMissing(target, "battery_current", "-48");
             putIfMissing(target, "battery_charge_percent", "8");
-        } else if ("bypass".equals(scenario)) {
+        } else if ("bypass".equals(scenario) || "maintenance_bypass".equals(scenario)) {
             putIfMissing(target, "remaining_minutes", "120");
             putIfMissing(target, "battery_current", "4");
             if (target.get("battery_charge_percent") == null) target.put("battery_charge_percent", new BigDecimal("96"));
+        } else if ("output_off".equals(scenario) || "epo".equals(scenario)) {
+            putIfMissing(target, "remaining_minutes", "120");
+            putIfMissing(target, "battery_current", "4");
+            putIfMissing(target, "battery_charge_percent", "96");
+            target.put("output_power_kw", BigDecimal.ZERO);
+            target.put("output_apparent_total_kva", BigDecimal.ZERO);
+            target.put("load_percent", BigDecimal.ZERO);
         } else if ("critical".equals(scenario)) {
             putIfMissing(target, "remaining_minutes", "120");
             putIfMissing(target, "battery_current", "4");
