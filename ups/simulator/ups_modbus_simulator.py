@@ -764,17 +764,19 @@ body {{ margin:0; font-family:"Segoe UI","Noto Sans KR",Arial,sans-serif; backgr
 h1 {{ margin:0 0 6px; font-size:28px; }}
 .muted {{ color:#64748b; font-size:13px; }}
 .badge {{ display:inline-flex; align-items:center; min-height:34px; padding:6px 12px; border-radius:999px; background:#fff; border:1px solid #d7e1ec; font-weight:700; }}
-.grid {{ display:grid; grid-template-columns:1fr 340px; gap:16px; align-items:start; }}
 .panel {{ background:#fff; border:1px solid #d7e1ec; border-radius:8px; padding:16px; }}
-.status-panel {{ margin-bottom:16px; }}
-.status-panel h2 {{ margin:0 0 10px; }}
-.status-summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }}
-.status-card {{ border:1px solid #d7e1ec; border-radius:8px; background:#f8fafc; padding:10px 12px; }}
-.status-card strong {{ display:block; margin-bottom:5px; color:#0f172a; font-size:13px; }}
-.status-value {{ font:800 18px Consolas,monospace; color:#1267b1; }}
-.status-dec {{ margin-left:6px; color:#475569; font:700 12px Consolas,monospace; }}
-.status-bits {{ margin-top:6px; color:#64748b; font-size:12px; line-height:1.35; }}
+.panel + .panel {{ margin-top:12px; }}
+.status-panel {{ margin-bottom:0; padding:12px; }}
+.status-panel h2 {{ margin:0 0 8px; font-size:18px; }}
+.status-summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:6px; }}
+.status-card {{ border:1px solid #d7e1ec; border-radius:6px; background:#f8fafc; padding:7px 8px; min-width:0; }}
+.status-card strong {{ display:block; margin-bottom:3px; color:#0f172a; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.status-value {{ font:800 14px Consolas,monospace; color:#1267b1; }}
+.status-dec {{ margin-left:4px; color:#475569; font:700 10px Consolas,monospace; }}
+.status-bits {{ margin-top:3px; color:#64748b; font-size:10px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 .status-bits b {{ color:#b91c1c; }}
+.section-head {{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:12px; }}
+.section-head h2 {{ margin:0; }}
 .scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }}
 button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:14px; text-align:left; cursor:pointer; min-height:74px; }}
 button.scenario strong {{ display:block; font-size:16px; margin-bottom:5px; }}
@@ -786,7 +788,7 @@ button.breaker strong {{ display:block; font-size:15px; margin-bottom:4px; }}
 button.breaker span {{ display:block; font-size:12px; color:#64748b; }}
 button.breaker.closed {{ border-color:#169b45; background:#ecfdf3; }}
 button.breaker.open {{ border-color:#9ca3af; background:#f8fafc; }}
-.alarm-test-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-top:12px; }}
+.alarm-test-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; }}
 .alarm-group {{ grid-column:1/-1; margin-top:8px; padding:8px 0 2px; border-bottom:2px solid #d7e1ec; font-size:13px; color:#334155; font-weight:800; }}
 button.alarm-test {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:10px; cursor:pointer; text-align:left; min-height:66px; }}
 button.alarm-test strong {{ display:block; font-size:14px; margin-bottom:5px; }}
@@ -811,7 +813,7 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
 .status-word {{ font-family:Consolas,monospace; }}
 .links {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }}
 .links a {{ color:#1267b1; text-decoration:none; border:1px solid #cbd8e6; border-radius:6px; padding:7px 10px; background:#fff; font-size:13px; }}
-@media (max-width: 860px) {{ .top,.grid {{ display:block; }} .panel {{ margin-bottom:14px; }} }}
+@media (max-width: 860px) {{ .top {{ display:block; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} }}
 </style>
 </head>
 <body>
@@ -827,29 +829,37 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
     <h2>Status Word</h2>
     <div class="status-summary" id="statusSummary"></div>
   </div>
-  <div class="grid">
-    <div class="panel">
-      <h2>시나리오</h2>
-      <div class="scenario-grid">{scenarios}</div>
+  <div class="panel">
+    <h2>시나리오</h2>
+    <div class="scenario-grid">{scenarios}</div>
+  </div>
+  <div class="panel">
+    <div class="section-head">
       <h2>차단기 테스트</h2>
-      <div class="breaker-grid" id="breakers"></div>
       <button class="reset" id="resetBreakers" type="button">차단기 기본값 복원</button>
-      <h2>세부 알람 테스트</h2>
-      <div class="alarm-test-grid" id="alarmTests"></div>
-      <button class="reset" id="resetAlarmTests" type="button">세부 알람 전체 해제</button>
-      <div class="links">
-        <a href="http://localhost:8080/ups/monitoring/ups_status.jsp" target="_blank">실시간 상태</a>
-        <a href="http://localhost:8080/ups/alarm/alarm_view.jsp" target="_blank">알람 화면</a>
-        <a href="http://localhost:8080/ups/alarm/event_view.jsp" target="_blank">이벤트 화면</a>
-        <a href="http://localhost:8080/ups/monitoring/phasor_diagram.jsp" target="_blank">Phasor Diagram</a>
-        <a href="http://localhost:8080/ups/system/ups_register.jsp" target="_blank">UPS 등록</a>
-      </div>
     </div>
-    <div class="panel">
+    <div class="breaker-grid" id="breakers"></div>
+  </div>
+  <div class="panel">
+    <div class="section-head">
       <h2>현재 값</h2>
-      <p class="metric-help">입력 가능한 값은 변경 후 Enter 또는 포커스 이동 시 시뮬레이터에 즉시 반영됩니다.</p>
-      <div class="metrics" id="metrics"></div>
       <button class="reset" id="resetManualValues" type="button">현재 값 입력 초기화</button>
+    </div>
+    <p class="metric-help">입력 가능한 값은 변경 후 Enter 또는 포커스 이동 시 시뮬레이터에 즉시 반영됩니다.</p>
+    <div class="metrics" id="metrics"></div>
+  </div>
+  <div class="panel">
+    <div class="section-head">
+      <h2>세부 알람 테스트</h2>
+      <button class="reset" id="resetAlarmTests" type="button">세부 알람 전체 해제</button>
+    </div>
+    <div class="alarm-test-grid" id="alarmTests"></div>
+    <div class="links">
+      <a href="http://localhost:8080/ups/monitoring/ups_status.jsp" target="_blank">실시간 상태</a>
+      <a href="http://localhost:8080/ups/alarm/alarm_view.jsp" target="_blank">알람 화면</a>
+      <a href="http://localhost:8080/ups/alarm/event_view.jsp" target="_blank">이벤트 화면</a>
+      <a href="http://localhost:8080/ups/monitoring/phasor_diagram.jsp" target="_blank">Phasor Diagram</a>
+      <a href="http://localhost:8080/ups/system/ups_register.jsp" target="_blank">UPS 등록</a>
     </div>
   </div>
 </div>
