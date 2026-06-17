@@ -775,6 +775,8 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .sim-control.manage {{ background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }}
 .panel {{ background:#fff; border:1px solid #d7e1ec; border-radius:8px; padding:16px; }}
 .panel + .panel {{ margin-top:12px; }}
+.scenario-breaker-row {{ display:grid; grid-template-columns:minmax(0, 1.6fr) minmax(360px, .9fr); gap:12px; margin-top:12px; align-items:start; }}
+.scenario-breaker-row .panel {{ margin-top:0; height:100%; }}
 .status-panel {{ margin-bottom:0; padding:12px; }}
 .status-panel h2 {{ margin:0 0 8px; font-size:18px; }}
 .status-summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(138px,1fr)); gap:6px; }}
@@ -823,7 +825,8 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
 .status-word {{ font-family:Consolas,monospace; }}
 .links {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }}
 .links a {{ color:#1267b1; text-decoration:none; border:1px solid #cbd8e6; border-radius:6px; padding:7px 10px; background:#fff; font-size:13px; }}
-@media (max-width: 860px) {{ .wrap {{ padding:14px; }} .top {{ display:block; }} .top-actions {{ justify-content:flex-start; margin-top:12px; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} .metrics {{ grid-template-columns:1fr; }} }}
+@media (max-width: 1100px) {{ .scenario-breaker-row {{ grid-template-columns:1fr; }} }}
+@media (max-width: 860px) {{ .wrap {{ padding:14px; }} .top {{ display:block; }} .top-actions {{ justify-content:flex-start; margin-top:12px; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} .scenario-breaker-row {{ margin-top:0; gap:0; }} .metrics {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
 <body>
@@ -844,16 +847,18 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
     <h2>Status Word</h2>
     <div class="status-summary" id="statusSummary"></div>
   </div>
-  <div class="panel">
-    <h2>시나리오</h2>
-    <div class="scenario-grid">{scenarios}</div>
-  </div>
-  <div class="panel">
-    <div class="section-head">
-      <h2>차단기 테스트</h2>
-      <button class="reset" id="resetBreakers" type="button">차단기 기본값 복원</button>
+  <div class="scenario-breaker-row">
+    <div class="panel">
+      <h2>시나리오</h2>
+      <div class="scenario-grid">{scenarios}</div>
     </div>
-    <div class="breaker-grid" id="breakers"></div>
+    <div class="panel">
+      <div class="section-head">
+        <h2>차단기 테스트</h2>
+        <button class="reset" id="resetBreakers" type="button">차단기 기본값 복원</button>
+      </div>
+      <div class="breaker-grid" id="breakers"></div>
+    </div>
   </div>
   <div class="panel">
     <div class="section-head">
