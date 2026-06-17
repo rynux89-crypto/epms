@@ -59,16 +59,16 @@ if ("csv".equalsIgnoreCase(export)) {
 <div class="page-wrap">
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
     <form class="alarm-filter" method="get" id="alarmFilter">
-        <% if (alarmModel.activeOnly) { %><input type="hidden" name="status" value="ACTIVE"><% } %>
+        <% if (alarmModel.activeOnly) { %><input type="hidden" id="activeStatus" name="status" value="ACTIVE"><% } %>
         <label for="ups">UPS 검색</label>
         <input id="ups" name="ups" value="<%= h(searchText) %>" placeholder="UPS 이름, 위치, IP, 알람">
         <label for="from">시작</label>
         <input id="from" name="from" type="datetime-local" value="<%= h(alarmModel.fromRaw) %>">
         <label for="to">종료</label>
         <input id="to" name="to" type="datetime-local" value="<%= h(alarmModel.toRaw) %>" <%= alarmModel.explicitTo ? "" : "data-auto-now=\"1\"" %>>
-        <button type="submit">검색</button>
-        <button type="submit" name="export" value="csv">CSV 다운로드</button>
-        <button type="submit" name="status" value="ACTIVE">활성 알람</button>
+        <button type="submit" data-alarm-action="search">검색</button>
+        <button type="submit" name="export" value="csv" data-alarm-action="export">CSV 다운로드</button>
+        <button type="submit" name="status" value="ACTIVE" data-alarm-action="active">활성 알람</button>
         <span class="alarm-count" id="alarmCount"><%= alarmModel.activeOnly ? "활성" : "조회" %> <%= rows.size() %>건</span>
     </form>
     <div class="ups-list-wrap" id="alarmContent">
@@ -99,6 +99,7 @@ if ("csv".equalsIgnoreCase(export)) {
     var form = document.getElementById('alarmFilter');
     var to = document.getElementById('to');
     var refreshMs = 5000;
+    var submitAction = '';
     function pad(n) { return n < 10 ? '0' + n : '' + n; }
     function nowValue() {
         var d = new Date();
@@ -111,6 +112,18 @@ if ("csv".equalsIgnoreCase(export)) {
         to.addEventListener('input', function () { delete to.dataset.autoNow; });
         updateAutoNow();
         setInterval(updateAutoNow, 1000);
+    }
+    if (form) {
+        form.addEventListener('click', function (event) {
+            var button = event.target.closest('button[type="submit"]');
+            submitAction = button ? (button.getAttribute('data-alarm-action') || '') : '';
+        });
+        form.addEventListener('submit', function () {
+            var activeStatus = document.getElementById('activeStatus');
+            if (activeStatus && submitAction === 'search') {
+                activeStatus.parentNode.removeChild(activeStatus);
+            }
+        });
     }
     function refreshAlarm() {
         if (!form || document.hidden || !window.fetch || !window.DOMParser) return;
