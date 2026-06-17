@@ -59,6 +59,8 @@ Object collectorInterval = setupStatus.get("collectorInterval");
         .setup-actions form { margin:0; }
         .ok-box { margin:12px 0; padding:12px 14px; border-radius:8px; background:#ebfff1; border:1px solid #b7ebc6; color:#0f7a2a; font-weight:700; }
         .err-box { margin:12px 0; padding:12px 14px; border-radius:8px; background:#fff1f1; border:1px solid #ffc9c9; color:#b42318; font-weight:700; white-space:pre-wrap; }
+        .collector-help { margin:8px 0 10px; padding:10px 12px; border:1px solid #dbeafe; border-radius:8px; background:#f8fbff; color:#475569; font-size:13px; line-height:1.5; }
+        .collector-help strong { color:#0f172a; }
     </style>
 </head>
 <body>
@@ -79,7 +81,11 @@ Object collectorInterval = setupStatus.get("collectorInterval");
 
     <div class="panel" style="margin-bottom:14px;">
         <h3 style="margin-top:0;">수집기 진단</h3>
-        <p class="muted" style="margin:4px 0;">주기: <%= h(collectorInterval == null ? "5" : collectorInterval) %>초</p>
+        <p class="muted" style="margin:4px 0;">수집 대상 확인 주기: <%= h(collectorInterval == null ? "5" : collectorInterval) %>초</p>
+        <div class="collector-help">
+            <strong>의미:</strong> 수집기 스레드가 수집 대상 UPS를 확인하는 간격입니다.
+            실제 Modbus 수집은 UPS 등록 화면의 <strong>UPS별 수집주기(초)</strong>에 따라 수행됩니다.
+        </div>
         <p class="muted" style="margin:4px 0;">마지막 시작: <%= h(displayDateTime(collectorLastStart)) %></p>
         <p class="muted" style="margin:4px 0;">마지막 성공: <%= h(displayDateTime(collectorLastSuccess)) %></p>
         <p class="muted" style="margin:4px 0;">마지막 실패: <%= h(displayDateTime(collectorLastErrorAt)) %></p>
