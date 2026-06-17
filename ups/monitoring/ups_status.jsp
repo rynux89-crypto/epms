@@ -183,8 +183,10 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         .mimic-switch { stroke-width:4; stroke-linecap:round; }
         .mimic-dot { fill:#9b9b9b; }
         .mimic-dot.active { fill:#169b45; }
-        .mimic-mode-box { fill:#fff; stroke:#666; stroke-width:2; }
-        .mimic-mode-fill { fill:#5fc878; }
+        .mimic-mode-box { fill:#fff; stroke:#8aa0b6; stroke-width:1.6; }
+        .mimic-mode-title { font-size:22px; font-weight:900; fill:#111; font-family:"Segoe UI","Noto Sans KR",Arial,sans-serif; }
+        .mimic-mode-fill { fill:#57c978; }
+        .mimic-mode-value { font-size:17px; font-weight:900; fill:#fff; font-family:"Segoe UI","Noto Sans KR",Arial,sans-serif; }
         .hmi-grid {
             display:grid;
             grid-template-columns:1.05fr 1.15fr 1.05fr;
@@ -348,14 +350,13 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
                     <line x1="205" y1="348" x2="910" y2="348" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
                     <line x1="910" y1="348" x2="910" y2="57" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
 
-                    <rect x="770" y="120" width="220" height="120" class="mimic-mode-box"></rect>
-                    <text x="812" y="155" class="mimic-text">UPS 모드</text>
-                    <rect x="770" y="168" width="220" height="34" class="mimic-mode-fill"></rect>
-                    <text x="826" y="193" class="mimic-small"><%= h(upsMode) %></text>
-                    <line x1="770" y1="208" x2="990" y2="208" stroke="#666" stroke-width="2"></line>
-                    <text x="804" y="232" class="mimic-text">시스템 모드</text>
-                    <rect x="770" y="244" width="220" height="34" class="mimic-mode-fill"></rect>
-                    <text x="842" y="269" class="mimic-small"><%= h(systemMode) %></text>
+                    <rect x="770" y="116" width="220" height="134" rx="8" class="mimic-mode-box"></rect>
+                    <text x="880" y="147" text-anchor="middle" class="mimic-mode-title">UPS 모드</text>
+                    <rect x="790" y="160" width="180" height="28" rx="4" class="mimic-mode-fill"></rect>
+                    <text x="880" y="180" text-anchor="middle" class="mimic-mode-value"><%= h(upsMode) %></text>
+                    <text x="880" y="216" text-anchor="middle" class="mimic-mode-title">시스템 모드</text>
+                    <rect x="790" y="226" width="180" height="28" rx="4" class="mimic-mode-fill"></rect>
+                    <text x="880" y="246" text-anchor="middle" class="mimic-mode-value"><%= h(systemMode) %></text>
                 </svg>
                 </div>
             </div>
