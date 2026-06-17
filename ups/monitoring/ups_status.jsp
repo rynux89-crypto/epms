@@ -120,6 +120,8 @@ if (commBad) {
     upsMode = "통신불량";
     systemMode = "-";
 }
+int refreshSeconds = selected == null ? 2 : intValue(selected.get("poll_interval_seconds"), 2);
+if (refreshSeconds < 1) refreshSeconds = 1;
 Object totalLoad = m.get("load_percent");
 Object totalKw = m.get("output_power_kw");
 Object totalKva = m.get("output_apparent_total_kva");
@@ -144,7 +146,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
 <html>
 <head>
     <title>UPS 모니터링</title>
-    <meta http-equiv="refresh" content="2">
+    <meta http-equiv="refresh" content="<%= refreshSeconds %>">
     <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         body { background:#edf2f7; }
@@ -278,7 +280,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
                 <% } %>
             </select>
         </form>
-        <div class="muted">자동 갱신 2초</div>
+        <div class="muted">자동 갱신 <%= refreshSeconds %>초</div>
     </div>
 
         <div class="hmi-scale">

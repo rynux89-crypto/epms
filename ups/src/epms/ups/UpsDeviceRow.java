@@ -18,10 +18,12 @@ public final class UpsDeviceRow {
     public final Object lastSuccessAt;
     public final Integer consecutiveFailCount;
     public final String profileName;
+    public final Integer pollIntervalSeconds;
 
     private UpsDeviceRow(Integer upsId, String upsName, String location, String ipAddress,
             Integer modbusPort, Integer unitId, Boolean enabled, String lastCommStatus,
-            Object lastSuccessAt, Integer consecutiveFailCount, String profileName) {
+            Object lastSuccessAt, Integer consecutiveFailCount, String profileName,
+            Integer pollIntervalSeconds) {
         this.upsId = upsId;
         this.upsName = upsName;
         this.location = location;
@@ -33,6 +35,7 @@ public final class UpsDeviceRow {
         this.lastSuccessAt = lastSuccessAt;
         this.consecutiveFailCount = consecutiveFailCount;
         this.profileName = profileName;
+        this.pollIntervalSeconds = pollIntervalSeconds;
     }
 
     public static UpsDeviceRow basic(ResultSet rs) throws Exception {
@@ -42,6 +45,7 @@ public final class UpsDeviceRow {
             null,
             rs.getString("ip_address"),
             Integer.valueOf(rs.getInt("modbus_port")),
+            null,
             null,
             null,
             null,
@@ -62,7 +66,8 @@ public final class UpsDeviceRow {
             rs.getString("last_comm_status"),
             rs.getObject("last_success_at"),
             Integer.valueOf(rs.getInt("consecutive_fail_count")),
-            rs.getString("profile_name"));
+            rs.getString("profile_name"),
+            Integer.valueOf(Math.max(1, rs.getInt("poll_interval_seconds"))));
     }
 
     public Map<String, Object> toMap() {
@@ -78,6 +83,7 @@ public final class UpsDeviceRow {
         row.put("last_success_at", lastSuccessAt);
         row.put("consecutive_fail_count", consecutiveFailCount);
         row.put("profile_name", profileName);
+        row.put("poll_interval_seconds", pollIntervalSeconds);
         return row;
     }
 
