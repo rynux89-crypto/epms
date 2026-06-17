@@ -92,7 +92,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
     </div>
 
     <% if (overviewModel.err != null) { %><div class="err-box"><%= h(overviewModel.err) %></div><% } %>
-
+    <div id="overviewContent">
     <div class="summary-grid">
         <div class="summary-item"><span><%= overviewModel.includeInactive ? "전체" : "활성" %></span><strong><%= overviewModel.items.size() %></strong></div>
         <div class="summary-item"><span>정상</span><strong><%= overviewModel.normalCount %></strong></div>
@@ -193,34 +193,31 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         </div>
     </div>
     <% } %>
+    </div>
 </div>
 <script>
 (function () {
-    var board = document.getElementById('upsBoard');
-    var tileBtn = document.getElementById('tileBtn');
-    var listBtn = document.getElementById('listBtn');
     var refreshState = document.getElementById('refreshState');
-    var filterInput = document.getElementById('upsFilter');
-    var clearFilter = document.getElementById('clearFilter');
-    var filterCount = document.getElementById('filterCount');
-    var filterEmpty = document.getElementById('filterEmpty');
-    var includeInactive = document.getElementById('includeInactive');
-    if (!board || !tileBtn || !listBtn) return;
+    var content = document.getElementById('overviewContent');
+    var busy = false;
     function setView(view) {
+        var board = document.getElementById('upsBoard');
+        var tileBtn = document.getElementById('tileBtn');
+        var listBtn = document.getElementById('listBtn');
+        if (!board || !tileBtn || !listBtn) return;
         board.className = 'ups-board ' + view;
         tileBtn.classList.toggle('active', view === 'tiles');
         listBtn.classList.toggle('active', view === 'list');
         try { localStorage.setItem('upsOverviewView', view); } catch (ignore) {}
     }
-    tileBtn.onclick = function () { setView('tiles'); };
-    listBtn.onclick = function () { setView('list'); };
-    var saved = 'tiles';
-    try { saved = localStorage.getItem('upsOverviewView') || 'tiles'; } catch (ignore) {}
-    setView(saved === 'list' ? 'list' : 'tiles');
     function normalize(value) {
         return (value || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
     }
     function applyFilter() {
+        var board = document.getElementById('upsBoard');
+        var filterInput = document.getElementById('upsFilter');
+        var filterCount = document.getElementById('filterCount');
+        var filterEmpty = document.getElementById('filterEmpty');
         var query = normalize(filterInput ? filterInput.value : '');
         var tiles = Array.prototype.slice.call(document.querySelectorAll('.ups-tile'));
         var rows = Array.prototype.slice.call(document.querySelectorAll('.overview-table tbody tr'));
@@ -239,31 +236,69 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         if (board) board.style.display = visible === 0 && tiles.length > 0 ? 'none' : '';
         try { localStorage.setItem('upsOverviewFilter', filterInput ? filterInput.value : ''); } catch (ignore) {}
     }
-    if (filterInput) {
+    function bindControls() {
+        var board = document.getElementById('upsBoard');
+        var tileBtn = document.getElementById('tileBtn');
+        var listBtn = document.getElementById('listBtn');
+        var filterInput = document.getElementById('upsFilter');
+        var clearFilter = document.getElementById('clearFilter');
+        var includeInactive = document.getElementById('includeInactive');
+        if (tileBtn) tileBtn.onclick = function () { setView('tiles'); };
+        if (listBtn) listBtn.onclick = function () { setView('list'); };
+        var saved = 'tiles';
+        try { saved = localStorage.getItem('upsOverviewView') || 'tiles'; } catch (ignore) {}
+        if (board && tileBtn && listBtn) setView(saved === 'list' ? 'list' : 'tiles');
+        if (filterInput) {
         try { filterInput.value = localStorage.getItem('upsOverviewFilter') || ''; } catch (ignore) {}
         filterInput.addEventListener('input', applyFilter);
+        }
+        if (clearFilter) {
+            clearFilter.onclick = function () {
+                if (filterInput) filterInput.value = '';
+                applyFilter();
+                if (filterInput) filterInput.focus();
+            };
+        }
+        if (includeInactive) {
+            includeInactive.onchange = function () {
+                var url = new URL(window.location.href);
+                if (includeInactive.checked) url.searchParams.set('include_inactive', '1');
+                else url.searchParams.delete('include_inactive');
+                window.location.href = url.toString();
+            };
+        }
+        applyFilter();
     }
-    if (clearFilter) {
-        clearFilter.onclick = function () {
-            if (filterInput) filterInput.value = '';
-            applyFilter();
-            if (filterInput) filterInput.focus();
-        };
+    function refreshOverview() {
+        if (!content || !window.fetch || busy || document.hidden) return;
+        busy = true;
+        fetch(window.location.href, {cache:'no-store', headers:{'X-Requested-With':'fetch'}})
+            .then(function (response) {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.text();
+            })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var next = doc.getElementById('overviewContent');
+                if (!next) throw new Error('overview content not found');
+                content.innerHTML = next.innerHTML;
+                refreshState = document.getElementById('refreshState');
+                bindControls();
+            })
+            .catch(function () {
+                if (refreshState) refreshState.textContent = '갱신 실패';
+            })
+            .finally(function () {
+                busy = false;
+            });
     }
-    if (includeInactive) {
-        includeInactive.onchange = function () {
-            var url = new URL(window.location.href);
-            if (includeInactive.checked) url.searchParams.set('include_inactive', '1');
-            else url.searchParams.delete('include_inactive');
-            window.location.href = url.toString();
-        };
-    }
-    applyFilter();
+    bindControls();
     var remain = 5;
     function tick() {
         if (refreshState) refreshState.textContent = remain + '초 후 갱신';
         if (remain <= 0) {
-            window.location.reload();
+            remain = 5;
+            refreshOverview();
             return;
         }
         remain -= 1;
