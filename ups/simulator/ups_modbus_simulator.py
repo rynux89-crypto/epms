@@ -759,7 +759,7 @@ class ControlHandler(BaseHTTPRequestHandler):
 <style>
 * {{ box-sizing:border-box; }}
 body {{ margin:0; font-family:"Segoe UI","Noto Sans KR",Arial,sans-serif; background:#eef2f6; color:#172033; }}
-.wrap {{ max-width:1120px; margin:0 auto; padding:24px; }}
+.wrap {{ width:min(100%, 1800px); margin:0 auto; padding:18px 22px; }}
 .top {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; }}
 h1 {{ margin:0 0 6px; font-size:28px; }}
 .muted {{ color:#64748b; font-size:13px; }}
@@ -768,7 +768,7 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .panel + .panel {{ margin-top:12px; }}
 .status-panel {{ margin-bottom:0; padding:12px; }}
 .status-panel h2 {{ margin:0 0 8px; font-size:18px; }}
-.status-summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:6px; }}
+.status-summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(138px,1fr)); gap:6px; }}
 .status-card {{ border:1px solid #d7e1ec; border-radius:6px; background:#f8fafc; padding:7px 8px; min-width:0; }}
 .status-card strong {{ display:block; margin-bottom:3px; color:#0f172a; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 .status-value {{ font:800 14px Consolas,monospace; color:#1267b1; }}
@@ -777,18 +777,18 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .status-bits b {{ color:#b91c1c; }}
 .section-head {{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:12px; }}
 .section-head h2 {{ margin:0; }}
-.scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }}
+.scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }}
 button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:14px; text-align:left; cursor:pointer; min-height:74px; }}
 button.scenario strong {{ display:block; font-size:16px; margin-bottom:5px; }}
 button.scenario span {{ color:#64748b; font-size:12px; }}
 button.scenario.active {{ border-color:#1267b1; background:#eaf4ff; box-shadow:inset 0 0 0 1px #1267b1; }}
-.breaker-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; margin-top:12px; }}
+.breaker-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:8px; margin-top:12px; }}
 button.breaker {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:10px; cursor:pointer; text-align:center; }}
 button.breaker strong {{ display:block; font-size:15px; margin-bottom:4px; }}
 button.breaker span {{ display:block; font-size:12px; color:#64748b; }}
 button.breaker.closed {{ border-color:#169b45; background:#ecfdf3; }}
 button.breaker.open {{ border-color:#9ca3af; background:#f8fafc; }}
-.alarm-test-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; }}
+.alarm-test-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:8px; }}
 .alarm-group {{ grid-column:1/-1; margin-top:8px; padding:8px 0 2px; border-bottom:2px solid #d7e1ec; font-size:13px; color:#334155; font-weight:800; }}
 button.alarm-test {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:10px; cursor:pointer; text-align:left; min-height:66px; }}
 button.alarm-test strong {{ display:block; font-size:14px; margin-bottom:5px; }}
@@ -797,8 +797,9 @@ button.alarm-test.active {{ border-color:#dc2626; background:#fff1f2; box-shadow
 .sev-critical {{ color:#b91c1c; font-weight:800; }}
 .sev-warning {{ color:#b45309; font-weight:800; }}
 button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; background:#fff; padding:8px 10px; cursor:pointer; }}
-.metrics {{ display:grid; gap:8px; }}
-.metric-section-title {{ margin-top:8px; padding:8px 0 2px; border-bottom:2px solid #cbd8e6; color:#334155; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
+.metrics {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; align-items:start; }}
+.metric-group {{ border:1px solid #d7e1ec; border-radius:8px; background:#fbfdff; padding:10px 12px; min-width:0; }}
+.metric-section-title {{ margin:0 0 4px; padding:0 0 6px; border-bottom:2px solid #cbd8e6; color:#334155; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
 .metric-section-title:first-child {{ margin-top:0; }}
 .row {{ display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #edf2f7; font-size:14px; }}
 .row:last-child {{ border-bottom:none; }}
@@ -813,7 +814,7 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
 .status-word {{ font-family:Consolas,monospace; }}
 .links {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }}
 .links a {{ color:#1267b1; text-decoration:none; border:1px solid #cbd8e6; border-radius:6px; padding:7px 10px; background:#fff; font-size:13px; }}
-@media (max-width: 860px) {{ .top {{ display:block; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} }}
+@media (max-width: 860px) {{ .wrap {{ padding:14px; }} .top {{ display:block; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} .metrics {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
 <body>
@@ -1014,8 +1015,9 @@ async function refresh() {{
   const editingMetric = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('metric-edit');
   if (!editingMetric) {{
     document.getElementById('metrics').innerHTML = metricGroups.map(group =>
-      `<div class="metric-section-title">${{group[0]}}</div>` +
-      group[1].map(k => renderMetricRow(k, s)).join('')
+      `<div class="metric-group"><div class="metric-section-title">${{group[0]}}</div>` +
+      group[1].map(k => renderMetricRow(k, s)).join('') +
+      `</div>`
     ).join('');
     document.querySelectorAll('.metric-edit').forEach(input => {{
       input.addEventListener('input', () => input.classList.add('dirty'));
