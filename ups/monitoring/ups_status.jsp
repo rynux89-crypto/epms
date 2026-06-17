@@ -259,7 +259,6 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
             <p class="muted">슈나이더 Easy UPS 3-Phase Modular Memory Map 기준 화면입니다.</p>
         </div>
         <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='../system/ups_register.jsp'">UPS 등록</button>
             <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
         </div>
     </div>
