@@ -89,7 +89,10 @@ Object collectorInterval = setupStatus.get("collectorInterval");
         <p class="muted" style="margin:4px 0;">마지막 시작: <%= h(displayDateTime(collectorLastStart)) %></p>
         <p class="muted" style="margin:4px 0;">마지막 성공: <%= h(displayDateTime(collectorLastSuccess)) %></p>
         <p class="muted" style="margin:4px 0;">마지막 실패: <%= h(displayDateTime(collectorLastErrorAt)) %></p>
-        <p class="muted" style="margin:4px 0;">소요 시간: <%= h(collectorLastDuration == null ? "-" : collectorLastDuration + " ms") %></p>
+        <p class="muted" style="margin:4px 0;">수집기 루프 소요 시간: <%= h(collectorLastDuration == null ? "-" : collectorLastDuration + " ms") %></p>
+        <div class="collector-help">
+            <strong>소요 시간 범위:</strong> 수집 대상 확인뿐 아니라 대상 UPS의 Modbus 수집, DB 저장, 알람 판정/갱신 시간이 포함될 수 있습니다.
+        </div>
         <% if (collectorLastError != null) { %>
             <div class="err-box">수집 오류: <%= h(collectorLastError) %></div>
         <% } %>
