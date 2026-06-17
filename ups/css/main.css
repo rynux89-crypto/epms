@@ -628,6 +628,73 @@ tr:nth-child(even) td{
   background: rgba(248, 251, 253, 0.85);
 }
 
+.ups-list-wrap{
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #d7e1ec;
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+}
+
+.ups-list-table{
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ups-list-table th,
+.ups-list-table td{
+  padding: 8px 9px;
+  border: 0;
+  border-right: 1px solid #e6edf5;
+  border-bottom: 1px solid #e6edf5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-wrap: normal;
+  vertical-align: middle;
+}
+
+.ups-list-table th:last-child,
+.ups-list-table td:last-child{
+  border-right: 0;
+}
+
+.ups-list-table th{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #eef4fb;
+  color: #1f3347;
+  font-weight: 800;
+}
+
+.ups-list-table tbody tr:nth-child(even) td{
+  background: #f8fbfd;
+}
+
+.ups-list-table tbody tr:hover td{
+  background: #eef6ff;
+}
+
+.ups-list-table .text-left{
+  text-align: left;
+}
+
+.ups-list-table .text-right{
+  text-align: right;
+}
+
+.ups-list-table .col-time{
+  width: 178px;
+}
+
 /* =========================
    Status / Alerts / Footer
 ========================= */

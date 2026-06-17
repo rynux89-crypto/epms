@@ -45,14 +45,13 @@ if ("csv".equalsIgnoreCase(export)) {
         .alarm-filter input[type="datetime-local"] { min-width:190px; }
         .alarm-filter button { padding:8px 12px; }
         .alarm-count { color:#64748b; font-size:13px; }
-        .alarm-table { min-width:1120px; }
+        .alarm-table { min-width:1180px; }
         .alarm-table .col-id { width:72px; }
         .alarm-table .col-ups { width:150px; }
         .alarm-table .col-severity { width:98px; }
         .alarm-table .col-message { width:auto; }
-        .alarm-table .col-time { width:156px; }
+        .alarm-table .col-time { width:178px; }
         .alarm-table .col-status { width:90px; }
-        .alarm-table th, .alarm-table td { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .alarm-table th:nth-child(4), .alarm-table td:nth-child(4) { text-align:left; }
     </style>
 </head>
@@ -72,8 +71,8 @@ if ("csv".equalsIgnoreCase(export)) {
         <button type="button" onclick="location.href='alarm_view.jsp'">전체</button>
         <span class="alarm-count" id="alarmCount"><%= alarmModel.activeOnly ? "활성" : "조회" %> <%= rows.size() %>건</span>
     </form>
-    <div class="panel" id="alarmContent">
-        <table class="data-table alarm-table">
+    <div class="ups-list-wrap" id="alarmContent">
+        <table class="data-table ups-list-table alarm-table">
             <colgroup>
                 <col class="col-id"><col class="col-ups"><col class="col-severity"><col class="col-message"><col class="col-time"><col class="col-time"><col class="col-status">
             </colgroup>

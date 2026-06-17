@@ -49,10 +49,9 @@ if ("csv".equalsIgnoreCase(export)) {
         .summary-card { background:#fff; border:1px solid #dbe5f2; border-radius:8px; padding:12px; }
         .summary-card span { display:block; color:#64748b; font-size:12px; font-weight:800; }
         .summary-card strong { display:block; margin-top:6px; color:#0f172a; font-size:24px; }
-        .report-table-wrap { overflow:auto; max-height:calc(100vh - 270px); background:#fff; border-radius:8px; }
-        .report-table { width:100%; min-width:2380px; border-collapse:collapse; font-size:12px; white-space:nowrap; table-layout:fixed; }
-        .report-table th, .report-table td { padding:8px; text-align:center; overflow:hidden; text-overflow:ellipsis; word-wrap:break-word; }
-        .report-table th { position:sticky; top:0; z-index:1; }
+        .report-table-wrap { max-height:calc(100vh - 270px); }
+        .report-table { min-width:2440px; }
+        .report-table th, .report-table td { text-align:center; }
         .report-table th:first-child, .report-table td:first-child,
         .report-table th:nth-child(2), .report-table td:nth-child(2),
         .report-table th:nth-child(3), .report-table td:nth-child(3) { text-align:left; }
@@ -60,7 +59,7 @@ if ("csv".equalsIgnoreCase(export)) {
         .col-location { width:150px; }
         .col-ip { width:130px; }
         .col-count { width:74px; }
-        .col-time { width:150px; }
+        .col-time { width:178px; }
         .col-small { width:74px; }
         .col-med { width:86px; }
         .col-wide { width:96px; }
@@ -92,11 +91,11 @@ if ("csv".equalsIgnoreCase(export)) {
         <div class="summary-card"><span>중요</span><strong><%= reportModel.totalCritical %></strong></div>
     </div>
 
-    <div class="report-table-wrap">
+    <div class="ups-list-wrap report-table-wrap">
         <% if (rows.isEmpty()) { %>
         <div class="empty">조회된 레포트 데이터가 없습니다.</div>
         <% } else { %>
-        <table class="report-table">
+        <table class="ups-list-table report-table">
             <colgroup>
                 <col class="col-ups"><col class="col-location"><col class="col-ip">
                 <col class="col-count"><col class="col-time"><col class="col-time">

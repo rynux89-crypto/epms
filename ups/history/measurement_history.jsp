@@ -64,16 +64,13 @@ if ("csv".equalsIgnoreCase(export)) {
         .history-filter input[type="datetime-local"] { min-width:190px; }
         .history-filter select[name="limit"] { min-width:82px; }
         .history-filter button { min-height:36px; padding:8px 12px; }
-        .history-table-wrap { overflow:auto; max-height:calc(100vh - 230px); background:#fff; border:1px solid #d7e1ec; border-radius:8px; }
-        .history-table { width:100%; min-width:1960px; border-collapse:collapse; font-size:12px; white-space:nowrap; table-layout:fixed; }
-        .history-table th, .history-table td { border-bottom:1px solid #e6edf5; border-right:1px solid #edf2f7; padding:7px 8px; text-align:right; }
-        .history-table th:last-child, .history-table td:last-child { border-right:none; }
-        .history-table th { position:sticky; top:0; background:#eef4fb; color:#1f3347; z-index:1; }
+        .history-table-wrap { max-height:calc(100vh - 230px); }
+        .history-table { min-width:1980px; }
+        .history-table th, .history-table td { text-align:right; }
         .history-table th:first-child, .history-table td:first-child,
         .history-table th:nth-child(2), .history-table td:nth-child(2) { text-align:left; }
-        .history-table th, .history-table td { overflow:hidden; text-overflow:ellipsis; }
         .col-ups { width:180px; }
-        .col-time { width:168px; }
+        .col-time { width:178px; }
         .col-v { width:82px; }
         .col-a { width:78px; }
         .col-small { width:76px; }
@@ -111,11 +108,11 @@ if ("csv".equalsIgnoreCase(export)) {
     </form>
 
     <p class="summary">조회 결과 <strong><%= rows.size() %></strong>건</p>
-    <div class="history-table-wrap">
+    <div class="ups-list-wrap history-table-wrap">
         <% if (rows.isEmpty()) { %>
         <div class="empty">조회된 측정 이력이 없습니다.</div>
         <% } else { %>
-        <table class="history-table">
+        <table class="ups-list-table history-table">
             <colgroup>
                 <col class="col-ups">
                 <col class="col-time">

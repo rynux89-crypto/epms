@@ -2,8 +2,14 @@
 String upsAssetBase = request.getContextPath();
 if (upsAssetBase == null) upsAssetBase = "";
 if (!upsAssetBase.endsWith("/ups")) upsAssetBase = upsAssetBase + "/ups";
+long upsMainCssVersion = 0L;
+try {
+    String upsMainCssPath = application.getRealPath("/css/main.css");
+    if (upsMainCssPath != null) upsMainCssVersion = new java.io.File(upsMainCssPath).lastModified();
+} catch (Exception ignore) {
+}
 %>
-<link rel="stylesheet" type="text/css" href="<%= upsAssetBase %>/css/main.css">
+<link rel="stylesheet" type="text/css" href="<%= upsAssetBase %>/css/main.css?v=<%= upsMainCssVersion %>">
 <% if ("1".equals(request.getParameter("embed"))) { %>
 <style>
 html, body { min-height:100%; }
