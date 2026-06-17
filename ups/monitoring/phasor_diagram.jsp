@@ -201,6 +201,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         .scope-cell { min-width:0; height:calc(54vh - 86px); min-height:250px; max-height:310px; border-right:1px solid rgba(43,255,65,.32); border-bottom:1px solid rgba(43,255,65,.32); padding:6px 8px; position:relative; background:#15221c; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; }
         .scope-cell.wave { height:calc(46vh - 74px); min-height:190px; max-height:250px; }
         .dial-svg, .wave-svg { display:block; width:100%; height:100%; min-height:0; }
+        .dial-svg { overflow:visible; }
         .scope-cell:not(.wave) .dial-svg { flex:1 1 auto; margin-top:2px; }
         .scope-cell.wave .wave-svg { flex:1 1 auto; }
         .dial-ring { fill:none; stroke:#18f42f; stroke-width:1.25; opacity:.82; }
@@ -247,7 +248,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
             .scope-grid { grid-template-columns:1fr; }
             .phasor-toolbar { align-items:flex-start; flex-direction:column; }
             .phasor-hmi { padding-right:8px; }
-            .phase-legend { position:static; flex-direction:row; flex-wrap:wrap; margin-bottom:5px; padding:0 2px; background:transparent; border-left:0; }
+            .phase-legend { position:static !important; flex-direction:row !important; flex-wrap:wrap; margin-bottom:5px !important; padding:0 2px !important; background:transparent !important; border-left:0 !important; }
             .scope-cell, .scope-cell.wave { height:auto; min-height:0; max-height:none; }
             .dial-svg, .wave-svg { height:auto; }
         }
@@ -273,7 +274,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
 
     <div class="phasor-hmi" id="phasorHmi">
         <div class="hmi-title">Phasor measurement</div>
-        <div class="phase-legend" aria-label="Phase legend">
+        <div class="phase-legend" aria-label="Phase legend" style="position:absolute;top:34px;right:12px;display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin:0;padding:8px 6px;background:rgba(21,34,28,.82);border-left:1px solid rgba(43,255,65,.28);z-index:2;">
             <span class="phase-red"><i class="phase-dot"></i>L1 / R상</span>
             <span class="phase-yellow"><i class="phase-dot"></i>L2 / S상</span>
             <span class="phase-blue"><i class="phase-dot"></i>L3 / T상</span>
@@ -300,8 +301,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="2" y="10" class="scope-label">Nominal voltage</text>
-                    <text x="2" y="27" class="scope-small"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
+                    <text x="-12" y="10" class="scope-label">Nominal voltage</text>
+                    <text x="-12" y="27" class="scope-small"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
@@ -345,8 +346,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="2" y="10" class="scope-label">Max scale current</text>
-                    <text x="2" y="27" class="scope-small"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
+                    <text x="-12" y="10" class="scope-label">Max scale current</text>
+                    <text x="-12" y="27" class="scope-small"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
