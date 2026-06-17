@@ -344,7 +344,8 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
                     <line x1="100" y1="330" x2="145" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
                     <line x1="145" y1="330" x2="<%= mbbClosed ? "205" : "175" %>" y2="<%= mbbClosed ? "330" : "307" %>" class="mimic-switch <%= mbbClosed ? "mimic-active" : "mimic-idle" %>"></line>
                     <circle cx="145" cy="330" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
-                    <line x1="145" y1="330" x2="910" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
+                    <circle cx="205" cy="330" r="6" class="mimic-dot <%= mbbClosed ? "active" : "" %>"></circle>
+                    <line x1="205" y1="330" x2="910" y2="330" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
                     <line x1="910" y1="330" x2="910" y2="57" class="mimic-line <%= maintenanceBypassPathClass %>"></line>
 
                     <rect x="770" y="120" width="220" height="120" class="mimic-mode-box"></rect>
