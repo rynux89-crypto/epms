@@ -786,7 +786,7 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .status-dec {{ margin-left:4px; color:#475569; font:700 10px Consolas,monospace; }}
 .status-bits {{ margin-top:3px; color:#64748b; font-size:10px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 .status-bits b {{ color:#b91c1c; }}
-.section-head {{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:12px; }}
+.section-head {{ display:flex; justify-content:space-between; align-items:center; gap:12px; min-height:36px; margin-bottom:12px; }}
 .section-head h2 {{ margin:0; }}
 .scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }}
 button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:14px; text-align:left; cursor:pointer; min-height:74px; }}
@@ -808,6 +808,7 @@ button.alarm-test.active {{ border-color:#dc2626; background:#fff1f2; box-shadow
 .sev-critical {{ color:#b91c1c; font-weight:800; }}
 .sev-warning {{ color:#b45309; font-weight:800; }}
 button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; background:#fff; padding:8px 10px; cursor:pointer; }}
+.section-head button.reset {{ margin-top:0; flex:0 0 auto; }}
 .metrics {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; align-items:start; }}
 .metric-group {{ border:1px solid #d7e1ec; border-radius:8px; background:#fbfdff; padding:10px 12px; min-width:0; }}
 .metric-section-title {{ margin:0 0 4px; padding:0 0 6px; border-bottom:2px solid #cbd8e6; color:#334155; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
@@ -849,7 +850,10 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
   </div>
   <div class="scenario-breaker-row">
     <div class="panel">
-      <h2>시나리오</h2>
+      <div class="section-head">
+        <h2>시나리오</h2>
+        <span></span>
+      </div>
       <div class="scenario-grid">{scenarios}</div>
     </div>
     <div class="panel">
