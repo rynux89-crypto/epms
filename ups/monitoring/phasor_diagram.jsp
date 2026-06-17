@@ -188,7 +188,6 @@ double waveITop = Math.max(1d, iMax * 1.2d);
 <html>
 <head>
     <title>UPS Phasor Diagram</title>
-    <meta http-equiv="refresh" content="5">
     <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         body { background:#dfe6ef; }
@@ -264,10 +263,10 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                 <% } %>
             </select>
         </form>
-        <div class="muted">최근 수집: <%= h(dateText(m.get("measured_at"), hideData)) %> / 자동 갱신 5초</div>
+        <div class="muted">최근 수집: <span id="phasorRecentAt"><%= h(dateText(m.get("measured_at"), hideData)) %></span> / 자동 갱신 2초</div>
     </div>
 
-    <div class="phasor-hmi">
+    <div class="phasor-hmi" id="phasorHmi">
         <div class="hmi-title">Phasor measurement</div>
         <div class="phase-legend" aria-label="Phase legend">
             <span class="phase-red"><i class="phase-dot"></i>L1 / R상</span>
@@ -455,6 +454,54 @@ double waveITop = Math.max(1d, iMax * 1.2d);
     <div class="note">역률 기반 추정 위상도입니다. 별도의 leading/lagging 정보가 없으면 전류가 전압보다 늦는 지상(lagging) 부하로 가정합니다.</div>
 </div>
 <%@ include file="../includes/ups_footer.jspf" %>
+<script>
+(function () {
+    var hmi = document.getElementById('phasorHmi');
+    var recent = document.getElementById('phasorRecentAt');
+    var form = document.querySelector('.phasor-toolbar form');
+    if (!hmi || !window.fetch || !window.DOMParser) return;
+    var busy = false;
+    var lastOk = Date.now();
+    function selectedUpsId() {
+        var params = new URLSearchParams(window.location.search);
+        var select = form ? form.querySelector('select[name="ups_id"]') : null;
+        return (select && select.value) || params.get('ups_id') || '';
+    }
+    function refreshPhasor() {
+        if (busy || document.hidden) return;
+        var select = form ? form.querySelector('select[name="ups_id"]') : null;
+        if (select && document.activeElement === select) return;
+        busy = true;
+        var url = 'phasor_diagram.jsp?_=' + Date.now();
+        var upsId = selectedUpsId();
+        if (upsId) url += '&ups_id=' + encodeURIComponent(upsId);
+        fetch(url, {cache:'no-store', headers:{'X-Requested-With':'fetch'}})
+            .then(function (response) {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.text();
+            })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var nextHmi = doc.getElementById('phasorHmi');
+                var nextRecent = doc.getElementById('phasorRecentAt');
+                if (nextHmi) {
+                    hmi.innerHTML = nextHmi.innerHTML;
+                    lastOk = Date.now();
+                }
+                if (recent && nextRecent) {
+                    recent.textContent = nextRecent.textContent;
+                }
+            })
+            .catch(function () {
+                if (Date.now() - lastOk > 30000) window.location.reload();
+            })
+            .finally(function () {
+                busy = false;
+            });
+    }
+    setInterval(refreshPhasor, 2000);
+})();
+</script>
 </body>
 </html>
 
