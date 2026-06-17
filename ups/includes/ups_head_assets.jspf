@@ -4,3 +4,10 @@ if (upsAssetBase == null) upsAssetBase = "";
 if (!upsAssetBase.endsWith("/ups")) upsAssetBase = upsAssetBase + "/ups";
 %>
 <link rel="stylesheet" type="text/css" href="<%= upsAssetBase %>/css/main.css">
+<% if ("1".equals(request.getParameter("embed"))) { %>
+<style>
+html, body { min-height:100%; }
+body { margin:0 !important; overflow-x:hidden; }
+.page-wrap { padding:12px !important; }
+</style>
+<% } %>

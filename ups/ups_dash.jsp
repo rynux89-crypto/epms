@@ -114,9 +114,14 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
         dashboardVisible = false;
         root.classList.add('hidden');
         frame.classList.add('active');
-        frame.setAttribute('src', link.getAttribute('href'));
+        frame.setAttribute('src', embedUrl(link.getAttribute('href')));
         if (title) title.textContent = link.getAttribute('data-title') || link.textContent.replace(/^[^A-Za-z가-힣]+/, '').trim();
         setActive(link);
+    }
+    function embedUrl(href) {
+        var url = new URL(href, window.location.href);
+        url.searchParams.set('embed', '1');
+        return url.pathname + url.search + url.hash;
     }
     navLinks.forEach(function (link) {
         link.addEventListener('click', function (event) {
