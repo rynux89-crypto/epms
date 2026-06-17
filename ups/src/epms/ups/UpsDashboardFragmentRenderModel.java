@@ -121,10 +121,10 @@ public final class UpsDashboardFragmentRenderModel {
     private static String displayDateTime(Object value) {
         if (value == null) return "--";
         if (value instanceof Timestamp) {
-            return new SimpleDateFormat("HH:mm:ss").format((Timestamp)value);
+            return new SimpleDateFormat("MM/dd HH:mm:ss").format((Timestamp)value);
         }
         String text = UpsFormatSupport.displaySlashDateTime(value);
-        return text.length() >= 8 ? text.substring(text.length() - 8) : text;
+        return text.length() >= 14 ? text.substring(text.length() - 14) : text;
     }
 
     private static String valueOrDefault(Object value, String fallback) {
