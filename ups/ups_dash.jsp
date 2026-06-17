@@ -49,8 +49,8 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
         <div class="topbar">
             <h1 id="dashTitle">UPS 통합 모니터링</h1>
             <div class="meta">
-                <span>◷ <%= new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date()) %></span>
-                <span>▣ <%= new java.text.SimpleDateFormat("yyyy-MM-dd (E)", java.util.Locale.KOREAN).format(new java.util.Date()) %></span>
+                <span id="dashClock">◷ <%= new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date()) %></span>
+                <span id="dashDate">▣ <%= new java.text.SimpleDateFormat("yyyy-MM-dd (E)", java.util.Locale.KOREAN).format(new java.util.Date()) %></span>
                 <a class="icon-btn" href="alarm/alarm_view.jsp?status=ACTIVE">!</a>
                 <a class="icon-btn" href="monitoring/ups_overview.jsp">↗</a>
             </div>
@@ -79,6 +79,21 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
     var busy = false;
     var lastOk = Date.now();
     var dashboardVisible = true;
+    var clockEl = document.getElementById('dashClock');
+    var dateEl = document.getElementById('dashDate');
+    function pad2(value) {
+        return String(value).padStart(2, '0');
+    }
+    function updateDashClock() {
+        var now = new Date();
+        if (clockEl) {
+            clockEl.textContent = '◷ ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
+        }
+        if (dateEl) {
+            var days = ['일', '월', '화', '수', '목', '금', '토'];
+            dateEl.textContent = '▣ ' + now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate()) + ' (' + days[now.getDay()] + ')';
+        }
+    }
     function setActive(link) {
         navLinks.forEach(function (item) {
             item.classList.toggle('active', item === link);
@@ -139,6 +154,8 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
                 busy = false;
             });
     }
+    updateDashClock();
+    setInterval(updateDashClock, 1000);
     setInterval(refreshDashboard, 1000);
 })();
 </script>
