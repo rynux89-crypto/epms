@@ -28,6 +28,7 @@ public final class UpsCollectorService {
         int unitId;
         Integer profileId;
         int pollIntervalSeconds;
+        boolean measurementDue;
     }
 
     private static final class Point {
@@ -74,10 +75,13 @@ public final class UpsCollectorService {
             try {
                 Map<String, BigDecimal> values = readDevice(device, points);
                 BreakerState previousBreakers = loadLastBreakerState(device.upsId);
-                persistMeasurement(device.upsId, pollStartedAt, values);
                 syncValueAlarms(device.upsId, values);
+                boolean breakerChanged = breakerStateChanged(previousBreakers, values);
                 syncBreakerEvents(device.upsId, previousBreakers, values);
-                updateSuccess(device.upsId, pollStartedAt);
+                if (device.measurementDue || breakerChanged) {
+                    persistMeasurement(device.upsId, pollStartedAt, values);
+                    updateSuccess(device.upsId, pollStartedAt);
+                }
             } catch (Exception e) {
                 updateFailure(device.upsId, pollStartedAt, e.getMessage());
             }
@@ -88,10 +92,10 @@ public final class UpsCollectorService {
         List<Device> out = new ArrayList<Device>();
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT d.ups_id, d.ip_address, d.modbus_port, d.unit_id, d.profile_id, d.poll_interval_seconds " +
+                ", CASE WHEN cs.last_poll_at IS NULL OR DATEADD(millisecond, (CASE WHEN d.poll_interval_seconds < 1 THEN 1 ELSE d.poll_interval_seconds END * 1000) - " + POLL_DUE_GRACE_MS + ", cs.last_poll_at) <= SYSDATETIME() THEN 1 ELSE 0 END AS measurement_due " +
                 "FROM dbo.ups_device d " +
                 "LEFT JOIN dbo.ups_comm_status cs ON cs.ups_id = d.ups_id " +
                 "WHERE d.enabled = 1 " +
-                "AND (cs.last_poll_at IS NULL OR DATEADD(millisecond, (CASE WHEN d.poll_interval_seconds < 1 THEN 1 ELSE d.poll_interval_seconds END * 1000) - " + POLL_DUE_GRACE_MS + ", cs.last_poll_at) <= SYSDATETIME()) " +
                 "ORDER BY d.ups_id");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -103,6 +107,7 @@ public final class UpsCollectorService {
                 int profileId = rs.getInt("profile_id");
                 d.profileId = rs.wasNull() ? null : Integer.valueOf(profileId);
                 d.pollIntervalSeconds = Math.max(1, rs.getInt("poll_interval_seconds"));
+                d.measurementDue = rs.getInt("measurement_due") == 1;
                 out.add(d);
             }
         }
@@ -403,6 +408,18 @@ public final class UpsCollectorService {
             compareSwitchgearBreaker(conn, upsId, "MBB", "switchgear_status", previous.switchgearStatus, currentSwitchgear, 10);
             compareBinaryBreaker(conn, upsId, "BB", "battery_breaker_status", previous.batteryBreakerStatus, currentBattery);
         }
+    }
+
+    private static boolean breakerStateChanged(BreakerState previous, Map<String, BigDecimal> values) {
+        if (previous == null || values == null) return false;
+        Integer currentSwitchgear = intOrNull(values.get("switchgear_status"));
+        Integer currentBattery = intOrNull(values.get("battery_breaker_status"));
+        if (previous.switchgearStatus != null && currentSwitchgear != null
+                && previous.switchgearStatus.intValue() != currentSwitchgear.intValue()) {
+            return true;
+        }
+        return previous.batteryBreakerStatus != null && currentBattery != null
+                && previous.batteryBreakerStatus.intValue() != currentBattery.intValue();
     }
 
     private static void compareSwitchgearBreaker(Connection conn, int upsId, String name, String metricKey, Integer previous, Integer current, int bit) throws Exception {
