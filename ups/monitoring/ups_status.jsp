@@ -170,9 +170,9 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
             align-items:stretch;
             box-shadow:0 18px 44px rgba(15,23,42,.10);
         }
-        .mimic-panel { grid-column:2; grid-row:1; border:1px solid #cbd5e1; border-radius:12px; background:#fff; padding:10px; display:flex; align-items:center; min-height:100%; box-shadow:inset 0 0 0 1px rgba(255,255,255,.65); }
-        .mimic-wrap { width:100%; }
-        .mimic-svg { display:block; width:100%; height:auto; }
+        .mimic-panel { grid-column:2; grid-row:1; border:1px solid #cbd5e1; border-radius:12px; background:#fff; padding:10px; display:flex; align-items:stretch; min-height:100%; overflow:hidden; box-shadow:inset 0 0 0 1px rgba(255,255,255,.65); }
+        .mimic-wrap { width:100%; min-height:0; display:flex; align-items:center; }
+        .mimic-svg { display:block; width:100%; height:100%; max-height:100%; }
         .mimic-line { fill:none; stroke-width:4; stroke-linecap:square; stroke-linejoin:miter; }
         .mimic-active { stroke:#169b45; }
         .mimic-idle { stroke:#9b9b9b; }
@@ -222,7 +222,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         .mode-value { min-height:42px; background:#dcfce7; color:#166534; border-bottom:1px solid #bbf7d0; display:flex; align-items:center; justify-content:center; text-align:center; font-size:22px; font-weight:900; line-height:1.15; padding:0 10px; }
         .total-panel .bar { height:34px; border-radius:8px; background:#dcfce7; color:#166534; margin:8px 0; display:flex; align-items:center; justify-content:center; font-size:23px; font-weight:800; }
         .total-panel .total-values { text-align:center; font-size:22px; font-weight:800; color:#111827; }
-        .phase-power { grid-row:span 4; }
+        .phase-power { grid-row:span 3; }
         .phase-list { display:grid; gap:12px; padding-top:22px; }
         .phase-item { display:grid; grid-template-columns:58px 1fr; align-items:center; font-size:23px; }
         .phase-item .phase { font-weight:800; color:#334155; }
