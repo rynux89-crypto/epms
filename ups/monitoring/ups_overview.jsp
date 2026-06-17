@@ -91,7 +91,6 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 <button type="button" id="tileBtn" class="active">타일</button>
                 <button type="button" id="listBtn">리스트</button>
             </div>
-            <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
         </div>
     </div>
 

@@ -160,7 +160,6 @@ boolean editMode = editDevice != null;
 <div class="page-wrap">
     <div class="title-bar">
         <div><h2>UPS 등록</h2><p class="muted">신규 UPS는 IP와 Modbus 기본값만 입력하면 수집 대상에 포함됩니다.</p></div>
-        <div class="inline-actions"><button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button></div>
     </div>
 
     <% if (msg != null) { %><div class="ok-box"><%= h(msg) %></div><% } %>

@@ -92,9 +92,6 @@ if ("csv".equalsIgnoreCase(export)) {
             <h2>UPS 측정 이력</h2>
             <p class="muted">DB에 저장된 UPS 측정값을 조회합니다.</p>
         </div>
-        <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
-        </div>
     </div>
 
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>

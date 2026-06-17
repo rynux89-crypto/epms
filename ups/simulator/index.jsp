@@ -165,9 +165,6 @@ if (message.length() > 0) {
             <h2>UPS 시뮬레이터</h2>
             <p class="muted">시뮬레이터 제어 UI는 별도 Python 프로세스로 실행됩니다.</p>
         </div>
-        <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
-        </div>
     </div>
 
     <div class="panel">

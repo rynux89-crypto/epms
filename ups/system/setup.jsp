@@ -68,9 +68,6 @@ Object collectorInterval = setupStatus.get("collectorInterval");
             <h2>UPS 초기 설정</h2>
             <p class="muted">UPS_MONITOR 데이터베이스와 수집기 상태를 확인합니다.</p>
         </div>
-        <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
-        </div>
     </div>
 
     <% if (msg != null) { %><div class="ok-box"><%= h(msg) %></div><% } %>

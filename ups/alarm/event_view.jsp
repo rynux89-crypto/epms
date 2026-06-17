@@ -45,7 +45,6 @@ if ("csv".equalsIgnoreCase(export)) {
         <div><h2>UPS 이벤트</h2><p class="muted">스위치 조작, 운전 상태 변경 등 최근 이벤트 이력을 표시합니다.</p></div>
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='alarm_view.jsp'">알람</button>
-            <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
         </div>
     </div>
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>

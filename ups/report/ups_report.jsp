@@ -74,9 +74,6 @@ if ("csv".equalsIgnoreCase(export)) {
             <h2>UPS 레포트</h2>
             <p class="muted">기간별 UPS 운전 요약, 전력 현황, 배터리, 알람/이벤트 집계를 확인합니다.</p>
         </div>
-        <div class="inline-actions">
-            <button class="back-btn" onclick="location.href='../ups_main.jsp'">UPS 메인</button>
-        </div>
     </div>
 
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
