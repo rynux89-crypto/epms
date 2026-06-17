@@ -110,6 +110,8 @@ public final class UpsDashboardViewService {
             else if ("warning".equals(cls) || "critical".equals(cls)) model.warning++;
             else model.offline++;
 
+            if (!isOnline(device, measurement)) continue;
+
             if (measurement != null && measurement.get("load_percent") != null) {
                 loadSum += num(measurement.get("load_percent"), 0);
                 loadCount++;
@@ -557,13 +559,13 @@ public final class UpsDashboardViewService {
 
         Double[] buckets = new Double[60];
         String sql =
-            "SELECT DATEDIFF(minute, measured_at, SYSDATETIME()) AS minute_ago, AVG(CAST(" + column + " AS float)) AS measured_value " +
+            "SELECT DATEDIFF(minute, m.measured_at, SYSDATETIME()) AS minute_ago, AVG(CAST(m." + column + " AS float)) AS measured_value " +
             "FROM dbo.ups_measurement " +
             "WHERE ups_id = ? " +
             "AND measured_at >= DATEADD(hour, -1, SYSDATETIME()) " +
             "AND measured_at <= SYSDATETIME() " +
             "AND " + column + " IS NOT NULL " +
-            "GROUP BY DATEDIFF(minute, measured_at, SYSDATETIME())";
+            "GROUP BY DATEDIFF(minute, m.measured_at, SYSDATETIME())";
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, Integer.parseInt(upsId.trim()));
@@ -609,10 +611,14 @@ public final class UpsDashboardViewService {
         Double[] buckets = new Double[60];
         String sql =
             "SELECT DATEDIFF(minute, measured_at, SYSDATETIME()) AS minute_ago, AVG(CAST(" + column + " AS float)) AS measured_value " +
-            "FROM dbo.ups_measurement " +
-            "WHERE measured_at >= DATEADD(hour, -1, SYSDATETIME()) " +
-            "AND measured_at <= SYSDATETIME() " +
-            "AND " + column + " IS NOT NULL " +
+            "FROM dbo.ups_measurement m " +
+            "JOIN dbo.ups_device d ON d.ups_id = m.ups_id " +
+            "LEFT JOIN dbo.ups_comm_status cs ON cs.ups_id = d.ups_id " +
+            "WHERE d.enabled = 1 " +
+            "AND (cs.status IS NULL OR cs.status IN ('OK', 'NORMAL', 'ONLINE') OR ISNULL(cs.consecutive_fail_count, 0) < " + COMM_FAIL_OFFLINE_THRESHOLD + ") " +
+            "AND m.measured_at >= DATEADD(hour, -1, SYSDATETIME()) " +
+            "AND m.measured_at <= SYSDATETIME() " +
+            "AND m." + column + " IS NOT NULL " +
             "GROUP BY DATEDIFF(minute, measured_at, SYSDATETIME())";
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
