@@ -146,7 +146,6 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
 <html>
 <head>
     <title>UPS 모니터링</title>
-    <meta http-equiv="refresh" content="<%= refreshSeconds %>">
     <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         body { background:#edf2f7; }
@@ -280,7 +279,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         <div class="ups-control-meta"><span class="ups-refresh-badge">자동 갱신 <strong><%= refreshSeconds %></strong>초</span></div>
     </div>
 
-        <div class="hmi-scale">
+        <div class="hmi-scale" id="upsStatusContent">
         <div class="hmi">
             <div class="mimic-panel">
                 <div class="mimic-wrap">
@@ -431,7 +430,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         </div>
     </div>
 
-    <div class="muted-note">
+    <div class="muted-note" id="upsStatusNote">
         <% if (selected != null) { %>
         <%= h(selected.get("ups_name")) %> / <%= h(selected.get("location")) %> / <%= h(selected.get("ip_address")) %>:<%= h(selected.get("modbus_port")) %> / Unit <%= h(selected.get("unit_id")) %> / <%= h(selected.get("profile_name")) %> / 최근 수집: <%= fmtDate(m.get("measured_at"), commBad) %>
         <% } else { %>
@@ -439,5 +438,36 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         <% } %>
     </div>
 </div>
+<script>
+(function () {
+    var refreshMs = Math.max(1000, <%= refreshSeconds %> * 1000);
+    var busy = false;
+    function refreshStatus() {
+        if (busy || document.hidden || !window.fetch || !window.DOMParser) return;
+        busy = true;
+        var url = new URL(window.location.href);
+        url.searchParams.set('_', Date.now());
+        fetch(url.pathname + url.search, {cache:'no-store', headers:{'X-Requested-With':'fetch'}})
+            .then(function (response) {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.text();
+            })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var nextContent = doc.getElementById('upsStatusContent');
+                var nextNote = doc.getElementById('upsStatusNote');
+                var content = document.getElementById('upsStatusContent');
+                var note = document.getElementById('upsStatusNote');
+                if (nextContent && content) content.innerHTML = nextContent.innerHTML;
+                if (nextNote && note) note.innerHTML = nextNote.innerHTML;
+            })
+            .catch(function () {})
+            .finally(function () {
+                busy = false;
+            });
+    }
+    setInterval(refreshStatus, refreshMs);
+})();
+</script>
 </body>
 </html>

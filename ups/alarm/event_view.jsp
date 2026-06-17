@@ -52,9 +52,9 @@ if ("csv".equalsIgnoreCase(export)) {
         <button type="submit">검색</button>
         <button type="submit" name="export" value="csv">CSV 다운로드</button>
         <button type="button" onclick="location.href='event_view.jsp'">전체</button>
-        <span class="event-count">조회 <%= rows.size() %>건</span>
+        <span class="event-count" id="eventCount">조회 <%= rows.size() %>건</span>
     </form>
-    <div class="panel">
+    <div class="panel" id="eventContent">
         <table class="data-table">
             <thead><tr><th>ID</th><th>UPS</th><th>등급</th><th>메시지</th><th>발생</th><th>상태</th></tr></thead>
             <tbody>
@@ -91,11 +91,28 @@ if ("csv".equalsIgnoreCase(export)) {
         updateAutoNow();
         setInterval(updateAutoNow, 1000);
     }
-    setInterval(function () {
-        if (!form || document.hidden) return;
+    function refreshEvent() {
+        if (!form || document.hidden || !window.fetch || !window.DOMParser) return;
         updateAutoNow();
-        form.submit();
-    }, refreshMs);
+        var params = new URLSearchParams(new FormData(form));
+        if (new URLSearchParams(window.location.search).get('embed') === '1') params.set('embed', '1');
+        fetch(window.location.pathname + '?' + params.toString(), {cache:'no-store', headers:{'X-Requested-With':'fetch'}})
+            .then(function (response) {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.text();
+            })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var nextContent = doc.getElementById('eventContent');
+                var nextCount = doc.getElementById('eventCount');
+                var content = document.getElementById('eventContent');
+                var count = document.getElementById('eventCount');
+                if (nextContent && content) content.innerHTML = nextContent.innerHTML;
+                if (nextCount && count) count.textContent = nextCount.textContent;
+            })
+            .catch(function () {});
+    }
+    setInterval(refreshEvent, refreshMs);
 })();
 </script>
 </body>
