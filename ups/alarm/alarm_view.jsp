@@ -50,7 +50,7 @@ if ("csv".equalsIgnoreCase(export)) {
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <div><h2>UPS 알람</h2><p class="muted"><%= alarmModel.activeOnly ? "현재 활성 알람을 표시합니다." : "활성/해제 알람 이력 최근 200건을 표시합니다." %></p></div>
+        
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='event_view.jsp'">이벤트</button>
         </div>

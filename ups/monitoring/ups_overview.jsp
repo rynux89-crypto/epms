@@ -81,10 +81,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        <div>
-            <h2>UPS 전체 현황</h2>
-            <p class="muted">등록된 UPS의 최신 수집 상태를 타일 또는 리스트로 확인합니다.</p>
-        </div>
+        
         <div class="inline-actions overview-actions">
             <span class="refresh-state" id="refreshState">5초 후 갱신</span>
             <div class="view-toggle" aria-label="보기 방식">

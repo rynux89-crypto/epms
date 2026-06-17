@@ -160,14 +160,7 @@ if (message.length() > 0) {
 </head>
 <body>
 <div class="page-wrap sim-box">
-    <div class="title-bar">
-        <div>
-            <h2>UPS 시뮬레이터</h2>
-            <p class="muted">시뮬레이터 제어 UI는 별도 Python 프로세스로 실행됩니다.</p>
-        </div>
-    </div>
-
-    <div class="panel">
+<div class="panel">
         <div class="sim-status"><span class="dot"></span><span><%= running ? "시뮬레이터 실행 중" : "시뮬레이터가 실행 중이 아닙니다" %></span></div>
         <% if (message.length() > 0) { %>
             <div class="sim-message <%= messageClass %>"><%= h(message) %></div>

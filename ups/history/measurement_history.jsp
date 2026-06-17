@@ -87,14 +87,7 @@ if ("csv".equalsIgnoreCase(export)) {
 </head>
 <body>
 <div class="page-wrap history-shell">
-    <div class="title-bar">
-        <div>
-            <h2>UPS 측정 이력</h2>
-            <p class="muted">DB에 저장된 UPS 측정값을 조회합니다.</p>
-        </div>
-    </div>
-
-    <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
+<% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <form class="history-filter" method="get" id="historyFilter">
         <label for="ups">UPS 검색</label>

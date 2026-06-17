@@ -240,10 +240,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
 <body>
 <div class="page-wrap phasor-shell">
     <div class="title-bar">
-        <div>
-            <h2>UPS Phasor Diagram</h2>
-            <p class="muted">출력 전압과 역률을 기준으로 전류 위상을 추정합니다.</p>
-        </div>
+        
         <div class="inline-actions">
             <button class="back-btn" onclick="location.href='ups_status.jsp'">실시간 상태</button>
         </div>

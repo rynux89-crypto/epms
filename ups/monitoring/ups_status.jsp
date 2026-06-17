@@ -257,14 +257,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
 </head>
 <body>
 <div class="page-wrap ups-shell">
-    <div class="title-bar">
-        <div>
-            <h2>UPS 모니터링</h2>
-            <p class="muted">슈나이더 Easy UPS 3-Phase Modular Memory Map 기준 화면입니다.</p>
-        </div>
-    </div>
-
-    <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
+<% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <div class="hmi-toolbar">
         <form method="get">

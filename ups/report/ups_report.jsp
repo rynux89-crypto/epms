@@ -69,14 +69,7 @@ if ("csv".equalsIgnoreCase(export)) {
 </head>
 <body>
 <div class="page-wrap report-shell">
-    <div class="title-bar">
-        <div>
-            <h2>UPS 레포트</h2>
-            <p class="muted">기간별 UPS 운전 요약, 전력 현황, 배터리, 알람/이벤트 집계를 확인합니다.</p>
-        </div>
-    </div>
-
-    <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
+<% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <form class="report-filter" method="get" id="reportFilter">
         <label for="ups">UPS 검색</label>
