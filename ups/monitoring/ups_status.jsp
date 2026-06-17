@@ -217,9 +217,9 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         .battery-shape::before { content:""; position:absolute; left:18px; top:-13px; width:30px; height:11px; border:5px solid #111827; border-bottom:none; border-radius:4px 4px 0 0; background:#fff; }
         .battery-shape::after { content:""; position:absolute; right:18px; top:-13px; width:30px; height:11px; border:5px solid #111827; border-bottom:none; border-radius:4px 4px 0 0; background:#fff; }
         .date-panel { min-height:58px; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:900; color:#0f172a; }
-        .mode-panel { min-height:78px; padding:0; overflow:hidden; }
-        .mode-panel h3 { padding:8px 12px 5px; margin:0; }
-        .mode-value { background:#dcfce7; color:#166534; border-top:1px solid #bbf7d0; text-align:center; font-size:24px; font-weight:800; padding:7px 8px 9px; }
+        .mode-panel { min-height:110px; padding:0; overflow:hidden; display:flex; flex-direction:column; }
+        .mode-panel h3 { min-height:30px; margin:0; padding:6px 12px 5px; display:flex; align-items:center; justify-content:center; border-bottom:1px solid #cbd5e1; font-size:21px; font-weight:900; line-height:1.1; }
+        .mode-value { min-height:42px; background:#dcfce7; color:#166534; border-bottom:1px solid #bbf7d0; display:flex; align-items:center; justify-content:center; text-align:center; font-size:22px; font-weight:900; line-height:1.15; padding:0 10px; }
         .total-panel .bar { height:34px; border-radius:8px; background:#dcfce7; color:#166534; margin:8px 0; display:flex; align-items:center; justify-content:center; font-size:23px; font-weight:800; }
         .total-panel .total-values { text-align:center; font-size:22px; font-weight:800; color:#111827; }
         .phase-power { grid-row:span 4; }
