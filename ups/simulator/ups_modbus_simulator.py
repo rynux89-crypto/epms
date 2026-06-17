@@ -788,12 +788,12 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .status-bits b {{ color:#b91c1c; }}
 .section-head {{ display:flex; justify-content:space-between; align-items:center; gap:12px; min-height:36px; margin-bottom:12px; }}
 .section-head h2 {{ margin:0; }}
-.scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }}
+.scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fill,150px); gap:10px; justify-content:start; }}
 button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:9px 10px; text-align:center; cursor:pointer; min-height:58px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
 button.scenario strong {{ display:block; font-size:14px; margin-bottom:3px; }}
 button.scenario span {{ color:#64748b; font-size:12px; }}
 button.scenario.active {{ border-color:#1267b1; background:#eaf4ff; box-shadow:inset 0 0 0 1px #1267b1; }}
-.breaker-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-top:0; }}
+.breaker-grid {{ display:grid; grid-template-columns:repeat(auto-fill,150px); gap:10px; justify-content:start; margin-top:0; }}
 button.breaker {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:9px 10px; cursor:pointer; text-align:center; min-height:58px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
 button.breaker strong {{ display:block; font-size:14px; margin-bottom:3px; }}
 button.breaker span {{ display:block; font-size:12px; color:#64748b; }}
