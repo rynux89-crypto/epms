@@ -775,7 +775,7 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .sim-control.manage {{ background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }}
 .panel {{ background:#fff; border:1px solid #d7e1ec; border-radius:8px; padding:16px; }}
 .panel + .panel {{ margin-top:12px; }}
-.scenario-breaker-row {{ display:grid; grid-template-columns:minmax(0, 1.6fr) minmax(360px, .9fr); gap:12px; margin-top:12px; align-items:start; }}
+.scenario-breaker-row {{ display:grid; grid-template-columns:minmax(0, 1.45fr) minmax(520px, 1fr); gap:12px; margin-top:12px; align-items:start; }}
 .scenario-breaker-row .panel {{ margin-top:0; height:100%; }}
 .status-panel {{ margin-bottom:0; padding:12px; }}
 .status-panel h2 {{ margin:0 0 8px; font-size:18px; }}
@@ -788,12 +788,12 @@ h1 {{ margin:0 0 6px; font-size:28px; }}
 .status-bits b {{ color:#b91c1c; }}
 .section-head {{ display:flex; justify-content:space-between; align-items:center; gap:12px; min-height:36px; margin-bottom:12px; }}
 .section-head h2 {{ margin:0; }}
-.scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }}
+.scenario-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }}
 button.scenario {{ border:1px solid #cbd8e6; border-radius:8px; background:#f8fafc; color:#172033; padding:9px 10px; text-align:center; cursor:pointer; min-height:58px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
 button.scenario strong {{ display:block; font-size:14px; margin-bottom:3px; }}
 button.scenario span {{ color:#64748b; font-size:12px; }}
 button.scenario.active {{ border-color:#1267b1; background:#eaf4ff; box-shadow:inset 0 0 0 1px #1267b1; }}
-.breaker-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:10px; margin-top:0; }}
+.breaker-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-top:0; }}
 button.breaker {{ border:1px solid #cbd8e6; border-radius:8px; background:#fff; color:#172033; padding:9px 10px; cursor:pointer; text-align:center; min-height:58px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }}
 button.breaker strong {{ display:block; font-size:14px; margin-bottom:3px; }}
 button.breaker span {{ display:block; font-size:12px; color:#64748b; }}
