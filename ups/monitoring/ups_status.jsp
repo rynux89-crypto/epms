@@ -147,27 +147,30 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
     <meta http-equiv="refresh" content="2">
     <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
-        body { background:#f2f4f7; }
-        .ups-shell { max-width:1180px; margin:0 auto; }
-        .page-wrap.ups-shell { padding-top:10px; padding-bottom:10px; }
-        .ups-shell .title-bar { margin-bottom:8px; }
-        .ups-shell .title-bar h2 { margin:0 0 2px; font-size:22px; }
+        body { background:#edf2f7; }
+        .ups-shell { max-width:1420px; margin:0 auto; }
+        .page-wrap.ups-shell { padding-top:14px; padding-bottom:14px; }
+        .ups-shell .title-bar { margin-bottom:12px; align-items:center; }
+        .ups-shell .title-bar h2 { margin:0 0 2px; font-size:24px; letter-spacing:-.01em; }
         .ups-shell .title-bar p { margin:0; }
-        .hmi-scale { zoom:.68; }
-        .hmi-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
-        .hmi-toolbar select { min-width:260px; padding:8px 10px; border:1px solid #9aa3ad; border-radius:6px; background:#fff; }
+        .hmi-scale { zoom:.76; }
+        .hmi-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; padding:10px 12px; border:1px solid #d7e1ec; border-radius:10px; background:#fff; box-shadow:0 10px 28px rgba(15,23,42,.06); }
+        .hmi-toolbar form { margin:0; }
+        .hmi-toolbar select { min-width:300px; height:38px; padding:7px 34px 7px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#0f172a; font-weight:700; }
         .hmi {
-            border:3px solid #555;
-            background:#f7f7f7;
-            padding:8px 12px 12px;
-            color:#111;
+            border:1px solid #d1dae5;
+            border-radius:14px;
+            background:#f8fafc;
+            padding:12px;
+            color:#0f172a;
             font-family:"Segoe UI", "Noto Sans KR", Arial, sans-serif;
             display:grid;
             grid-template-columns:minmax(0, 3fr) minmax(360px, 1.42fr);
-            gap:8px;
+            gap:12px;
             align-items:stretch;
+            box-shadow:0 18px 44px rgba(15,23,42,.10);
         }
-        .mimic-panel { grid-column:2; grid-row:1; border:2px solid #666; background:#fff; padding:4px 8px 6px; display:flex; align-items:center; min-height:100%; }
+        .mimic-panel { grid-column:2; grid-row:1; border:1px solid #cbd5e1; border-radius:12px; background:#fff; padding:10px; display:flex; align-items:center; min-height:100%; box-shadow:inset 0 0 0 1px rgba(255,255,255,.65); }
         .mimic-wrap { width:100%; }
         .mimic-svg { display:block; width:100%; height:auto; }
         .mimic-line { fill:none; stroke-width:4; stroke-linecap:square; stroke-linejoin:miter; }
@@ -185,48 +188,50 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         .hmi-grid {
             display:grid;
             grid-template-columns:1.05fr 1.15fr 1.05fr;
-            gap:8px;
+            gap:10px;
             align-content:stretch;
             grid-column:1;
             grid-row:1;
         }
         .hmi-panel {
-            border:2px solid #666;
+            border:1px solid #cbd5e1;
+            border-radius:10px;
             background:#fff;
             min-height:86px;
-            padding:7px 13px;
+            padding:10px 14px;
             font-weight:400;
+            box-shadow:0 8px 22px rgba(15,23,42,.06);
         }
-        .hmi-panel h3 { margin:0 0 6px; text-align:center; font-size:27px; font-weight:800; color:#111; line-height:1.05; }
-        .metric-row { display:grid; grid-template-columns:70px 22px 1fr; gap:8px; align-items:center; font-size:25px; line-height:1.16; }
-        .metric-row .val { text-align:right; font-weight:400; }
+        .hmi-panel h3 { margin:0 0 8px; text-align:center; font-size:24px; font-weight:900; color:#0f172a; line-height:1.08; }
+        .metric-row { display:grid; grid-template-columns:70px 18px 1fr; gap:8px; align-items:center; font-size:23px; line-height:1.2; }
+        .metric-row .val { text-align:right; font-weight:700; color:#111827; }
         .battery-panel { display:grid; grid-template-columns:1fr 120px 1fr; align-items:center; gap:10px; }
         .battery-time { text-align:center; line-height:1.18; }
-        .battery-time-title { font-size:21px; font-weight:800; margin-bottom:5px; }
-        .battery-time-value { font-size:25px; font-weight:400; }
-        .battery-percent { font-size:27px; font-weight:400; text-align:center; line-height:1.15; }
-        .battery-temp { margin-top:5px; font-size:20px; }
-        .battery-shape { height:54px; border:7px solid #111; position:relative; background:linear-gradient(90deg,#5fc878 var(--charge,0%),#fff var(--charge,0%)); }
-        .battery-shape::before { content:""; position:absolute; left:18px; top:-16px; width:32px; height:14px; border:7px solid #111; border-bottom:none; background:#fff; }
-        .battery-shape::after { content:""; position:absolute; right:18px; top:-16px; width:32px; height:14px; border:7px solid #111; border-bottom:none; background:#fff; }
-        .date-panel { min-height:58px; display:flex; align-items:center; justify-content:center; font-size:25px; font-weight:800; }
+        .battery-time-title { font-size:19px; font-weight:900; margin-bottom:5px; color:#334155; }
+        .battery-time-value { font-size:23px; font-weight:700; }
+        .battery-percent { font-size:24px; font-weight:800; text-align:center; line-height:1.15; }
+        .battery-temp { margin-top:5px; font-size:18px; color:#334155; }
+        .battery-shape { height:48px; border:5px solid #111827; border-radius:4px; position:relative; background:linear-gradient(90deg,#4ade80 var(--charge,0%),#f8fafc var(--charge,0%)); }
+        .battery-shape::before { content:""; position:absolute; left:18px; top:-13px; width:30px; height:11px; border:5px solid #111827; border-bottom:none; border-radius:4px 4px 0 0; background:#fff; }
+        .battery-shape::after { content:""; position:absolute; right:18px; top:-13px; width:30px; height:11px; border:5px solid #111827; border-bottom:none; border-radius:4px 4px 0 0; background:#fff; }
+        .date-panel { min-height:58px; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:900; color:#0f172a; }
         .mode-panel { min-height:78px; padding:0; overflow:hidden; }
-        .mode-panel h3 { padding:6px 12px 3px; margin:0; }
-        .mode-value { background:#5fc878; text-align:center; font-size:27px; font-weight:400; padding:3px 8px 6px; }
-        .total-panel .bar { height:36px; background:#5fc878; margin:6px 0; display:flex; align-items:center; justify-content:center; font-size:25px; font-weight:400; }
-        .total-panel .total-values { text-align:center; font-size:25px; font-weight:400; }
+        .mode-panel h3 { padding:8px 12px 5px; margin:0; }
+        .mode-value { background:#dcfce7; color:#166534; border-top:1px solid #bbf7d0; text-align:center; font-size:24px; font-weight:800; padding:7px 8px 9px; }
+        .total-panel .bar { height:34px; border-radius:8px; background:#dcfce7; color:#166534; margin:8px 0; display:flex; align-items:center; justify-content:center; font-size:23px; font-weight:800; }
+        .total-panel .total-values { text-align:center; font-size:22px; font-weight:800; color:#111827; }
         .phase-power { grid-row:span 4; }
-        .phase-list { display:grid; gap:11px; padding-top:28px; }
-        .phase-item { display:grid; grid-template-columns:64px 1fr; align-items:center; font-size:26px; }
-        .phase-item .phase { font-weight:400; }
-        .phase-item .nums { text-align:right; line-height:1.2; font-weight:400; }
+        .phase-list { display:grid; gap:12px; padding-top:22px; }
+        .phase-item { display:grid; grid-template-columns:58px 1fr; align-items:center; font-size:23px; }
+        .phase-item .phase { font-weight:800; color:#334155; }
+        .phase-item .nums { text-align:right; line-height:1.22; font-weight:700; color:#111827; }
         .voltage-panel { grid-row:1; }
         .current-panel { grid-row:2; }
         .frequency-panel { grid-row:3; }
         .pf-panel { grid-row:4; }
-        .freq-value { text-align:center; font-size:28px; font-weight:400; padding-top:6px; }
-        .pf-list { display:grid; gap:2px; font-size:25px; font-weight:400; padding-top:4px; }
-        .pf-row { display:grid; grid-template-columns:52px 16px 1fr; gap:6px; align-items:center; line-height:1.14; }
+        .freq-value { text-align:center; font-size:24px; font-weight:800; padding-top:6px; }
+        .pf-list { display:grid; gap:4px; font-size:22px; font-weight:700; padding-top:4px; }
+        .pf-row { display:grid; grid-template-columns:48px 14px 1fr; gap:6px; align-items:center; line-height:1.18; }
         .pf-row span:last-child { text-align:right; }
         .span-left { grid-column:1; }
         .span-mid { grid-column:2; }
