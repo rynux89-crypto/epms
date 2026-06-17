@@ -191,17 +191,18 @@ double waveITop = Math.max(1d, iMax * 1.2d);
     <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
         body { background:#dfe6ef; }
-        .phasor-shell { max-width:980px; margin:0 auto; }
-        .phasor-toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; min-height:32px; }
+        .phasor-shell { width:100%; max-width:1280px; margin:0 auto; padding:8px 10px 6px; box-sizing:border-box; }
+        .phasor-toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; min-height:30px; }
         .phasor-toolbar form { margin:0; }
-        .phasor-toolbar select { min-width:240px; height:30px; padding:3px 8px; border:1px solid #9aa3ad; border-radius:5px; background:#fff; font-size:13px; }
-        .phasor-hmi { background:#18251f; border:6px solid #ecf2f6; box-shadow:0 18px 42px rgba(22,35,48,.22); padding:10px 12px 8px; color:#23ff35; font-family:Consolas,"Segoe UI",monospace; }
-        .hmi-title { height:32px; margin:-10px -12px 8px; padding:6px 12px; background:linear-gradient(90deg,#1f8fd6 0%,#58c5f4 46%,#dff7ff 100%); color:#fff; font-size:18px; line-height:20px; font-weight:900; letter-spacing:.2px; text-shadow:0 1px 2px rgba(0,0,0,.72),0 0 4px rgba(0,0,0,.42); }
+        .phasor-toolbar select { min-width:240px; height:28px; padding:2px 8px; border:1px solid #9aa3ad; border-radius:5px; background:#fff; font-size:13px; }
+        .phasor-hmi { background:#18251f; border:4px solid #ecf2f6; box-shadow:0 14px 34px rgba(22,35,48,.18); padding:7px 10px 6px; color:#23ff35; font-family:Consolas,"Segoe UI",monospace; }
+        .hmi-title { height:26px; margin:-7px -10px 6px; padding:4px 10px; background:linear-gradient(90deg,#1f8fd6 0%,#58c5f4 46%,#dff7ff 100%); color:#fff; font-size:16px; line-height:18px; font-weight:900; letter-spacing:.2px; text-shadow:0 1px 2px rgba(0,0,0,.72),0 0 4px rgba(0,0,0,.42); }
         .scope-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); border-left:1px solid rgba(43,255,65,.32); border-top:1px solid rgba(43,255,65,.32); background-color:#15221c; }
-        .scope-cell { min-width:0; min-height:342px; border-right:1px solid rgba(43,255,65,.32); border-bottom:1px solid rgba(43,255,65,.32); padding:8px; position:relative; background:#15221c; }
-        .scope-cell.wave { min-height:278px; }
-        .dial-svg, .wave-svg { display:block; width:100%; height:auto; }
-        .scope-cell:not(.wave) .dial-svg { margin-top:12px; }
+        .scope-cell { min-width:0; height:calc(54vh - 86px); min-height:250px; max-height:310px; border-right:1px solid rgba(43,255,65,.32); border-bottom:1px solid rgba(43,255,65,.32); padding:6px 8px; position:relative; background:#15221c; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; }
+        .scope-cell.wave { height:calc(46vh - 74px); min-height:190px; max-height:250px; }
+        .dial-svg, .wave-svg { display:block; width:100%; height:100%; min-height:0; }
+        .scope-cell:not(.wave) .dial-svg { flex:1 1 auto; margin-top:2px; }
+        .scope-cell.wave .wave-svg { flex:1 1 auto; }
         .dial-ring { fill:none; stroke:#18f42f; stroke-width:1.25; opacity:.82; }
         .dial-tick { stroke:#16ef32; stroke-width:.75; opacity:.68; }
         .dial-minor { stroke:#16ef32; stroke-width:.55; opacity:.36; }
@@ -221,19 +222,32 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         .phase-arrow.phase-yellow { fill:#ffe84a; }
         .phase-arrow.phase-blue { fill:#1678ff; }
         .wave-line { fill:none; stroke-width:1.45; stroke-linecap:round; }
-        .phase-legend { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; margin:0 0 8px; padding:0 2px; font-size:13px; font-weight:900; color:#d8ffe0; }
+        .phase-legend { display:flex; align-items:center; flex-wrap:wrap; gap:6px 13px; margin:0 0 5px; padding:0 2px; font-size:13px; font-weight:900; color:#d8ffe0; }
         .phase-legend span { display:inline-flex; align-items:center; gap:5px; }
         .phase-dot { width:10px; height:10px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
         .phase-tag { font:900 13px Consolas,"Segoe UI",monospace; text-anchor:middle; dominant-baseline:middle; paint-order:stroke; stroke:#15221c; stroke-width:4px; stroke-linejoin:round; }
         .wave-tag { font-size:12px; }
-        .readout { display:grid; grid-template-columns:repeat(6, max-content); justify-content:center; gap:3px 6px; margin:4px auto 0; width:100%; font-weight:900; font-size:11px; line-height:1.2; white-space:nowrap; overflow:hidden; }
+        .readout { display:grid; grid-template-columns:repeat(6, max-content); justify-content:center; gap:2px 6px; margin:2px auto 0; width:100%; font-weight:900; font-size:10.5px; line-height:1.15; white-space:nowrap; overflow:hidden; flex:0 0 auto; }
         .readout span:nth-child(even) { text-align:left; }
         .wave-caption { position:absolute; top:8px; left:12px; color:#24ff39; font-size:12px; font-weight:800; }
-        .empty-hmi { display:grid; place-items:center; min-height:620px; color:#20ff36; text-align:center; font-weight:800; }
-        .note { margin-top:8px; color:#64748b; font-size:12px; line-height:1.55; }
+        .empty-hmi { display:grid; place-items:center; min-height:calc(100vh - 150px); color:#20ff36; text-align:center; font-weight:800; }
+        .note { margin-top:5px; color:#64748b; font-size:11px; line-height:1.35; }
+        @media (max-height: 760px) {
+            .phasor-shell { padding-top:4px; padding-bottom:4px; }
+            .phasor-toolbar { min-height:28px; }
+            .phasor-toolbar select { height:26px; }
+            .phasor-hmi { padding:6px 8px 5px; }
+            .hmi-title { height:23px; margin:-6px -8px 4px; padding:3px 9px; font-size:15px; line-height:17px; }
+            .phase-legend { margin-bottom:3px; font-size:12px; }
+            .scope-cell { min-height:220px; }
+            .scope-cell.wave { min-height:165px; }
+            .note { display:none; }
+        }
         @media (max-width: 900px) {
             .scope-grid { grid-template-columns:1fr; }
             .phasor-toolbar { align-items:flex-start; flex-direction:column; }
+            .scope-cell, .scope-cell.wave { height:auto; min-height:0; max-height:none; }
+            .dial-svg, .wave-svg { height:auto; }
         }
     </style>
 </head>
