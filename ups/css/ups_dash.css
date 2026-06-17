@@ -118,7 +118,7 @@
         .device-info .ok-dot { display:inline-flex; align-items:center; gap:7px; color:var(--dash-green); font-weight:800; }
         .spec { display:grid; grid-template-columns:84px 1fr; gap:8px 14px; margin:18px 0; color:#d9e7f5; font-size:14px; }
         .spec span { color:var(--dash-muted); }
-        .dark-btn { width:100%; border:1px solid #33475e; background:#0d1928; color:#fff; border-radius:7px; padding:10px 14px; box-shadow:none; }
+        .dark-btn { width:100%; border:1px solid #33475e; background:#0d1928; color:#fff; border-radius:7px; padding:10px 14px; box-shadow:none; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; box-sizing:border-box; font:inherit; }
         .device-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
         .flow { min-height:300px; display:grid; place-items:center; }
         .flow-svg { width:100%; max-width:510px; height:auto; }

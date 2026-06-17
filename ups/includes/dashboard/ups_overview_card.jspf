@@ -28,8 +28,8 @@
                             <span>설치 위치</span><b><%= h(fragmentModel.selectedLocationText) %></b>
                         </div>
                         <div class="device-actions">
-                            <button class="dark-btn" onclick="location.href='monitoring/ups_status.jsp<%= h(fragmentModel.selectedLinkQuery) %>'">상세 보기 →</button>
-                            <button class="dark-btn" onclick="location.href='monitoring/phasor_diagram.jsp<%= h(fragmentModel.selectedLinkQuery) %>'">페이저 보기 →</button>
+                            <a class="dark-btn dash-frame-link" href="monitoring/ups_status.jsp<%= h(fragmentModel.selectedLinkQuery) %>" title="UPS 모니터링 보기">상세 보기 →</a>
+                            <a class="dark-btn dash-frame-link" href="monitoring/phasor_diagram.jsp<%= h(fragmentModel.selectedLinkQuery) %>" title="UPS Phasor Diagram 보기">페이저 보기 →</a>
                         </div>
                     </div>
                 </div>
