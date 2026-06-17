@@ -326,7 +326,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
                     <path d="M48 277 L72 291 L48 305 Z" fill="<%= ssibClosed ? "#169b45" : "#111" %>"></path>
                     <text x="112" y="272" class="mimic-text">SSIB</text>
                     <line x1="82" y1="291" x2="140" y2="291" class="mimic-line <%= ssibPathClass %>"></line>
-                    <line x1="100" y1="291" x2="100" y2="330" class="mimic-line <%= bypassInputBranchClass %>"></line>
+                    <line x1="100" y1="291" x2="100" y2="348" class="mimic-line <%= bypassInputBranchClass %>"></line>
                     <line x1="140" y1="291" x2="<%= ssibClosed ? "200" : "170" %>" y2="<%= ssibClosed ? "291" : "268" %>" class="mimic-switch <%= ssibClosed ? "mimic-active" : "mimic-idle" %>"></line>
                     <circle cx="140" cy="291" r="6" class="mimic-dot <%= ssibClosed ? "active" : "" %>"></circle>
                     <circle cx="200" cy="291" r="6" class="mimic-dot <%= ssibClosed ? "active" : "" %>"></circle>
