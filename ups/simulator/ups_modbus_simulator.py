@@ -767,7 +767,12 @@ body {{ margin:0; font-family:"Segoe UI","Noto Sans KR",Arial,sans-serif; backgr
 .top {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; }}
 h1 {{ margin:0 0 6px; font-size:28px; }}
 .muted {{ color:#64748b; font-size:13px; }}
+.top-actions {{ display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }}
 .badge {{ display:inline-flex; align-items:center; min-height:34px; padding:6px 12px; border-radius:999px; background:#fff; border:1px solid #d7e1ec; font-weight:700; }}
+.sim-control {{ border:1px solid #cbd8e6; border-radius:6px; background:#fff; color:#172033; min-height:34px; padding:7px 12px; font-weight:800; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }}
+.sim-control.running {{ background:#ecfdf3; border-color:#86efac; color:#166534; cursor:default; }}
+.sim-control.stop {{ background:#dc2626; border-color:#dc2626; color:#fff; }}
+.sim-control.manage {{ background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }}
 .panel {{ background:#fff; border:1px solid #d7e1ec; border-radius:8px; padding:16px; }}
 .panel + .panel {{ margin-top:12px; }}
 .status-panel {{ margin-bottom:0; padding:12px; }}
@@ -818,7 +823,7 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
 .status-word {{ font-family:Consolas,monospace; }}
 .links {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }}
 .links a {{ color:#1267b1; text-decoration:none; border:1px solid #cbd8e6; border-radius:6px; padding:7px 10px; background:#fff; font-size:13px; }}
-@media (max-width: 860px) {{ .wrap {{ padding:14px; }} .top {{ display:block; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} .metrics {{ grid-template-columns:1fr; }} }}
+@media (max-width: 860px) {{ .wrap {{ padding:14px; }} .top {{ display:block; }} .top-actions {{ justify-content:flex-start; margin-top:12px; }} .panel {{ margin-bottom:14px; }} .panel + .panel {{ margin-top:0; }} .metrics {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
 <body>
@@ -828,7 +833,12 @@ button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; ba
       <h1>UPS Simulator Control</h1>
       <div class="muted">Modbus TCP 127.0.0.1:1502 / Control UI 127.0.0.1:1503</div>
     </div>
-    <div class="badge" id="current">...</div>
+    <div class="top-actions">
+      <span class="sim-control running">실행 중</span>
+      <button class="sim-control stop" id="stopSimulator" type="button">시뮬레이터 정지</button>
+      <a class="sim-control manage" href="http://127.0.0.1:8080/ups/simulator/index.jsp" target="_blank">실행/정지 화면</a>
+      <div class="badge" id="current">...</div>
+    </div>
   </div>
   <div class="panel status-panel">
     <h2>Status Word</h2>
@@ -1085,6 +1095,13 @@ document.getElementById('resetAlarmTests').addEventListener('click', async () =>
 document.getElementById('resetManualValues').addEventListener('click', async () => {{
   await fetch('/api/reset-manual-values', {{method:'POST'}});
   refresh();
+}});
+document.getElementById('stopSimulator').addEventListener('click', async () => {{
+  if (!confirm('시뮬레이터를 정지할까요?')) return;
+  await fetch('/api/shutdown', {{method:'POST'}});
+  setTimeout(() => {{
+    location.href = 'http://127.0.0.1:8080/ups/simulator/index.jsp';
+  }}, 500);
 }});
 refresh();
 setInterval(refresh, 2000);
