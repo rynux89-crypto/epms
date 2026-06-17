@@ -214,6 +214,13 @@
                     <span class="sub-card-meta">바로가기</span>
                 </a>
             </div>
+            <div class="app-card">
+                <a href="/ups/simulator/index.jsp" class="sub-card-link">
+                    <div class="tile-head"><span class="tile-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8"/><path d="M8 12h4"/><path d="M15 15l3 2-3 2z"/></svg></span><h3>UPS 시뮬레이터</h3></div>
+                    <p>테스트용 UPS 값, 시나리오, 차단기와 세부 알람 이벤트를 생성합니다.</p>
+                    <span class="sub-card-meta">바로가기</span>
+                </a>
+            </div>
         </div>
     </div>
 
