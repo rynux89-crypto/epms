@@ -65,6 +65,10 @@ public final class UpsRealtimeService {
             systemModeCode = UpsSimulatorSupport.jsonInt(simStatus, "system_operation_mode_code", systemModeCode);
             if ("normal".equals(simScenario)) upsModeCode = 2;
             if ("battery".equals(simScenario) || "low_battery".equals(simScenario)) upsModeCode = 4;
+            if ("bypass".equals(simScenario)) {
+                upsModeCode = 5;
+                systemModeCode = 5;
+            }
             uibClosed = UpsSimulatorSupport.jsonBool(simStatus, "uib", uibClosed);
             uobClosed = UpsSimulatorSupport.jsonBool(simStatus, "uob", uobClosed);
             ssibClosed = UpsSimulatorSupport.jsonBool(simStatus, "ssib", ssibClosed);
@@ -210,6 +214,10 @@ public final class UpsRealtimeService {
             putIfMissing(target, "remaining_minutes", "7");
             putIfMissing(target, "battery_current", "-48");
             putIfMissing(target, "battery_charge_percent", "8");
+        } else if ("bypass".equals(scenario)) {
+            putIfMissing(target, "remaining_minutes", "120");
+            putIfMissing(target, "battery_current", "4");
+            if (target.get("battery_charge_percent") == null) target.put("battery_charge_percent", new BigDecimal("96"));
         } else if ("critical".equals(scenario)) {
             putIfMissing(target, "remaining_minutes", "120");
             putIfMissing(target, "battery_current", "4");

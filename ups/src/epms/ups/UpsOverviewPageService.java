@@ -150,7 +150,7 @@ public final class UpsOverviewPageService {
         applySimulatorDefaults(row, scenario);
         row.put("measured_at", new Timestamp(System.currentTimeMillis()));
         row.put("last_comm_status", "OK");
-        if ("normal".equals(scenario)) {
+        if ("normal".equals(scenario) || "bypass".equals(scenario)) {
             row.put("active_alarm_count", Integer.valueOf(0));
         } else if (intValue(row.get("active_alarm_count")) == 0) {
             row.put("active_alarm_count", Integer.valueOf(1));
@@ -169,6 +169,9 @@ public final class UpsOverviewPageService {
         } else if ("low_battery".equals(scenario)) {
             target.put("remaining_minutes", new BigDecimal("7"));
             target.put("battery_charge_percent", new BigDecimal("8"));
+        } else if ("bypass".equals(scenario)) {
+            target.put("remaining_minutes", new BigDecimal("120"));
+            if (target.get("battery_charge_percent") == null) target.put("battery_charge_percent", new BigDecimal("96"));
         } else if ("critical".equals(scenario)) {
             target.put("remaining_minutes", new BigDecimal("120"));
             target.put("battery_charge_percent", new BigDecimal("5"));

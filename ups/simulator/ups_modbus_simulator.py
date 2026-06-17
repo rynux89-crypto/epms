@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SCENARIOS = {
     "normal",
     "battery",
+    "bypass",
     "low_battery",
     "overload",
     "input_fault",
@@ -41,6 +42,7 @@ SCENARIOS = {
 SCENARIO_LABELS = {
     "normal": "정상",
     "battery": "배터리 운전",
+    "bypass": "바이패스 운전",
     "low_battery": "배터리 부족",
     "overload": "과부하",
     "input_fault": "입력 이상",
@@ -268,8 +270,8 @@ class SimulatorState:
             "battery_charge_percent": regs.get(4871, 0),
             "battery_temperature_c": regs.get(4864, 0) / 10,
             "remaining_minutes": get_u32(regs, 4872) / 60,
-            "ups_operation_mode_code": 4 if scenario in ("battery", "low_battery") else 2,
-            "system_operation_mode_code": 2,
+            "ups_operation_mode_code": 5 if scenario == "bypass" else (4 if scenario in ("battery", "low_battery") else 2),
+            "system_operation_mode_code": 5 if scenario == "bypass" else 2,
             "ups_status_word": regs.get(1, 0),
             "input_status": regs.get(11, 0),
             "output_status": regs.get(12, 0),
@@ -323,6 +325,9 @@ class SimulatorState:
             remaining_seconds = 2700
             battery_charge = 72
             ups_mode = 4
+        elif scenario == "bypass":
+            ups_mode = 5
+            system_mode = 5
         elif scenario == "low_battery":
             ups_status |= (1 << 0) | (1 << 1) | (1 << 14)
             energy_status |= (1 << 4) | (1 << 6) | (1 << 12)
@@ -752,7 +757,7 @@ class ControlHandler(BaseHTTPRequestHandler):
     def _html(self) -> None:
         scenarios = "\n".join(
             f'<button class="scenario" data-scenario="{name}"><strong>{SCENARIO_LABELS[name]}</strong><span>{name}</span></button>'
-            for name in ["normal", "battery", "low_battery", "overload", "input_fault", "output_fault", "bypass_fault", "power_module_fault", "critical"]
+            for name in ["normal", "battery", "bypass", "low_battery", "overload", "input_fault", "output_fault", "bypass_fault", "power_module_fault", "critical"]
         )
         body = f"""<!doctype html>
 <html lang="ko">
@@ -1135,7 +1140,7 @@ class ControlServer(ThreadingHTTPServer):
 
 
 def console_loop(state: SimulatorState, server: ThreadedTcpServer) -> None:
-    print("Commands: normal, battery, low_battery, overload, input_fault, output_fault,")
+    print("Commands: normal, battery, bypass, low_battery, overload, input_fault, output_fault,")
     print("          bypass_fault, power_module_fault, critical, status, quit")
     while True:
         try:
