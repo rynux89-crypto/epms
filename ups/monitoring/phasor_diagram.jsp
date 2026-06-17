@@ -298,8 +298,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="16" y="10" class="scope-label">Nominal voltage</text>
-                    <text x="16" y="27" class="scope-small"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
+                    <text x="8" y="10" class="scope-label">Nominal voltage</text>
+                    <text x="8" y="27" class="scope-small"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
@@ -343,8 +343,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="16" y="10" class="scope-label">Max scale current</text>
-                    <text x="16" y="27" class="scope-small"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
+                    <text x="8" y="10" class="scope-label">Max scale current</text>
+                    <text x="8" y="27" class="scope-small"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
