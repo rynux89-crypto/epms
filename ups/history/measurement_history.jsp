@@ -98,7 +98,7 @@ if ("csv".equalsIgnoreCase(export)) {
         <label for="from">시작</label>
         <input id="from" type="datetime-local" name="from" value="<%= h(fromRaw) %>">
         <label for="to">종료</label>
-        <input id="to" type="datetime-local" name="to" value="<%= h(toRaw) %>" <%= explicitTo ? "" : "data-auto-now=\"1\"" %>>
+        <input id="to" type="datetime-local" name="to" value="<%= h(toRaw) %>">
         <label for="limit">건수</label>
         <select id="limit" name="limit">
             <% int[] limits = new int[]{100, 200, 500, 1000}; for (int n : limits) { %>
@@ -170,24 +170,5 @@ if ("csv".equalsIgnoreCase(export)) {
         <% } %>
     </div>
 </div>
-<script>
-(function () {
-    var form = document.getElementById('historyFilter');
-    var to = document.getElementById('to');
-    function pad(n) { return n < 10 ? '0' + n : '' + n; }
-    function nowValue() {
-        var d = new Date();
-        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-    }
-    function updateAutoNow() {
-        if (to && to.dataset.autoNow === '1') to.value = nowValue();
-    }
-    if (to) {
-        to.addEventListener('input', function () { delete to.dataset.autoNow; });
-        updateAutoNow();
-        setInterval(updateAutoNow, 1000);
-    }
-})();
-</script>
 </body>
 </html>
