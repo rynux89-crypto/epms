@@ -223,6 +223,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         .phasor-reference { stroke:#27ff3a; stroke-width:.9; stroke-dasharray:4 5; opacity:.42; }
         .scope-label { fill:#25ff3b; font:700 13px Consolas,"Segoe UI",monospace; }
         .scope-small { fill:#25ff3b; font:700 11px Consolas,"Segoe UI",monospace; }
+        .dial-title { transform:translateX(-92px); }
         .scope-y-label { fill:#25ff3b; font:700 9px Consolas,"Segoe UI",monospace; opacity:.95; }
         .scope-tick { stroke:#20ff36; stroke-width:.9; opacity:.75; }
         .phase-red { stroke:#ff3131; fill:#ff3131; color:#ff3131; }
@@ -312,8 +313,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="-12" y="10" class="scope-label">Nominal voltage</text>
-                    <text x="-12" y="27" class="scope-small"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
+                    <text x="-12" y="10" class="scope-label dial-title">Nominal voltage</text>
+                    <text x="-12" y="27" class="scope-small dial-title"><%= h(fmtUnit(m.get("output_voltage_l12"), 0, "V", hideData)) %> L-L</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
@@ -357,8 +358,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                             <path d="M0 0 L12 6 L0 12 z" fill="#1678ff"></path>
                         </marker>
                     </defs>
-                    <text x="-12" y="10" class="scope-label">Max scale current</text>
-                    <text x="-12" y="27" class="scope-small"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
+                    <text x="-12" y="10" class="scope-label dial-title">Max scale current</text>
+                    <text x="-12" y="27" class="scope-small dial-title"><%= h(fmt(Double.valueOf(iMax), 1)) %>A</text>
                     <text x="180" y="10" text-anchor="middle" class="scope-small">90°</text>
                     <text x="344" y="154" class="scope-small">0°</text>
                     <text x="180" y="298" text-anchor="middle" class="scope-small">270°</text>
