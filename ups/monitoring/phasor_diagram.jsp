@@ -236,12 +236,11 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         .phase-arrow.phase-blue { fill:#1678ff; }
         .wave-line { fill:none; stroke-width:1.45; stroke-linecap:round; }
         .phase-legend { display:flex; align-items:center; gap:8px; margin:0; padding:0; font-size:13px; font-weight:900; color:#d8ffe0; }
-        .dial-legend { position:absolute; top:14px; right:12px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:8px 7px; background:rgba(21,34,28,.86); border-left:1px solid rgba(43,255,65,.28); z-index:2; }
         .phase-legend span { display:inline-flex; align-items:center; gap:5px; }
         .phase-dot { width:10px; height:10px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
         .phase-tag { font:900 13px Consolas,"Segoe UI",monospace; text-anchor:middle; dominant-baseline:middle; paint-order:stroke; stroke:#15221c; stroke-width:4px; stroke-linejoin:round; }
         .wave-tag { font-size:12px; }
-        .readout { display:grid; grid-template-columns:repeat(6, max-content); justify-content:center; gap:2px 6px; margin:2px auto 0; width:100%; font-weight:900; font-size:10.5px; line-height:1.15; white-space:nowrap; overflow:hidden; flex:0 0 auto; }
+        .readout { position:absolute; top:44px; right:12px; display:grid; grid-template-columns:max-content max-content; justify-content:start; gap:7px 6px; margin:0; max-width:178px; font-weight:900; font-size:10.5px; line-height:1.15; white-space:nowrap; overflow:hidden; padding:8px 7px; background:rgba(21,34,28,.86); border-left:1px solid rgba(43,255,65,.28); z-index:2; }
         .readout span:nth-child(even) { text-align:left; }
         .wave-caption { position:absolute; top:8px; left:12px; color:#24ff39; font-size:12px; font-weight:800; }
         .empty-hmi { display:grid; place-items:center; min-height:calc(100vh - 150px); color:#20ff36; text-align:center; font-weight:800; }
@@ -253,7 +252,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
             .phasor-hmi { padding:6px 8px 5px; }
             .hmi-title { height:23px; margin:-6px -8px 4px; padding:3px 9px; font-size:15px; line-height:17px; }
             .phase-legend { gap:6px; font-size:12px; }
-            .dial-legend { top:10px; right:8px; gap:6px; padding:6px 5px; }
+            .readout { top:34px; right:8px; gap:5px 5px; max-width:166px; padding:6px 5px; font-size:9.8px; }
             .scope-cell { min-height:220px; }
             .scope-cell.wave { min-height:165px; }
             .note { display:none; }
@@ -263,7 +262,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
             .phasor-toolbar { align-items:flex-start; flex-direction:column; }
             .phasor-hmi { padding-right:8px; }
             .phase-legend { flex-direction:row; flex-wrap:wrap; margin-bottom:5px; padding:0 2px; background:transparent; border-left:0; }
-            .dial-legend { position:static; flex-direction:row; flex-wrap:wrap; margin:0 0 4px auto; padding:0 2px; background:transparent; border-left:0; }
+            .readout { position:static; grid-template-columns:repeat(6, max-content); justify-content:center; margin:2px auto 0; max-width:100%; padding:0; background:transparent; border-left:0; }
             .scope-cell, .scope-cell.wave { height:auto; min-height:0; max-height:none; }
             .dial-svg, .wave-svg { height:auto; }
         }
@@ -299,11 +298,6 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         <% } else { %>
         <div class="scope-grid">
             <div class="scope-cell">
-                <div class="phase-legend dial-legend" aria-label="Voltage phase legend">
-                    <span class="phase-red"><i class="phase-dot"></i>L12 / R-S</span>
-                    <span class="phase-yellow"><i class="phase-dot"></i>L23 / S-T</span>
-                    <span class="phase-blue"><i class="phase-dot"></i>L31 / T-R</span>
-                </div>
                 <svg class="dial-svg" viewBox="0 0 370 305" role="img" aria-label="Voltage phasor">
                     <defs>
                         <marker id="scopeArrowVRed" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="4.5" markerHeight="4.5" orient="auto">
@@ -349,11 +343,6 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                 </div>
             </div>
             <div class="scope-cell">
-                <div class="phase-legend dial-legend" aria-label="Current phase legend">
-                    <span class="phase-red"><i class="phase-dot"></i>L1 / R상</span>
-                    <span class="phase-yellow"><i class="phase-dot"></i>L2 / S상</span>
-                    <span class="phase-blue"><i class="phase-dot"></i>L3 / T상</span>
-                </div>
                 <svg class="dial-svg" viewBox="0 0 370 305" role="img" aria-label="Current phasor">
                     <defs>
                         <marker id="scopeArrowIRed" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="4.5" markerHeight="4.5" orient="auto">
