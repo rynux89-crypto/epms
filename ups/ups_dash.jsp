@@ -23,18 +23,18 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
             <div class="brand-mark">⚡</div>
             <div><strong>UPS WATCH</strong><span>통합 모니터링 시스템</span></div>
         </div>
-        <nav class="nav">
-            <a href="ups_main.jsp">▣ UPS 메인</a>
-            <a class="active" href="ups_dash.jsp<%= h(fragmentModel.selectedLinkQuery) %>">▣ UPS 통합 모니터링</a>
-            <a href="monitoring/ups_overview.jsp">▤ UPS 전체 현황</a>
-            <a href="monitoring/ups_status.jsp">⌁ UPS 모니터링</a>
-            <a href="monitoring/phasor_diagram.jsp<%= h(fragmentModel.selectedLinkQuery) %>">◌ UPS Phasor Diagram</a>
-            <a href="alarm/alarm_view.jsp?status=ACTIVE">△ UPS 알람</a>
-            <a href="alarm/event_view.jsp">◇ UPS 이벤트</a>
-            <a href="history/measurement_history.jsp">▦ UPS 측정 이력</a>
-            <a href="report/ups_report.jsp">□ UPS 레포트</a>
-            <a href="system/ups_register.jsp">⚙ UPS 등록</a>
-            <a href="system/setup.jsp">⚙ UPS 초기 설정</a>
+        <nav class="nav" id="dashNav">
+            <a class="dash-nav-link" href="ups_main.jsp" data-title="UPS 메인">▣ UPS 메인</a>
+            <a class="dash-nav-link active" href="ups_dash.jsp<%= h(fragmentModel.selectedLinkQuery) %>" data-dashboard="true" data-title="UPS 통합 모니터링">▣ UPS 통합 모니터링</a>
+            <a class="dash-nav-link" href="monitoring/ups_overview.jsp" data-title="UPS 전체 현황">▤ UPS 전체 현황</a>
+            <a class="dash-nav-link" href="monitoring/ups_status.jsp" data-title="UPS 모니터링">⌁ UPS 모니터링</a>
+            <a class="dash-nav-link" href="monitoring/phasor_diagram.jsp<%= h(fragmentModel.selectedLinkQuery) %>" data-title="UPS Phasor Diagram">◌ UPS Phasor Diagram</a>
+            <a class="dash-nav-link" href="alarm/alarm_view.jsp?status=ACTIVE" data-title="UPS 알람">△ UPS 알람</a>
+            <a class="dash-nav-link" href="alarm/event_view.jsp" data-title="UPS 이벤트">◇ UPS 이벤트</a>
+            <a class="dash-nav-link" href="history/measurement_history.jsp" data-title="UPS 측정 이력">▦ UPS 측정 이력</a>
+            <a class="dash-nav-link" href="report/ups_report.jsp" data-title="UPS 레포트">□ UPS 레포트</a>
+            <a class="dash-nav-link" href="system/ups_register.jsp" data-title="UPS 등록">⚙ UPS 등록</a>
+            <a class="dash-nav-link" href="system/setup.jsp" data-title="UPS 초기 설정">⚙ UPS 초기 설정</a>
         </nav>
         <div class="side-status">
             <small>시스템 상태</small>
@@ -47,7 +47,7 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
 
     <main class="main">
         <div class="topbar">
-            <h1>UPS 통합 모니터링</h1>
+            <h1 id="dashTitle">UPS 통합 모니터링</h1>
             <div class="meta">
                 <span>◷ <%= new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date()) %></span>
                 <span>▣ <%= new java.text.SimpleDateFormat("yyyy-MM-dd (E)", java.util.Locale.KOREAN).format(new java.util.Date()) %></span>
@@ -65,21 +65,58 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
 
             <%@ include file="includes/dashboard/bottom_cards.jspf" %>
         </section>
+        <iframe id="dashContentFrame" class="dash-content-frame" title="UPS 화면" src="about:blank"></iframe>
     </main>
 </div>
 <%@ include file="includes/ups_footer.jspf" %>
 <script>
 (function () {
     var root = document.getElementById('dashboardRefresh');
+    var frame = document.getElementById('dashContentFrame');
+    var title = document.getElementById('dashTitle');
+    var navLinks = Array.prototype.slice.call(document.querySelectorAll('.dash-nav-link'));
     if (!root || !window.fetch) return;
     var busy = false;
     var lastOk = Date.now();
+    var dashboardVisible = true;
+    function setActive(link) {
+        navLinks.forEach(function (item) {
+            item.classList.toggle('active', item === link);
+        });
+    }
+    function showDashboard(link) {
+        dashboardVisible = true;
+        root.classList.remove('hidden');
+        if (frame) {
+            frame.classList.remove('active');
+            frame.setAttribute('src', 'about:blank');
+        }
+        if (title) title.textContent = (link && link.getAttribute('data-title')) || 'UPS 통합 모니터링';
+        if (link) setActive(link);
+    }
+    function showFrame(link) {
+        if (!frame || !link) return;
+        dashboardVisible = false;
+        root.classList.add('hidden');
+        frame.classList.add('active');
+        frame.setAttribute('src', link.getAttribute('href'));
+        if (title) title.textContent = link.getAttribute('data-title') || link.textContent.replace(/^[^A-Za-z가-힣]+/, '').trim();
+        setActive(link);
+    }
+    navLinks.forEach(function (link) {
+        link.addEventListener('click', function (event) {
+            if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
+            event.preventDefault();
+            if (link.getAttribute('data-dashboard') === 'true') showDashboard(link);
+            else showFrame(link);
+        });
+    });
     function selectedUpsId() {
         var params = new URLSearchParams(window.location.search);
         return params.get('ups_id') || root.getAttribute('data-ups-id') || '';
     }
     function refreshDashboard() {
-        if (busy || document.hidden || document.querySelector('.ups-picker[open]')) return;
+        if (!dashboardVisible || busy || document.hidden || document.querySelector('.ups-picker[open]')) return;
         busy = true;
         var url = 'api/dashboard_fragment.jsp';
         var upsId = selectedUpsId();
