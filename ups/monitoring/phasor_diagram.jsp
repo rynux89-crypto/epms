@@ -203,9 +203,14 @@ double waveITop = Math.max(1d, iMax * 1.2d);
     <style>
         body { background:#dfe6ef; }
         .phasor-shell { width:100%; max-width:1280px; margin:0 auto; padding:8px 10px 6px; box-sizing:border-box; }
-        .phasor-toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; min-height:30px; }
-        .phasor-toolbar form { margin:0; }
-        .phasor-toolbar select { min-width:240px; height:28px; padding:2px 8px; border:1px solid #9aa3ad; border-radius:5px; background:#fff; font-size:13px; }
+        .ups-controlbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; padding:8px 10px; border:1px solid #d7e1ec; border-radius:10px; background:#fff; box-shadow:0 10px 28px rgba(15,23,42,.06); }
+        .ups-controlbar form { margin:0; }
+        .ups-controlbar select { min-width:300px; height:34px; padding:5px 34px 5px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#0f172a; font-size:13px; font-weight:800; outline:none; }
+        .ups-controlbar select:focus { border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,.16); }
+        .ups-control-meta { display:flex; align-items:center; justify-content:flex-end; gap:8px; color:#64748b; font-size:12px; font-weight:700; white-space:nowrap; }
+        .ups-control-meta strong { color:#0f172a; font-size:13px; }
+        .ups-refresh-badge, .ups-recent-badge { display:inline-flex; align-items:center; gap:3px; height:28px; padding:0 10px; border:1px solid #dbe5f2; border-radius:999px; background:#f8fafc; }
+        .ups-recent-badge { max-width:360px; overflow:hidden; text-overflow:ellipsis; }
         .phasor-hmi { position:relative; background:#18251f; border:4px solid #ecf2f6; box-shadow:0 14px 34px rgba(22,35,48,.18); padding:7px 10px 6px; color:#23ff35; font-family:Consolas,"Segoe UI",monospace; }
         .hmi-title { height:26px; margin:-7px -10px 6px; padding:4px 10px; background:linear-gradient(90deg,#1f8fd6 0%,#58c5f4 46%,#dff7ff 100%); color:#fff; font-size:16px; line-height:18px; font-weight:900; letter-spacing:.2px; text-shadow:0 1px 2px rgba(0,0,0,.72),0 0 4px rgba(0,0,0,.42); }
         .scope-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); border-left:1px solid rgba(43,255,65,.32); border-top:1px solid rgba(43,255,65,.32); background-color:#15221c; }
@@ -247,8 +252,8 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         .note { margin-top:5px; color:#64748b; font-size:11px; line-height:1.35; }
         @media (max-height: 760px) {
             .phasor-shell { padding-top:4px; padding-bottom:4px; }
-            .phasor-toolbar { min-height:28px; }
-            .phasor-toolbar select { height:26px; }
+            .ups-controlbar { padding:6px 8px; margin-bottom:6px; }
+            .ups-controlbar select { height:30px; }
             .phasor-hmi { padding:6px 8px 5px; }
             .hmi-title { height:23px; margin:-6px -8px 4px; padding:3px 9px; font-size:15px; line-height:17px; }
             .phase-legend { gap:6px; font-size:12px; }
@@ -259,7 +264,9 @@ double waveITop = Math.max(1d, iMax * 1.2d);
         }
         @media (max-width: 900px) {
             .scope-grid { grid-template-columns:1fr; }
-            .phasor-toolbar { align-items:flex-start; flex-direction:column; }
+            .ups-controlbar { align-items:stretch; flex-direction:column; }
+            .ups-controlbar select { min-width:0; width:100%; }
+            .ups-control-meta { justify-content:flex-start; flex-wrap:wrap; white-space:normal; }
             .phasor-hmi { padding-right:8px; }
             .phase-legend { flex-direction:row; flex-wrap:wrap; margin-bottom:5px; padding:0 2px; background:transparent; border-left:0; }
             .readout { position:static; grid-template-columns:repeat(6, max-content); justify-content:center; margin:2px auto 0; max-width:100%; padding:0; background:transparent; border-left:0; }
@@ -272,7 +279,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
 <div class="page-wrap phasor-shell">
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
-    <div class="phasor-toolbar">
+    <div class="ups-controlbar phasor-toolbar">
         <form method="get">
             <select name="ups_id" onchange="this.form.submit()">
                 <% if (devices.isEmpty()) { %>
@@ -283,7 +290,10 @@ double waveITop = Math.max(1d, iMax * 1.2d);
                 <% } %>
             </select>
         </form>
-        <div class="muted">최근 수집: <span id="phasorRecentAt"><%= h(dateText(m.get("measured_at"), hideData)) %></span> / 자동 갱신 <span id="phasorRefreshSeconds"><%= refreshSeconds %></span>초</div>
+        <div class="ups-control-meta">
+            <span class="ups-recent-badge">최근 수집 <strong id="phasorRecentAt"><%= h(dateText(m.get("measured_at"), hideData)) %></strong></span>
+            <span class="ups-refresh-badge">자동 갱신 <strong id="phasorRefreshSeconds"><%= refreshSeconds %></strong>초</span>
+        </div>
     </div>
 
     <div class="phasor-hmi" id="phasorHmi">

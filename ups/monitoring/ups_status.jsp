@@ -156,9 +156,13 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         .ups-shell .title-bar h2 { margin:0 0 2px; font-size:24px; letter-spacing:-.01em; }
         .ups-shell .title-bar p { margin:0; }
         .hmi-scale { zoom:.76; }
-        .hmi-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; padding:10px 12px; border:1px solid #d7e1ec; border-radius:10px; background:#fff; box-shadow:0 10px 28px rgba(15,23,42,.06); }
-        .hmi-toolbar form { margin:0; }
-        .hmi-toolbar select { min-width:300px; height:38px; padding:7px 34px 7px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#0f172a; font-weight:700; }
+        .ups-controlbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; padding:8px 10px; border:1px solid #d7e1ec; border-radius:10px; background:#fff; box-shadow:0 10px 28px rgba(15,23,42,.06); }
+        .ups-controlbar form { margin:0; }
+        .ups-controlbar select { min-width:300px; height:34px; padding:5px 34px 5px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#0f172a; font-size:13px; font-weight:800; outline:none; }
+        .ups-controlbar select:focus { border-color:#38bdf8; box-shadow:0 0 0 3px rgba(56,189,248,.16); }
+        .ups-control-meta { display:flex; align-items:center; justify-content:flex-end; gap:8px; color:#64748b; font-size:12px; font-weight:700; white-space:nowrap; }
+        .ups-control-meta strong { color:#0f172a; font-size:13px; }
+        .ups-refresh-badge { display:inline-flex; align-items:center; gap:3px; height:28px; padding:0 10px; border:1px solid #dbe5f2; border-radius:999px; background:#f8fafc; }
         .hmi {
             border:1px solid #d1dae5;
             border-radius:14px;
@@ -242,6 +246,9 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
         .span-right { grid-column:3; }
         .muted-note { margin-top:6px; color:#64748b; font-size:12px; }
         @media (max-width: 940px) {
+            .ups-controlbar { align-items:stretch; flex-direction:column; }
+            .ups-controlbar select { min-width:0; width:100%; }
+            .ups-control-meta { justify-content:flex-start; flex-wrap:wrap; white-space:normal; }
             .hmi { display:block; }
             .mimic-panel { margin-top:8px; }
             .hmi-grid { grid-template-columns:1fr; }
@@ -259,7 +266,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
 <div class="page-wrap ups-shell">
 <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
-    <div class="hmi-toolbar">
+    <div class="ups-controlbar hmi-toolbar">
         <form method="get">
             <select name="ups_id" onchange="this.form.submit()">
                 <% if (devices.isEmpty()) { %>
@@ -270,7 +277,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
                 <% } %>
             </select>
         </form>
-        <div class="muted">자동 갱신 <%= refreshSeconds %>초</div>
+        <div class="ups-control-meta"><span class="ups-refresh-badge">자동 갱신 <strong><%= refreshSeconds %></strong>초</span></div>
     </div>
 
         <div class="hmi-scale">
