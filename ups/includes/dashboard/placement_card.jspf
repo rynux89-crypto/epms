@@ -55,14 +55,16 @@
                             <div class="rack-summary">
                                 <strong><%= h(item.location) %></strong>
                                 <span>UPS <%= item.count %>대</span>
-                                <small>
-                                    <% if (normalCount > 0) { %><i class="rack-status normal">정상<%= normalCount %></i><% } %>
-                                    <% if (warningCount > 0) { %><i class="rack-status warning">경고<%= warningCount %></i><% } %>
-                                    <% if (criticalCount > 0) { %><i class="rack-status critical">장애<%= criticalCount %></i><% } %>
-                                    <% if (offlineCount > 0) { %><i class="rack-status offline">오프<%= offlineCount %></i><% } %>
-                                </small>
                             </div>
-                            <div class="rack-menu"><%= locationMenu.toString() %></div>
+                            <div class="rack-menu">
+                                <div class="rack-menu-summary">
+                                    <% if (normalCount > 0) { %><i class="rack-status normal">정상 <%= normalCount %></i><% } %>
+                                    <% if (warningCount > 0) { %><i class="rack-status warning">경고 <%= warningCount %></i><% } %>
+                                    <% if (criticalCount > 0) { %><i class="rack-status critical">장애 <%= criticalCount %></i><% } %>
+                                    <% if (offlineCount > 0) { %><i class="rack-status offline">오프라인 <%= offlineCount %></i><% } %>
+                                </div>
+                                <%= locationMenu.toString() %>
+                            </div>
                         </div>
                         <% } else { %>
                         <a class="rack-room <%= h(item.stateClass) %>" href="ups_dash.jsp?ups_id=<%= h(targetUpsId) %>" title="<%= h(item.names) %>"><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></a>
