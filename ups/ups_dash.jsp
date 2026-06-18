@@ -169,7 +169,7 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
         return params.get('ups_id') || root.getAttribute('data-ups-id') || '';
     }
     function refreshDashboard() {
-        if (!dashboardVisible || busy || document.hidden || document.querySelector('.ups-picker[open]')) return;
+        if (!dashboardVisible || busy || document.hidden || document.querySelector('.ups-picker[open], .rack-picker:hover, .rack-picker:focus-within')) return;
         busy = true;
         var url = 'api/dashboard_fragment.jsp';
         var upsId = selectedUpsId();
