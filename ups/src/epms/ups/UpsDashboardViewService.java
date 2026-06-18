@@ -160,6 +160,7 @@ public final class UpsDashboardViewService {
             ? "offline"
             : statusClass(model.selectedDeviceModel, model.selectedMeasurementModel, model.selectedActiveAlarms, selectedCriticalAlarms);
         model.selectedOnline = isOnline(model.selectedDeviceModel, model.selectedMeasurementModel);
+        model.selectedOutputAvailable = outputAvailable(model.selectedMeasurementModel);
     }
 
     private static void derivePowerFlow(UpsDashboardModel model) {
@@ -183,8 +184,7 @@ public final class UpsDashboardViewService {
             }
         }
 
-        int outputStatusCode = intNum(model.selectedMeasurementModel.get("output_status_code"), 0);
-        boolean outputAvailable = (outputStatusCode & ((1 << 0) | (1 << 1))) == 0;
+        boolean outputAvailable = model.selectedOutputAvailable;
         model.hasLoad = outputAvailable && (model.selectedPower > 0.1 || model.selectedLoad > 0.1);
         model.staticBypassFlowActive = model.selectedOnline && model.ssibClosed && model.bf2Closed && model.hasLoad;
         model.maintenanceBypassFlowActive = model.selectedOnline && model.mbbClosed && model.hasLoad;
@@ -207,7 +207,7 @@ public final class UpsDashboardViewService {
             : (model.batteryDischarging ? "배터리 방전 공급"
             : (model.batteryCharging ? "상용전원 공급 / 배터리 충전" : "상용전원 공급")))));
 
-        model.flowUtilityDisplay = model.selectedOnline ? fmt(model.selectedInputVoltage, 0) + " V / " + fmt(model.selectedFreq, 1) + " Hz" : "--";
+        model.flowUtilityDisplay = model.selectedOnline ? fmt(model.selectedInputVoltage, 0) + " V / " + (model.selectedOutputAvailable ? fmt(model.selectedFreq, 1) + " Hz" : "--") : "--";
         model.flowLoadDisplay = model.selectedOnline ? fmt(model.selectedPower, 0) + " kW / " + fmt(model.selectedApparentPower, 0) + " kVA / " + fmt(model.selectedLoad, 0) + "%" : "--";
         model.flowBatteryDisplay = model.selectedOnline ? fmt(model.selectedBattery, 0) + "% / " + fmt(model.selectedBatteryCurrent, 0) + " A" : "--";
     }
@@ -218,7 +218,7 @@ public final class UpsDashboardViewService {
         model.loadTrendDisplay = model.selectedOnline ? fmt(model.selectedLoad, 0) + "%" : "--";
         model.voltageTrendDisplay = model.selectedOnline ? fmt(model.selectedVoltage, 0) + " V" : "--";
         model.batteryTrendDisplay = model.selectedOnline ? fmt(model.selectedBattery, 0) + "%" : "--";
-        model.freqTrendDisplay = model.selectedOnline ? fmt(model.selectedFreq, 1) + " Hz" : "--";
+        model.freqTrendDisplay = model.selectedOnline && model.selectedOutputAvailable ? fmt(model.selectedFreq, 1) + " Hz" : "--";
         List<Double> allLoadSeries = recentAggregateSeries("load_percent", model.avgLoad);
         model.kpiLoadMiniPoints = sparkPoints(allLoadSeries, 80.0, 44.0, 4.0);
         model.kpiBatteryMiniBars = batteryGauge(model.avgBattery, 120.0, 44.0);
@@ -465,6 +465,20 @@ public final class UpsDashboardViewService {
 
     public static boolean isOnline(UpsDeviceRow device, UpsMeasurementRow measurement) {
         return !commBad(device) && measurement != null && measurement.hasMeasuredAt();
+    }
+
+    public static boolean outputAvailable(UpsMeasurementRow measurement) {
+        if (measurement == null || !measurement.hasMeasuredAt()) return false;
+        int outputStatusCode = intNum(measurement.get("output_status_code"), 0);
+        return (outputStatusCode & ((1 << 0) | (1 << 1))) == 0
+            && num(measurement.get("output_voltage"), 0) > 0.1;
+    }
+
+    public static boolean outputAvailable(Map<String, Object> measurement) {
+        if (measurement == null || measurement.get("measured_at") == null) return false;
+        int outputStatusCode = intNum(measurement.get("output_status_code"), 0);
+        return (outputStatusCode & ((1 << 0) | (1 << 1))) == 0
+            && num(measurement.get("output_voltage"), 0) > 0.1;
     }
 
     public static int activeAlarmCountFor(List<Map<String, Object>> alarms, Object upsName) {

@@ -55,6 +55,7 @@ public final class UpsDashboardModel {
     public String selectedId;
     public String selectedStatusCls = "offline";
     public boolean selectedOnline;
+    public boolean selectedOutputAvailable;
     public boolean uibClosed;
     public boolean ssibClosed;
     public boolean uobClosed;

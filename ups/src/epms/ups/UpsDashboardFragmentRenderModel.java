@@ -50,7 +50,7 @@ public final class UpsDashboardFragmentRenderModel {
         this.selectedOperationModeText = UpsDashboardRenderSupport.operationModeText(d.selectedMeasurement.get("ups_operation_mode_code"), d.selectedOnline);
         this.selectedInputVoltageText = d.selectedOnline ? fmt(Double.valueOf(d.selectedInputVoltage), 0) + " V" : "--";
         this.selectedOutputVoltageText = d.selectedOnline ? fmt(Double.valueOf(d.selectedVoltage), 0) + " V" : "--";
-        this.selectedFrequencyText = fmt(d.selectedMeasurement.get("frequency"), 1) + " Hz";
+        this.selectedFrequencyText = d.selectedOnline && d.selectedOutputAvailable ? fmt(d.selectedMeasurement.get("frequency"), 1) + " Hz" : "--";
         this.selectedLocationText = valueOrDefault(d.selectedDevice.get("location"), "전산실 A");
         this.selectedLinkQuery = hasDevices ? "?ups_id=" + selectedUpsId : "";
         this.avgLoadText = fmt(Double.valueOf(d.avgLoad), 0);

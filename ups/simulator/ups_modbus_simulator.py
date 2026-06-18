@@ -403,6 +403,7 @@ class SimulatorState:
         output_voltage_l12 = 380
         output_voltage_l23 = 381
         output_voltage_l31 = 379
+        output_frequency_hz = 60.0
         output_current_l1 = 38
         output_current_l2 = 37
         output_current_l3 = 39
@@ -437,6 +438,7 @@ class SimulatorState:
             system_mode = 6
             output_load = 0
             output_voltage_l12 = output_voltage_l23 = output_voltage_l31 = 0
+            output_frequency_hz = 0.0
             output_current_l1 = output_current_l2 = output_current_l3 = 0
             output_power_total = output_power_l1 = output_power_l2 = output_power_l3 = 0
             output_kva_total = output_kva_l1 = output_kva_l2 = output_kva_l3 = 0
@@ -457,6 +459,7 @@ class SimulatorState:
             system_mode = 6
             output_load = 0
             output_voltage_l12 = output_voltage_l23 = output_voltage_l31 = 0
+            output_frequency_hz = 0.0
             output_current_l1 = output_current_l2 = output_current_l3 = 0
             output_power_total = output_power_l1 = output_power_l2 = output_power_l3 = 0
             output_kva_total = output_kva_l1 = output_kva_l2 = output_kva_l3 = 0
@@ -492,6 +495,7 @@ class SimulatorState:
             system_mode = 6
             output_load = 0
             output_voltage_l12 = output_voltage_l23 = output_voltage_l31 = 0
+            output_frequency_hz = 0.0
             output_current_l1 = output_current_l2 = output_current_l3 = 0
             output_power_total = output_power_l1 = output_power_l2 = output_power_l3 = 0
             output_kva_total = output_kva_l1 = output_kva_l2 = output_kva_l3 = 0
@@ -626,7 +630,7 @@ class SimulatorState:
         regs[4102] = u16(input_voltage_l31)
 
         # Output.
-        regs[4608] = 600
+        regs[4608] = u16(round(output_frequency_hz * 10))
         regs[4609] = 220
         regs[4610] = 221
         regs[4611] = 219
