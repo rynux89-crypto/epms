@@ -46,7 +46,7 @@ public final class UpsDashboardFragmentRenderModel {
                 UpsDashboardViewService.activeCriticalAlarmCountFor(d.alarms, d.selectedDevice.get("ups_name"))))
             : "미등록";
         this.selectedProfileName = valueOrDefault(d.selectedDevice.get("profile_name"), "Galaxy VS");
-        this.selectedCapacityText = fmt(d.selectedMeasurement.get("output_apparent_total_kva"), 0) + " kVA";
+        this.selectedCapacityText = fmt(d.selectedDevice.get("rated_capacity_kva"), 0) + " kVA";
         this.selectedOperationModeText = UpsDashboardRenderSupport.operationModeText(d.selectedMeasurement.get("ups_operation_mode_code"), d.selectedOnline);
         this.selectedInputVoltageText = d.selectedOnline ? fmt(Double.valueOf(d.selectedInputVoltage), 0) + " V" : "--";
         this.selectedOutputVoltageText = d.selectedOnline ? fmt(Double.valueOf(d.selectedVoltage), 0) + " V" : "--";
