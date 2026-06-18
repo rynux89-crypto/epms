@@ -160,6 +160,13 @@
         .rack-room:hover { filter:brightness(1.12); transform:translateY(-1px); }
         .rack-room strong { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
         .rack-room span { display:block; color:#9fb4ca; font-size:10px; font-weight:800; }
+        .rack-picker { position:relative; min-height:46px; overflow:visible; }
+        .rack-picker summary { list-style:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; width:100%; height:100%; cursor:pointer; }
+        .rack-picker summary::-webkit-details-marker { display:none; }
+        .rack-picker[open] { z-index:5; }
+        .rack-menu { position:absolute; top:calc(100% + 4px); left:0; right:0; display:grid; gap:3px; padding:5px; border:1px solid #31516e; border-radius:6px; background:#0b1a2a; box-shadow:0 10px 26px rgba(0,0,0,.32); }
+        .rack-menu a { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:4px 5px; border-radius:4px; color:#dff3ff; text-decoration:none; font-size:10px; font-weight:800; }
+        .rack-menu a:hover { background:rgba(39,183,255,.16); color:#fff; }
         .rack-room.ok { border-color:var(--dash-green); box-shadow:0 0 18px rgba(41,230,117,.22); }
         .rack-room.warn { border-color:var(--dash-yellow); box-shadow:0 0 18px rgba(255,191,49,.2); }
         .rack-room.critical { border-color:var(--dash-red); box-shadow:0 0 20px rgba(255,92,82,.28); }

@@ -8,18 +8,35 @@
                         <%
                             String targetUpsId = "";
                             boolean targetEnabled = false;
+                            int locationDeviceCount = 0;
+                            StringBuilder locationMenu = new StringBuilder();
                             for (epms.ups.UpsDeviceRow device : dashModel.placementDeviceModels) {
                                 String deviceLocation = device.location == null ? "" : String.valueOf(device.location).trim();
                                 if (deviceLocation.length() == 0 || "null".equalsIgnoreCase(deviceLocation)) deviceLocation = "위치 미지정";
                                 if (deviceLocation.equals(item.location)) {
-                                    targetUpsId = String.valueOf(device.upsId);
-                                    targetEnabled = Boolean.TRUE.equals(device.enabled);
-                                    if (targetEnabled) break;
+                                    locationDeviceCount++;
+                                    locationMenu.append("<a href=\"ups_dash.jsp?ups_id=")
+                                        .append(h(String.valueOf(device.upsId)))
+                                        .append("\">")
+                                        .append(h(String.valueOf(device.upsName)))
+                                        .append(Boolean.TRUE.equals(device.enabled) ? "" : " (비활성)")
+                                        .append("</a>");
+                                    if (targetUpsId.length() == 0 || (!targetEnabled && Boolean.TRUE.equals(device.enabled))) {
+                                        targetUpsId = String.valueOf(device.upsId);
+                                        targetEnabled = Boolean.TRUE.equals(device.enabled);
+                                    }
                                 }
                             }
                             if ((placementPhase == 0) != targetEnabled) continue;
                         %>
+                        <% if (locationDeviceCount > 1) { %>
+                        <details class="rack-room rack-picker <%= h(item.stateClass) %>" title="<%= h(item.names) %>">
+                            <summary><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></summary>
+                            <div class="rack-menu"><%= locationMenu.toString() %></div>
+                        </details>
+                        <% } else { %>
                         <a class="rack-room <%= h(item.stateClass) %>" href="ups_dash.jsp?ups_id=<%= h(targetUpsId) %>" title="<%= h(item.names) %>"><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></a>
+                        <% } %>
                         <% }}} %>
                     </div>
                     <div class="legend"><span><i style="background:var(--dash-green)"></i>정상</span><span><i style="background:var(--dash-yellow)"></i>경고</span><span><i style="background:var(--dash-red)"></i>장애</span><span><i style="background:#8090a3"></i>오프라인</span></div>
