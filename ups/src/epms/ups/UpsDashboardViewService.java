@@ -218,7 +218,7 @@ public final class UpsDashboardViewService {
         model.loadTrendDisplay = model.selectedOnline ? fmt(model.selectedLoad, 0) + "%" : "--";
         model.voltageTrendDisplay = model.selectedOnline ? fmt(model.selectedVoltage, 0) + " V" : "--";
         model.batteryTrendDisplay = model.selectedOnline ? fmt(model.selectedBattery, 0) + "%" : "--";
-        model.freqTrendDisplay = model.selectedOnline && model.selectedOutputAvailable ? fmt(model.selectedFreq, 1) + " Hz" : "--";
+        model.freqTrendDisplay = model.selectedOnline ? fmt(model.selectedFreq, 1) + " Hz" : "--";
         List<Double> allLoadSeries = recentAggregateSeries("load_percent", model.avgLoad);
         model.kpiLoadMiniPoints = sparkPoints(allLoadSeries, 80.0, 44.0, 4.0);
         model.kpiBatteryMiniBars = batteryGauge(model.avgBattery, 120.0, 44.0);
