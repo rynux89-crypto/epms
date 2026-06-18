@@ -406,6 +406,16 @@ BEGIN
 END
 GO
 
+UPDATE dbo.ups_alarm_rule
+SET enabled = 0,
+    updated_at = sysdatetime()
+WHERE rule_code IN (
+    'UPS_INFO_ALARM_PRESENT',
+    'UPS_WARNING_ALARM_PRESENT',
+    'UPS_CRITICAL_ALARM_PRESENT'
+);
+GO
+
 UPDATE dbo.ups_alarm_rule SET metric_key = 'general_status_2', updated_at = sysdatetime()
 WHERE rule_code IN (
     'GENERAL_SYSTEM_LOCKED_BYPASS',
