@@ -159,12 +159,11 @@ public final class UpsOverviewPageService {
         applySimulatorDefaults(row, scenario);
         row.put("measured_at", new Timestamp(System.currentTimeMillis()));
         row.put("last_comm_status", "OK");
-        if ("normal".equals(scenario) || "bypass".equals(scenario)
+        if (!("normal".equals(scenario) || "bypass".equals(scenario)
                 || "maintenance_bypass".equals(scenario)
                 || "battery_test".equals(scenario)
-                || "battery_charging".equals(scenario)) {
-            row.put("active_alarm_count", Integer.valueOf(0));
-        } else if (intValue(row.get("active_alarm_count")) == 0) {
+                || "battery_charging".equals(scenario))
+                && intValue(row.get("active_alarm_count")) == 0) {
             row.put("active_alarm_count", Integer.valueOf(1));
         }
     }
