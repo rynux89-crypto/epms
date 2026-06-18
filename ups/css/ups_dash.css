@@ -50,6 +50,7 @@
         .kpi-value span { font-size:15px; margin-left:4px; color:#d9e8f7; }
         .kpi small, .muted { color:var(--dash-muted); }
         .mini-chart { width:76px; height:42px; opacity:.95; }
+        .battery-gauge { width:114px; }
         .content-grid { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:var(--dash-gap); margin-bottom:0; }
         .content-grid > .panel:nth-child(1) { grid-column:span 3; }
         .content-grid > .panel:nth-child(2) { grid-column:span 3; }
@@ -223,6 +224,7 @@
             .kpi-value span { font-size:13px; }
             .kpi small { font-size:11px; }
             .mini-chart { width:58px; height:34px; }
+            .battery-gauge { width:87px; }
             .content-grid, .bottom-grid { flex:1 1 0; gap:var(--dash-gap); margin-bottom:0; min-height:0; }
             .panel-head { margin-bottom:8px; }
             .panel-head a, .panel-head span { font-size:12px; }

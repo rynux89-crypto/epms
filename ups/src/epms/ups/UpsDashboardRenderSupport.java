@@ -36,7 +36,7 @@ public final class UpsDashboardRenderSupport {
     }
 
     public static String kpiBatteryMiniBars(double fallback) {
-        return batteryGauge(fallback, 80.0, 44.0);
+        return batteryGauge(fallback, 120.0, 44.0);
     }
 
     private static int intNum(Object value, int fallback) {
