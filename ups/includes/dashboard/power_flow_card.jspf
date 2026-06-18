@@ -25,13 +25,12 @@
                         <rect class="node <%= dashModel.upsFlowActive ? "on" : "idle" %>" x="220" y="40" width="80" height="80" rx="12"/>
                         <circle class="node <%= dashModel.loadSuppliedActive ? "on" : "idle" %>" cx="455" cy="85" r="55"/>
                         <rect class="node battery-node <%= dashModel.batteryFlowActive ? "on" : "idle" %>" x="212" y="212" width="96" height="66" rx="10"/>
-                        <% if (dashModel.staticBypassFlowActive) { %><text class="flow-label" x="260" y="25">SSIB/BF2</text><% } %>
-                        <% if (dashModel.maintenanceBypassFlowActive) { %><text class="flow-label" x="350" y="71">MBB</text><% } %>
+                        <% if (dashModel.staticBypassFlowActive) { %><text class="flow-label" x="260" y="38">SSIB+BF2 / 정적 바이패스</text><% } %>
+                        <% if (dashModel.maintenanceBypassFlowActive) { %><text class="flow-label" x="350" y="72">MBB / 유지보수 바이패스</text><% } %>
                         <text class="flow-text" x="80" y="92">상용전원</text><text class="flow-sub" x="80" y="164"><%= h(dashModel.flowUtilityDisplay) %></text>
                         <text class="flow-text" x="260" y="90">UPS</text><text class="flow-sub" x="260" y="150"><%= h(dashModel.flowSummary) %></text>
                         <text class="flow-text" x="455" y="92">부하</text><text class="flow-sub" x="455" y="164"><%= h(dashModel.flowLoadDisplay) %></text>
                         <text class="flow-text" x="260" y="250">배터리</text><text class="flow-sub" x="260" y="296"><%= h(dashModel.flowBatteryDisplay) %></text>
-                        <text class="flow-status" x="260" y="18"><%= h(dashModel.flowSummary) %></text>
                     </svg>
                 </div>
             </div>
