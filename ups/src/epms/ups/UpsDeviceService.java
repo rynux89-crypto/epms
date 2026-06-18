@@ -42,9 +42,18 @@ public final class UpsDeviceService {
 
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection()) {
             ensurePollIntervalColumn(conn);
+            Integer existingId = findDeviceIdByEndpoint(conn, ipAddress.trim(), modbusPort, unitId);
             if (upsId == null) {
-                insertDevice(conn, upsName, location, ipAddress, modbusPort, unitId, profileId, capacity, pollIntervalSeconds, enabled);
+                if (existingId == null) {
+                    insertDevice(conn, upsName, location, ipAddress, modbusPort, unitId, profileId, capacity, pollIntervalSeconds, enabled);
+                    return;
+                }
+                updateDevice(conn, existingId.intValue(), upsName, location, ipAddress, modbusPort, unitId, profileId, capacity, pollIntervalSeconds, enabled);
+                return;
             } else {
+                if (existingId != null && existingId.intValue() != upsId.intValue()) {
+                    throw new IllegalArgumentException("동일한 IP/Port/Unit ID를 사용하는 UPS가 이미 등록되어 있습니다. 기존 UPS를 수정하거나 접속정보를 다르게 입력하세요.");
+                }
                 updateDevice(conn, upsId.intValue(), upsName, location, ipAddress, modbusPort, unitId, profileId, capacity, pollIntervalSeconds, enabled);
             }
         }
@@ -160,6 +169,19 @@ public final class UpsDeviceService {
             bindDevice(ps, upsName, location, ipAddress, modbusPort, unitId, profileId, capacity, pollIntervalSeconds, enabled);
             ps.executeUpdate();
         }
+    }
+
+    private static Integer findDeviceIdByEndpoint(Connection conn, String ipAddress, int modbusPort, int unitId) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT ups_id FROM dbo.ups_device WHERE ip_address=? AND modbus_port=? AND unit_id=?")) {
+            ps.setString(1, ipAddress);
+            ps.setInt(2, modbusPort);
+            ps.setInt(3, unitId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return Integer.valueOf(rs.getInt("ups_id"));
+            }
+        }
+        return null;
     }
 
     private static void updateDevice(

@@ -19,6 +19,28 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             return;
         }
         String upsIdRaw = request.getParameter("ups_id");
+        boolean updated = upsIdRaw != null && upsIdRaw.trim().length() > 0;
+        if (!updated) {
+            String ipRaw = request.getParameter("ip_address");
+            String portRaw = request.getParameter("modbus_port");
+            String unitRaw = request.getParameter("unit_id");
+            if (ipRaw != null && ipRaw.trim().length() > 0) {
+                int modbusPort = (portRaw == null || portRaw.trim().length() == 0) ? 502 : Integer.parseInt(portRaw.trim());
+                int unitId = (unitRaw == null || unitRaw.trim().length() == 0) ? 1 : Integer.parseInt(unitRaw.trim());
+                try (Connection conn = openUpsDbConnection();
+                     PreparedStatement ps = conn.prepareStatement("SELECT ups_id FROM dbo.ups_device WHERE ip_address=? AND modbus_port=? AND unit_id=?")) {
+                    ps.setString(1, ipRaw.trim());
+                    ps.setInt(2, modbusPort);
+                    ps.setInt(3, unitId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            upsIdRaw = String.valueOf(rs.getInt("ups_id"));
+                            updated = true;
+                        }
+                    }
+                }
+            }
+        }
         epms.ups.UpsDeviceService.saveDevice(
             upsIdRaw,
             request.getParameter("ups_name"),
@@ -30,7 +52,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             request.getParameter("rated_capacity_kva"),
             request.getParameter("poll_interval_seconds"),
             request.getParameter("enabled"));
-        response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode((upsIdRaw == null || upsIdRaw.trim().isEmpty()) ? "UPS가 등록되었습니다." : "UPS 정보가 수정되었습니다.", "UTF-8"));
+        response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode(updated ? "UPS 정보가 수정되었습니다." : "UPS가 등록되었습니다.", "UTF-8"));
         return;
     } catch (Exception e) {
         response.sendRedirect("ups_register.jsp?err=" + URLEncoder.encode(e.getMessage(), "UTF-8"));
