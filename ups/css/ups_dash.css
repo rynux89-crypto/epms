@@ -152,7 +152,7 @@
         .health-reason { border:1px solid #21364d; border-radius:7px; padding:8px 10px; color:#cbdceb; background:#0c1927; font-size:12px; line-height:1.3; }
         .health-reason b { display:-webkit-box; color:#dbeafe; font-weight:800; overflow:hidden; -webkit-line-clamp:3; -webkit-box-orient:vertical; white-space:normal; }
         .rack { display:grid; grid-template-rows:1fr auto; gap:8px; align-items:stretch; }
-        .floor { height:250px; border:2px solid #334b64; background:linear-gradient(135deg,rgba(31,76,116,.32),rgba(10,23,36,.7)); position:relative; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); grid-auto-rows:46px; gap:8px; padding:10px; align-content:start; }
+        .floor { height:250px; border:2px solid #334b64; background:linear-gradient(135deg,rgba(31,76,116,.32),rgba(10,23,36,.7)); position:relative; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(78px,1fr)); grid-auto-rows:58px; gap:8px; padding:10px; align-content:start; }
         .floor::-webkit-scrollbar { width:8px; }
         .floor::-webkit-scrollbar-thumb { background:#36536f; border-radius:999px; }
         .floor::-webkit-scrollbar-track { background:#132437; border-radius:999px; }
@@ -160,14 +160,23 @@
         .rack-room:hover { filter:brightness(1.12); transform:translateY(-1px); }
         .rack-room strong { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
         .rack-room span { display:block; color:#9fb4ca; font-size:10px; font-weight:800; }
-        .rack-picker { position:relative; min-height:46px; overflow:visible; }
+        .rack-picker { position:relative; min-height:58px; overflow:visible; }
         .rack-summary { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; width:100%; height:100%; cursor:pointer; }
+        .rack-summary small { display:flex; justify-content:center; gap:3px; max-width:100%; overflow:hidden; }
         .rack-picker:hover, .rack-picker:focus-within { z-index:50; }
         .rack-menu { position:absolute; top:calc(100% + 2px); left:0; width:max-content; min-width:142px; max-width:210px; display:none; gap:4px; padding:7px; border:1px solid #4f8fc7; border-radius:7px; background:#071523; box-shadow:0 14px 34px rgba(0,0,0,.55), 0 0 0 1px rgba(36,230,239,.14); }
         .rack-picker:hover .rack-menu, .rack-picker:focus-within .rack-menu { display:grid; }
         .rack-menu::before { content:""; position:absolute; top:-8px; left:0; right:0; height:8px; background:transparent; }
         .rack-menu a { position:relative; display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:6px 8px; border-radius:5px; background:#102b44; color:#effbff; text-decoration:none; font-size:12px; font-weight:900; text-align:left; }
+        .rack-menu a.rack-menu-item { display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:168px; }
+        .rack-menu a.rack-menu-item span { color:#effbff; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .rack-menu a.rack-menu-item em { color:#9fb4ca; font-style:normal; font-size:11px; }
         .rack-menu a:hover { background:#1267b1; color:#fff; }
+        .rack-status { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; min-width:0; padding:1px 5px; border-radius:999px; font-size:9px; line-height:1.25; font-style:normal; font-weight:900; border:1px solid rgba(255,255,255,.12); }
+        .rack-status.normal { color:#042b18; background:var(--dash-green); }
+        .rack-status.warning { color:#241800; background:var(--dash-yellow); }
+        .rack-status.critical { color:#fff; background:var(--dash-red); }
+        .rack-status.offline { color:#e9f2fb; background:#617389; }
         .rack-room.ok { border-color:var(--dash-green); box-shadow:0 0 18px rgba(41,230,117,.22); }
         .rack-room.warn { border-color:var(--dash-yellow); box-shadow:0 0 18px rgba(255,191,49,.2); }
         .rack-room.critical { border-color:var(--dash-red); box-shadow:0 0 20px rgba(255,92,82,.28); }

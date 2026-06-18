@@ -576,7 +576,7 @@ public final class UpsDashboardViewService {
     private static int placementPriority(String state) {
         if ("critical".equals(state)) return 3;
         if ("warn".equals(state)) return 2;
-        if ("offline".equals(state)) return 1;
+        if ("ok".equals(state)) return 1;
         return 0;
     }
 

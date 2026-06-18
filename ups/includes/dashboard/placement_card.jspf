@@ -9,17 +9,36 @@
                             String targetUpsId = "";
                             boolean targetEnabled = false;
                             int locationDeviceCount = 0;
+                            int normalCount = 0;
+                            int warningCount = 0;
+                            int criticalCount = 0;
+                            int offlineCount = 0;
                             StringBuilder locationMenu = new StringBuilder();
                             for (epms.ups.UpsDeviceRow device : dashModel.placementDeviceModels) {
                                 String deviceLocation = device.location == null ? "" : String.valueOf(device.location).trim();
                                 if (deviceLocation.length() == 0 || "null".equalsIgnoreCase(deviceLocation)) deviceLocation = "위치 미지정";
                                 if (deviceLocation.equals(item.location)) {
                                     locationDeviceCount++;
+                                    epms.ups.UpsMeasurementRow deviceMeasurement = dashModel.latestModels.get(String.valueOf(device.upsId));
+                                    int deviceActiveAlarms = epms.ups.UpsDashboardViewService.activeAlarmCountForRows(dashModel.alarmModels, device.upsName);
+                                    int deviceCriticalAlarms = epms.ups.UpsDashboardViewService.activeCriticalAlarmCountForRows(dashModel.alarmModels, device.upsName);
+                                    String deviceStatusClass = epms.ups.UpsDashboardViewService.statusClass(device, deviceMeasurement, deviceActiveAlarms, deviceCriticalAlarms);
+                                    String deviceStatusText = epms.ups.UpsDashboardRenderSupport.statusText(deviceStatusClass);
+                                    if ("normal".equals(deviceStatusClass)) normalCount++;
+                                    else if ("warning".equals(deviceStatusClass)) warningCount++;
+                                    else if ("critical".equals(deviceStatusClass)) criticalCount++;
+                                    else offlineCount++;
                                     locationMenu.append("<a href=\"ups_dash.jsp?ups_id=")
                                         .append(h(String.valueOf(device.upsId)))
-                                        .append("\">")
+                                        .append("\" class=\"rack-menu-item\">")
+                                        .append("<span>")
                                         .append(h(String.valueOf(device.upsName)))
-                                        .append(Boolean.TRUE.equals(device.enabled) ? "" : " (비활성)")
+                                        .append(Boolean.TRUE.equals(device.enabled) ? "" : " <em>(비활성)</em>")
+                                        .append("</span><b class=\"rack-status ")
+                                        .append(h(deviceStatusClass))
+                                        .append("\">")
+                                        .append(h(deviceStatusText))
+                                        .append("</b>")
                                         .append("</a>");
                                     if (targetUpsId.length() == 0 || (!targetEnabled && Boolean.TRUE.equals(device.enabled))) {
                                         targetUpsId = String.valueOf(device.upsId);
@@ -28,10 +47,21 @@
                                 }
                             }
                             if ((placementPhase == 0) != targetEnabled) continue;
+                            String displayStateClass = item.stateClass;
+                            if ("offline".equals(displayStateClass) && normalCount > 0) displayStateClass = "ok";
                         %>
                         <% if (locationDeviceCount > 1) { %>
-                        <div class="rack-room rack-picker <%= h(item.stateClass) %>" tabindex="0" title="<%= h(item.names) %>">
-                            <div class="rack-summary"><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></div>
+                        <div class="rack-room rack-picker <%= h(displayStateClass) %>" tabindex="0" title="<%= h(item.names) %>">
+                            <div class="rack-summary">
+                                <strong><%= h(item.location) %></strong>
+                                <span>UPS <%= item.count %>대</span>
+                                <small>
+                                    <% if (normalCount > 0) { %><i class="rack-status normal">정상 <%= normalCount %></i><% } %>
+                                    <% if (warningCount > 0) { %><i class="rack-status warning">경고 <%= warningCount %></i><% } %>
+                                    <% if (criticalCount > 0) { %><i class="rack-status critical">장애 <%= criticalCount %></i><% } %>
+                                    <% if (offlineCount > 0) { %><i class="rack-status offline">오프라인 <%= offlineCount %></i><% } %>
+                                </small>
+                            </div>
                             <div class="rack-menu"><%= locationMenu.toString() %></div>
                         </div>
                         <% } else { %>
