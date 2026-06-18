@@ -62,6 +62,69 @@ SCENARIO_LABELS = {
     "critical": "중요 알람",
 }
 
+DEFAULT_BREAKERS = {
+    "uib": True,
+    "uob": True,
+    "ssib": False,
+    "bf2": False,
+    "mbb": False,
+    "bb": True,
+}
+
+SCENARIO_BREAKER_PROFILES = {
+    "normal": DEFAULT_BREAKERS,
+    "battery": {
+        "uib": False,
+        "uob": True,
+        "ssib": False,
+        "bf2": False,
+        "mbb": False,
+        "bb": True,
+    },
+    "battery_charging": DEFAULT_BREAKERS,
+    "battery_test": DEFAULT_BREAKERS,
+    "bypass": {
+        "uib": True,
+        "uob": True,
+        "ssib": True,
+        "bf2": True,
+        "mbb": False,
+        "bb": True,
+    },
+    "maintenance_bypass": {
+        "uib": False,
+        "uob": False,
+        "ssib": False,
+        "bf2": False,
+        "mbb": True,
+        "bb": False,
+    },
+    "output_off": {
+        "uib": True,
+        "uob": False,
+        "ssib": False,
+        "bf2": False,
+        "mbb": False,
+        "bb": True,
+    },
+    "epo": {
+        "uib": False,
+        "uob": False,
+        "ssib": False,
+        "bf2": False,
+        "mbb": False,
+        "bb": False,
+    },
+    "low_battery": {
+        "uib": False,
+        "uob": True,
+        "ssib": False,
+        "bf2": False,
+        "mbb": False,
+        "bb": True,
+    },
+}
+
 ALARM_TESTS = [
     {"code": "UPS_MIN_RUNTIME", "group": "UPS", "label": "배터리 런타임 최소 이하", "severity": "CRITICAL", "metric": "ups_status_word", "bit": 1},
     {"code": "UPS_BATTERY_INOPERABLE", "group": "UPS", "label": "배터리 사용 불가", "severity": "CRITICAL", "metric": "ups_status_word", "bit": 9},
@@ -163,14 +226,7 @@ class SimulatorState:
     scenario: str = "normal"
     started_at: float = field(default_factory=time.time)
     lock: threading.Lock = field(default_factory=threading.Lock)
-    breakers: dict[str, bool] = field(default_factory=lambda: {
-        "uib": True,
-        "uob": True,
-        "ssib": False,
-        "bf2": False,
-        "mbb": False,
-        "bb": True,
-    })
+    breakers: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_BREAKERS))
     active_alarm_tests: set[str] = field(default_factory=set)
     manual_values: dict[str, float] = field(default_factory=dict)
 
@@ -179,6 +235,8 @@ class SimulatorState:
             raise ValueError(f"unknown scenario: {scenario}")
         with self.lock:
             self.scenario = scenario
+            profile = SCENARIO_BREAKER_PROFILES.get(scenario, DEFAULT_BREAKERS)
+            self.breakers.update(profile)
 
     def get_scenario(self) -> str:
         with self.lock:
@@ -193,14 +251,7 @@ class SimulatorState:
 
     def reset_breakers(self) -> None:
         with self.lock:
-            self.breakers.update({
-                "uib": True,
-                "uob": True,
-                "ssib": False,
-                "bf2": False,
-                "mbb": False,
-                "bb": True,
-            })
+            self.breakers.update(DEFAULT_BREAKERS)
 
     def get_breakers(self) -> dict[str, bool]:
         with self.lock:
