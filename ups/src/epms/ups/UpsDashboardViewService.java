@@ -207,7 +207,7 @@ public final class UpsDashboardViewService {
             : (model.batteryDischarging ? "배터리 방전 공급"
             : (model.batteryCharging ? "상용전원 공급 / 배터리 충전" : "상용전원 공급")))));
 
-        model.flowUtilityDisplay = model.selectedOnline ? fmt(model.selectedInputVoltage, 0) + " V / " + (model.selectedOutputAvailable ? fmt(model.selectedFreq, 1) + " Hz" : "--") : "--";
+        model.flowUtilityDisplay = model.selectedOnline ? fmt(model.selectedInputVoltage, 0) + " V" : "--";
         model.flowLoadDisplay = model.selectedOnline ? fmt(model.selectedPower, 0) + " kW / " + fmt(model.selectedApparentPower, 0) + " kVA / " + fmt(model.selectedLoad, 0) + "%" : "--";
         model.flowBatteryDisplay = model.selectedOnline ? fmt(model.selectedBattery, 0) + "% / " + fmt(model.selectedBatteryCurrent, 0) + " A" : "--";
     }
