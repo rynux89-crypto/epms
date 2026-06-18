@@ -286,8 +286,8 @@ BEGIN
         ('OUTPUT_STATUS_ACTIVE', 'output_status', '<>', 0, 'CRITICAL', N'출력 상태 알람 발생: 값 {value}'),
         ('SWITCHGEAR_STATUS_ACTIVE', 'switchgear_status', '<>', 0, 'WARNING', N'스위치기어 상태 알람 발생: 값 {value}'),
         ('BATTERY_HEALTH_ABNORMAL', 'battery_health_status', '<>', 0, 'WARNING', N'배터리 상태 이상: 값 {value}'),
-        ('BATTERY_LOW', 'battery_charge_percent', '<=', 20, 'WARNING', N'배터리 충전율 낮음: {value}%'),
-        ('BATTERY_CRITICAL', 'battery_charge_percent', '<=', 10, 'CRITICAL', N'배터리 충전율 위험: {value}%'),
+        ('BATTERY_LOW', 'battery_charge_percent', '<=', 20, 'WARNING', N'배터리 충전율 낮음(20% 이하): {value}%'),
+        ('BATTERY_CRITICAL', 'battery_charge_percent', '<=', 10, 'CRITICAL', N'배터리 충전율 위험(10% 이하): {value}%'),
         ('OUTPUT_LOAD_HIGH', 'output_load_total_percent', '>=', 80, 'WARNING', N'UPS 출력 부하율 높음: {value}%'),
         ('OUTPUT_LOAD_CRITICAL', 'output_load_total_percent', '>=', 95, 'CRITICAL', N'UPS 출력 과부하 위험: {value}%'),
         ('BATTERY_TEMP_HIGH', 'battery_temperature', '>=', 40, 'WARNING', N'배터리 온도 높음: {value}℃');

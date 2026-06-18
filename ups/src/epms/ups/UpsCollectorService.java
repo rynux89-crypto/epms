@@ -41,6 +41,24 @@ public final class UpsCollectorService {
         BigDecimal scaleFactor;
     }
 
+    private static final class AlarmRule {
+        final String ruleCode;
+        final String metricKey;
+        final String operator;
+        final BigDecimal threshold;
+        final String severity;
+        final String template;
+
+        AlarmRule(String ruleCode, String metricKey, String operator, BigDecimal threshold, String severity, String template) {
+            this.ruleCode = ruleCode;
+            this.metricKey = metricKey;
+            this.operator = operator;
+            this.threshold = threshold;
+            this.severity = severity;
+            this.template = template;
+        }
+    }
+
     private static final class Range {
         int functionCode;
         int startAddress;
@@ -397,22 +415,46 @@ public final class UpsCollectorService {
                     "SELECT rule_code, metric_key, operator, threshold_value, severity, message_template " +
                     "FROM dbo.ups_alarm_rule WHERE enabled = 1 ORDER BY rule_id");
              ResultSet rs = ps.executeQuery()) {
+            List<AlarmRule> rules = new ArrayList<AlarmRule>();
             while (rs.next()) {
-                String ruleCode = rs.getString("rule_code");
-                String metricKey = rs.getString("metric_key");
-                String operator = rs.getString("operator");
-                BigDecimal threshold = rs.getBigDecimal("threshold_value");
-                String severity = rs.getString("severity");
-                String template = rs.getString("message_template");
-                BigDecimal value = values.get(metricKey);
-                boolean active = value != null && compare(value, operator, threshold);
+                rules.add(new AlarmRule(
+                    rs.getString("rule_code"),
+                    rs.getString("metric_key"),
+                    rs.getString("operator"),
+                    rs.getBigDecimal("threshold_value"),
+                    rs.getString("severity"),
+                    rs.getString("message_template")));
+            }
+            for (AlarmRule rule : rules) {
+                BigDecimal value = values.get(rule.metricKey);
+                boolean active = value != null && compare(value, rule.operator, rule.threshold)
+                        && !suppressedByCriticalRule(rule, rules, values);
                 if (active) {
-                    openAlarm(conn, upsId, ruleCode, metricKey, severity, renderMessage(template, metricKey, value, threshold));
+                    openAlarm(conn, upsId, rule.ruleCode, rule.metricKey, rule.severity,
+                            renderMessage(rule.template, rule.metricKey, value, rule.threshold));
                 } else {
-                    clearAlarm(conn, upsId, ruleCode);
+                    clearAlarm(conn, upsId, rule.ruleCode);
                 }
             }
         }
+    }
+
+    private static boolean suppressedByCriticalRule(AlarmRule rule, List<AlarmRule> rules, Map<String, BigDecimal> values) {
+        if (!"WARNING".equalsIgnoreCase(rule.severity) || !comparableThresholdOperator(rule.operator)) return false;
+        BigDecimal value = values.get(rule.metricKey);
+        if (value == null) return false;
+        for (AlarmRule other : rules) {
+            if (other == rule || !rule.metricKey.equals(other.metricKey)) continue;
+            if (!"CRITICAL".equalsIgnoreCase(other.severity) || !comparableThresholdOperator(other.operator)) continue;
+            if (compare(value, other.operator, other.threshold)) return true;
+        }
+        return false;
+    }
+
+    private static boolean comparableThresholdOperator(String operator) {
+        if (operator == null) return false;
+        String op = operator.trim();
+        return ">".equals(op) || ">=".equals(op) || "<".equals(op) || "<=".equals(op);
     }
 
     private static void syncBreakerEvents(int upsId, LastStatusState previous, Map<String, BigDecimal> values) throws Exception {
