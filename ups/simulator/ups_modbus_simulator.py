@@ -347,7 +347,7 @@ class SimulatorState:
                 6 if scenario in ("output_off", "epo")
                 else 7 if scenario == "battery_test"
                 else 5 if scenario in ("bypass", "maintenance_bypass")
-                else 4 if scenario in ("battery", "low_battery")
+                else 4 if scenario in ("battery", "low_battery", "input_fault")
                 else 2
             ),
             "system_operation_mode_code": (
@@ -479,6 +479,11 @@ class SimulatorState:
             input_status |= (1 << 0) | (1 << 2)
             input_voltage_l1n = input_voltage_l2n = input_voltage_l3n = 0
             input_voltage_l12 = input_voltage_l23 = input_voltage_l31 = 0
+            battery_current = -32
+            remaining_seconds = 3600
+            battery_charge = min(battery_charge, 86)
+            ups_mode = 4
+            system_mode = 4
         elif scenario == "output_fault":
             ups_status |= 1 << 15
             output_status |= (1 << 0) | (1 << 1)

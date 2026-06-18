@@ -187,12 +187,13 @@ public final class UpsDashboardViewService {
         model.staticBypassFlowActive = model.selectedOnline && model.ssibClosed && model.bf2Closed && model.hasLoad;
         model.maintenanceBypassFlowActive = model.selectedOnline && model.mbbClosed && model.hasLoad;
         model.bypassFlowActive = model.staticBypassFlowActive || model.maintenanceBypassFlowActive;
+        boolean inputAvailable = model.uibClosed && model.selectedInputVoltage > 0.1;
         model.loadFlowActive = model.selectedOnline && model.uobClosed && model.hasLoad && !model.bypassFlowActive;
         model.loadSuppliedActive = model.selectedOnline && model.hasLoad && (model.loadFlowActive || model.bypassFlowActive);
         model.batteryDischarging = model.selectedOnline && model.bbClosed && !model.bypassFlowActive
-            && (selectedModeCode == 4 || model.selectedBatteryCurrent < -0.1 || (!model.uibClosed && model.loadFlowActive));
-        model.utilityFlowActive = model.selectedOnline && model.uibClosed && !model.batteryDischarging
-            && !model.bypassFlowActive && model.selectedInputVoltage > 0.1;
+            && (selectedModeCode == 4 || model.selectedBatteryCurrent < -0.1 || (!inputAvailable && model.loadFlowActive));
+        model.utilityFlowActive = model.selectedOnline && inputAvailable && !model.batteryDischarging
+            && !model.bypassFlowActive;
         model.batteryCharging = model.selectedOnline && model.bbClosed && model.utilityFlowActive && model.selectedBatteryCurrent > 0.1;
         model.upsFlowActive = model.selectedOnline && (model.utilityFlowActive || model.batteryDischarging || model.loadFlowActive);
         model.batteryFlowActive = model.selectedOnline && (model.batteryDischarging || model.batteryCharging);
