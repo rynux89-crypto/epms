@@ -563,10 +563,10 @@ public final class UpsDashboardViewService {
         Double[] buckets = new Double[60];
         String sql =
             "SELECT DATEDIFF(minute, m.measured_at, SYSDATETIME()) AS minute_ago, AVG(CAST(m." + column + " AS float)) AS measured_value " +
-            "FROM dbo.ups_measurement " +
-            "WHERE ups_id = ? " +
-            "AND measured_at >= DATEADD(hour, -1, SYSDATETIME()) " +
-            "AND measured_at <= SYSDATETIME() " +
+            "FROM dbo.ups_measurement m " +
+            "WHERE m.ups_id = ? " +
+            "AND m.measured_at >= DATEADD(hour, -1, SYSDATETIME()) " +
+            "AND m.measured_at <= SYSDATETIME() " +
             "AND " + column + " IS NOT NULL " +
             "GROUP BY DATEDIFF(minute, m.measured_at, SYSDATETIME())";
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
