@@ -19,21 +19,21 @@
                                 <path d="M 0 0 L 10 5 L 0 10 z" fill="#ff5c52"></path>
                             </marker>
                         </defs>
-                        <path class="flow-line bypass <%= dashModel.staticBypassFlowActive ? "active" : "" %>" d="M 120 28 C 200 0, 320 0, 400 28" marker-end="<%= dashModel.staticBypassFlowActive ? "url(#flowArrowYellow)" : "" %>"/>
-                        <path class="flow-line maintenance <%= dashModel.maintenanceBypassFlowActive ? "active" : "" %>" d="M 120 30 C 200 6, 320 6, 400 30" marker-end="<%= dashModel.maintenanceBypassFlowActive ? "url(#flowArrowRed)" : "" %>"/>
-                        <line class="flow-line <%= dashModel.utilityFlowActive ? "active" : "" %>" x1="135" y1="85" x2="218" y2="85" marker-end="<%= dashModel.utilityFlowActive ? "url(#flowArrowGreen)" : "url(#flowArrowIdle)" %>"/>
-                        <line class="flow-line <%= dashModel.loadFlowActive ? "active" : "" %>" x1="302" y1="85" x2="398" y2="85" marker-end="<%= dashModel.loadFlowActive ? "url(#flowArrowGreen)" : "url(#flowArrowIdle)" %>"/>
-                        <line class="flow-line battery <%= dashModel.batteryFlowActive ? "active" : "" %>" x1="260" y1="<%= dashModel.batteryDischarging ? 206 : 120 %>" x2="260" y2="<%= dashModel.batteryDischarging ? 120 : 206 %>" marker-end="<%= dashModel.batteryFlowActive ? "url(#flowArrowCyan)" : "" %>"/>
+                        <path class="flow-line bypass <%= dashModel.staticBypassFlowActive ? "active" : "" %>" d="M 120 28 C 200 0, 335 0, 400 28" marker-end="<%= dashModel.staticBypassFlowActive ? "url(#flowArrowYellow)" : "" %>"/>
+                        <path class="flow-line maintenance <%= dashModel.maintenanceBypassFlowActive ? "active" : "" %>" d="M 120 30 C 200 6, 335 6, 400 30" marker-end="<%= dashModel.maintenanceBypassFlowActive ? "url(#flowArrowRed)" : "" %>"/>
+                        <line class="flow-line <%= dashModel.utilityFlowActive ? "active" : "" %>" x1="135" y1="85" x2="225.5" y2="85" marker-end="<%= dashModel.utilityFlowActive ? "url(#flowArrowGreen)" : "url(#flowArrowIdle)" %>"/>
+                        <line class="flow-line <%= dashModel.loadFlowActive ? "active" : "" %>" x1="309.5" y1="85" x2="400" y2="85" marker-end="<%= dashModel.loadFlowActive ? "url(#flowArrowGreen)" : "url(#flowArrowIdle)" %>"/>
+                        <line class="flow-line battery <%= dashModel.batteryFlowActive ? "active" : "" %>" x1="267.5" y1="<%= dashModel.batteryDischarging ? 206 : 120 %>" x2="267.5" y2="<%= dashModel.batteryDischarging ? 120 : 206 %>" marker-end="<%= dashModel.batteryFlowActive ? "url(#flowArrowCyan)" : "" %>"/>
                         <circle class="node <%= (dashModel.utilityFlowActive || dashModel.bypassFlowActive) ? "on" : "idle" %>" cx="80" cy="85" r="55"/>
-                        <rect class="node <%= dashModel.upsFlowActive ? "on" : "idle" %>" x="220" y="40" width="80" height="80" rx="12"/>
+                        <rect class="node <%= dashModel.upsFlowActive ? "on" : "idle" %>" x="227.5" y="40" width="80" height="80" rx="12"/>
                         <circle class="node <%= dashModel.loadSuppliedActive ? "on" : "idle" %>" cx="455" cy="85" r="55"/>
-                        <rect class="node battery-node <%= dashModel.batteryFlowActive ? "on" : "idle" %>" x="212" y="212" width="96" height="66" rx="10"/>
-                        <% if (dashModel.staticBypassFlowActive) { %><text class="flow-label" x="260" y="38">SSIB+BF2 / 정적 바이패스</text><% } %>
-                        <% if (dashModel.maintenanceBypassFlowActive) { %><text class="flow-label" x="260" y="14">MBB</text><% } %>
+                        <rect class="node battery-node <%= dashModel.batteryFlowActive ? "on" : "idle" %>" x="219.5" y="212" width="96" height="66" rx="10"/>
+                        <% if (dashModel.staticBypassFlowActive) { %><text class="flow-label" x="267.5" y="38">SSIB+BF2 / 정적 바이패스</text><% } %>
+                        <% if (dashModel.maintenanceBypassFlowActive) { %><text class="flow-label" x="267.5" y="14">MBB</text><% } %>
                         <text class="flow-text" x="80" y="92">상용전원</text><text class="flow-sub" x="80" y="164"><%= h(dashModel.flowUtilityDisplay) %></text>
-                        <text class="flow-text" x="260" y="90">UPS</text><text class="flow-sub" x="260" y="150"><%= h(dashModel.flowSummary) %></text>
+                        <text class="flow-text" x="267.5" y="90">UPS</text><text class="flow-sub" x="267.5" y="150"><%= h(dashModel.flowSummary) %></text>
                         <text class="flow-text" x="455" y="92">부하</text><text class="flow-sub" x="455" y="164"><%= h(dashModel.flowLoadDisplay) %></text>
-                        <text class="flow-text" x="260" y="250">배터리</text><text class="flow-sub" x="260" y="296"><%= h(dashModel.flowBatteryDisplay) %></text>
+                        <text class="flow-text" x="267.5" y="250">배터리</text><text class="flow-sub" x="267.5" y="296"><%= h(dashModel.flowBatteryDisplay) %></text>
                     </svg>
                 </div>
             </div>
