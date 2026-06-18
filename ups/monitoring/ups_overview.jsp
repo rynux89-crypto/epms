@@ -83,7 +83,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
     <div class="title-bar">
         
         <div class="inline-actions overview-actions">
-            <span class="refresh-state" id="refreshState">5초 후 갱신</span>
+            <span class="refresh-state" id="refreshState">1초 알람 갱신</span>
             <div class="view-toggle" aria-label="보기 방식">
                 <button type="button" id="tileBtn" class="active">타일</button>
                 <button type="button" id="listBtn">리스트</button>
@@ -94,11 +94,11 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
     <% if (overviewModel.err != null) { %><div class="err-box"><%= h(overviewModel.err) %></div><% } %>
     <div id="overviewContent">
     <div class="summary-grid">
-        <div class="summary-item"><span><%= overviewModel.includeInactive ? "전체" : "활성" %></span><strong><%= overviewModel.items.size() %></strong></div>
-        <div class="summary-item"><span>정상</span><strong><%= overviewModel.normalCount %></strong></div>
-        <div class="summary-item"><span>알람</span><strong><%= overviewModel.alarmCount %></strong></div>
-        <div class="summary-item"><span>통신불량</span><strong><%= overviewModel.commCount %></strong></div>
-        <div class="summary-item"><span><%= overviewModel.includeInactive ? "비활성/미수집" : "미수집" %></span><strong><%= overviewModel.inactiveOrUnknownCount() %></strong></div>
+        <div class="summary-item"><span><%= overviewModel.includeInactive ? "전체" : "활성" %></span><strong data-summary="total"><%= overviewModel.items.size() %></strong></div>
+        <div class="summary-item"><span>정상</span><strong data-summary="normal"><%= overviewModel.normalCount %></strong></div>
+        <div class="summary-item"><span>알람</span><strong data-summary="alarm"><%= overviewModel.alarmCount %></strong></div>
+        <div class="summary-item"><span>통신불량</span><strong data-summary="comm"><%= overviewModel.commCount %></strong></div>
+        <div class="summary-item"><span><%= overviewModel.includeInactive ? "비활성/미수집" : "미수집" %></span><strong data-summary="inactiveOrUnknown"><%= overviewModel.inactiveOrUnknownCount() %></strong></div>
     </div>
 
     <div class="filter-bar">
@@ -122,23 +122,23 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 String detailUrl = item.detailUrl();
                 String filterText = item.filterText();
             %>
-            <a class="ups-tile <%= cls %>" href="<%= detailUrl %>" data-filter="<%= h(filterText) %>">
+            <a class="ups-tile <%= cls %>" href="<%= detailUrl %>" data-ups-id="<%= h(item.upsId) %>" data-filter="<%= h(filterText) %>">
                 <div class="tile-head">
                     <div>
                         <div class="tile-name"><%= h(item.upsName) %></div>
                         <div class="tile-meta"><%= h(item.location) %><br><%= h(item.ipAddress) %>:<%= h(item.modbusPort) %> / Unit <%= h(item.unitId) %></div>
                     </div>
-                    <span class="status-badge <%= cls %>"><%= h(item.statusText) %></span>
+                    <span class="status-badge <%= cls %>" data-field="statusText"><%= h(item.statusText) %></span>
                 </div>
                 <div class="tile-metrics">
-                    <div class="metric"><span>부하율</span><strong><%= h(item.loadText) %></strong></div>
-                    <div class="metric"><span>배터리</span><strong><%= h(item.batteryText) %></strong></div>
-                    <div class="metric"><span>출력</span><strong><%= h(item.outputKwText) %> kW</strong></div>
-                    <div class="metric"><span>주파수</span><strong><%= h(item.frequencyText) %> Hz</strong></div>
+                    <div class="metric"><span>부하율</span><strong data-field="loadText"><%= h(item.loadText) %></strong></div>
+                    <div class="metric"><span>배터리</span><strong data-field="batteryText"><%= h(item.batteryText) %></strong></div>
+                    <div class="metric"><span>출력</span><strong><span data-field="outputKwText"><%= h(item.outputKwText) %></span> kW</strong></div>
+                    <div class="metric"><span>주파수</span><strong><span data-field="frequencyText"><%= h(item.frequencyText) %></span> Hz</strong></div>
                 </div>
                 <div class="tile-footer">
-                    <span>알람 <%= item.activeAlarmCount %></span>
-                    <span><%= h(item.measuredAtText) %></span>
+                    <span>알람 <span data-field="activeAlarmCount"><%= item.activeAlarmCount %></span></span>
+                    <span data-field="measuredAtText"><%= h(item.measuredAtText) %></span>
                 </div>
             </a>
             <% } %>
@@ -172,20 +172,20 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                     String cls = item.statusClass;
                     String filterText = item.filterText();
                 %>
-                    <tr data-filter="<%= h(filterText) %>" onclick="location.href='<%= h(item.detailUrl()) %>'" style="cursor:pointer;">
-                        <td><span class="status-badge <%= cls %>"><%= h(item.statusText) %></span></td>
+                    <tr data-ups-id="<%= h(item.upsId) %>" data-filter="<%= h(filterText) %>" onclick="location.href='<%= h(item.detailUrl()) %>'" style="cursor:pointer;">
+                        <td><span class="status-badge <%= cls %>" data-field="statusText"><%= h(item.statusText) %></span></td>
                         <td><%= h(item.upsName) %></td>
                         <td><%= h(item.location) %></td>
                         <td><%= h(item.ipAddress) %>:<%= h(item.modbusPort) %></td>
-                        <td class="measured-cell"><%= h(item.measuredAtText) %></td>
-                        <td class="num"><%= h(item.loadText) %></td>
-                        <td class="num"><%= h(item.outputKwText) %></td>
-                        <td class="num"><%= h(item.outputKvaText) %></td>
-                        <td class="num"><%= h(item.frequencyText) %></td>
-                        <td class="num"><%= h(item.batteryText) %></td>
-                        <td class="num"><%= h(item.batteryTempText) %></td>
-                        <td class="num"><%= h(item.remainingText) %></td>
-                        <td class="num"><%= item.activeAlarmCount %></td>
+                        <td class="measured-cell" data-field="measuredAtText"><%= h(item.measuredAtText) %></td>
+                        <td class="num" data-field="loadText"><%= h(item.loadText) %></td>
+                        <td class="num" data-field="outputKwText"><%= h(item.outputKwText) %></td>
+                        <td class="num" data-field="outputKvaText"><%= h(item.outputKvaText) %></td>
+                        <td class="num" data-field="frequencyText"><%= h(item.frequencyText) %></td>
+                        <td class="num" data-field="batteryText"><%= h(item.batteryText) %></td>
+                        <td class="num" data-field="batteryTempText"><%= h(item.batteryTempText) %></td>
+                        <td class="num" data-field="remainingText"><%= h(item.remainingText) %></td>
+                        <td class="num" data-field="activeAlarmCount"><%= item.activeAlarmCount %></td>
                     </tr>
                 <% } %>
                 </tbody>
@@ -269,21 +269,68 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         }
         applyFilter();
     }
+    function setText(root, field, value) {
+        if (!root) return;
+        var nodes = root.querySelectorAll('[data-field="' + field + '"]');
+        nodes.forEach(function (node) {
+            var next = value == null ? '' : String(value);
+            if (node.textContent !== next) node.textContent = next;
+        });
+    }
+    function setStatus(root, statusClass, statusText) {
+        if (!root) return;
+        root.classList.remove('normal', 'alarm', 'comm', 'unknown', 'disabled');
+        root.classList.add(statusClass || 'unknown');
+        var badge = root.querySelector('.status-badge');
+        if (badge) {
+            badge.classList.remove('normal', 'alarm', 'comm', 'unknown', 'disabled');
+            badge.classList.add(statusClass || 'unknown');
+            badge.textContent = statusText || '';
+        }
+    }
+    function updateItem(item) {
+        if (!item || !item.upsId) return;
+        var roots = Array.prototype.slice.call(document.querySelectorAll('[data-ups-id="' + item.upsId + '"]'));
+        roots.forEach(function (root) {
+            var oldMeasuredAt = root.getAttribute('data-measured-at') || '';
+            setStatus(root, item.statusClass, item.statusText);
+            setText(root, 'activeAlarmCount', item.activeAlarmCount);
+            if (oldMeasuredAt !== item.measuredAtText) {
+                setText(root, 'measuredAtText', item.measuredAtText);
+                setText(root, 'loadText', item.loadText);
+                setText(root, 'batteryText', item.batteryText);
+                setText(root, 'outputKwText', item.outputKwText);
+                setText(root, 'outputKvaText', item.outputKvaText);
+                setText(root, 'frequencyText', item.frequencyText);
+                setText(root, 'batteryTempText', item.batteryTempText);
+                setText(root, 'remainingText', item.remainingText);
+                root.setAttribute('data-measured-at', item.measuredAtText || '');
+            }
+        });
+    }
+    function updateSummary(summary) {
+        if (!summary) return;
+        Object.keys(summary).forEach(function (key) {
+            var node = document.querySelector('[data-summary="' + key + '"]');
+            if (node && typeof summary[key] !== 'boolean') node.textContent = summary[key];
+        });
+    }
     function refreshOverview() {
         if (!content || !window.fetch || busy || document.hidden) return;
         busy = true;
-        fetch(window.location.href, {cache:'no-store', headers:{'X-Requested-With':'fetch'}})
+        var url = new URL('../api/overview_status.jsp', window.location.href);
+        if (new URL(window.location.href).searchParams.get('include_inactive') === '1') url.searchParams.set('include_inactive', '1');
+        fetch(url.toString(), {cache:'no-store', headers:{'X-Requested-With':'fetch'}})
             .then(function (response) {
                 if (!response.ok) throw new Error('HTTP ' + response.status);
-                return response.text();
+                return response.json();
             })
-            .then(function (html) {
-                var doc = new DOMParser().parseFromString(html, 'text/html');
-                var next = doc.getElementById('overviewContent');
-                if (!next) throw new Error('overview content not found');
-                content.innerHTML = next.innerHTML;
-                refreshState = document.getElementById('refreshState');
-                bindControls();
+            .then(function (data) {
+                if (!data || data.ok === false) throw new Error(data && data.error ? data.error : 'overview update failed');
+                updateSummary(data.summary);
+                (data.items || []).forEach(updateItem);
+                applyFilter();
+                if (refreshState) refreshState.textContent = '1초 알람 갱신';
             })
             .catch(function () {
                 if (refreshState) refreshState.textContent = '갱신 실패';
@@ -293,18 +340,8 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
             });
     }
     bindControls();
-    var remain = 5;
-    function tick() {
-        if (refreshState) refreshState.textContent = remain + '초 후 갱신';
-        if (remain <= 0) {
-            remain = 5;
-            refreshOverview();
-            return;
-        }
-        remain -= 1;
-    }
-    tick();
-    setInterval(tick, 1000);
+    refreshOverview();
+    setInterval(refreshOverview, 1000);
 })();
 </script>
 </body>
