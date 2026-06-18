@@ -31,6 +31,7 @@ for (int i = 0; i < overview.items.size(); i++) {
         .append("\"outputKwText\":\"").append(escJson(item.outputKwText)).append("\",")
         .append("\"outputKvaText\":\"").append(escJson(item.outputKvaText)).append("\",")
         .append("\"frequencyText\":\"").append(escJson(item.frequencyText)).append("\",")
+        .append("\"operationModeText\":\"").append(escJson(item.operationModeText)).append("\",")
         .append("\"batteryTempText\":\"").append(escJson(item.batteryTempText)).append("\",")
         .append("\"remainingText\":\"").append(escJson(item.remainingText)).append("\",")
         .append("\"activeAlarmCount\":").append(item.activeAlarmCount)

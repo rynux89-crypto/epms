@@ -15,6 +15,7 @@ public final class UpsOverviewItem {
     public String outputKwText;
     public String outputKvaText;
     public String frequencyText;
+    public String operationModeText;
     public String batteryTempText;
     public String remainingText;
     public int activeAlarmCount;

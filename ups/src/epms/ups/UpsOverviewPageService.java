@@ -79,6 +79,7 @@ public final class UpsOverviewPageService {
         item.outputKwText = overviewValue(row, item.statusClass, "output_power_kw", 0, "");
         item.outputKvaText = overviewValue(row, item.statusClass, "output_apparent_total_kva", 0, "");
         item.frequencyText = overviewValue(row, item.statusClass, "frequency", 1, "");
+        item.operationModeText = overviewMode(row, item.statusClass);
         item.batteryTempText = overviewValue(row, item.statusClass, "battery_temperature", 1, "\u00b0C");
         item.remainingText = overviewValue(row, item.statusClass, "remaining_minutes", 0, " Min");
         item.activeAlarmCount = intValue(row.get("active_alarm_count"));
@@ -129,6 +130,12 @@ public final class UpsOverviewPageService {
         Object value = row.get("measured_at");
         if (value == null) return "\uBBF8\uC218\uC9D1";
         return UpsFormatSupport.displaySlashDateTime(value);
+    }
+
+    private static String overviewMode(Map<String, Object> row, String cls) {
+        if ("comm".equals(cls) || row.get("measured_at") == null) return "-";
+        String label = UpsFormatSupport.upsModeLabel(row.get("ups_operation_mode_code"));
+        return label == null || label.length() == 0 ? "-" : label;
     }
 
     private static void applySimulatorStatus(Map<String, Object> row) {
