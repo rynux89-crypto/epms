@@ -984,20 +984,20 @@ button.alarm-test.active {{ border-color:#dc2626; background:#fff1f2; box-shadow
 .sev-warning {{ color:#b45309; font-weight:800; }}
 button.reset {{ margin-top:10px; border:1px solid #cbd8e6; border-radius:6px; background:#fff; padding:8px 10px; cursor:pointer; }}
 .section-head button.reset {{ margin-top:0; flex:0 0 auto; }}
-.metrics {{ display:grid; grid-template-columns:repeat(6,minmax(220px,1fr)); gap:10px; align-items:start; overflow-x:auto; padding-bottom:2px; }}
-.metric-group {{ border:1px solid #d7e1ec; border-radius:8px; background:#fbfdff; padding:10px 12px; min-width:0; }}
+.metrics {{ display:grid; grid-template-columns:repeat(6,minmax(205px,1fr)); gap:10px; align-items:start; overflow-x:auto; padding-bottom:2px; }}
+.metric-group {{ border:1px solid #d7e1ec; border-radius:8px; background:#fbfdff; padding:10px; min-width:0; }}
 .metric-section-title {{ margin:0 0 4px; padding:0 0 6px; border-bottom:2px solid #cbd8e6; color:#334155; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }}
 .metric-section-title:first-child {{ margin-top:0; }}
-.row {{ display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #edf2f7; font-size:14px; min-width:0; }}
-.row > span:first-child {{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+.row {{ display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #edf2f7; font-size:13px; min-width:0; }}
+.row > span:first-child {{ min-width:0; flex:1 1 auto; overflow:visible; white-space:normal; line-height:1.25; word-break:keep-all; }}
 .row:last-child {{ border-bottom:none; }}
 .row strong {{ color:#0f172a; }}
 .row.editable {{ align-items:center; }}
-.metric-edit {{ width:112px; border:1px solid #cbd8e6; border-radius:6px; padding:7px 8px; text-align:right; font:700 13px Consolas,monospace; color:#0f172a; background:#fff; }}
+.metric-edit {{ width:74px; border:1px solid #cbd8e6; border-radius:6px; padding:6px 7px; text-align:right; font:700 13px Consolas,monospace; color:#0f172a; background:#fff; }}
 .metric-edit:focus {{ border-color:#1267b1; outline:none; box-shadow:0 0 0 2px rgba(18,103,177,.12); }}
 .metric-edit.dirty {{ border-color:#f59e0b; background:#fffbeb; }}
-.metric-unit {{ min-width:34px; color:#64748b; font-size:12px; }}
-.metric-control {{ display:flex; align-items:center; gap:6px; flex:0 0 auto; }}
+.metric-unit {{ min-width:28px; color:#64748b; font-size:12px; }}
+.metric-control {{ display:flex; align-items:center; gap:4px; flex:0 0 auto; }}
 .metric-help {{ margin:0 0 10px; color:#64748b; font-size:12px; line-height:1.45; }}
 .status-word {{ font-family:Consolas,monospace; }}
 .links {{ display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }}
