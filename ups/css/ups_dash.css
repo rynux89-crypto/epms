@@ -163,10 +163,11 @@
         .rack-picker { position:relative; min-height:46px; overflow:visible; }
         .rack-picker summary { list-style:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; width:100%; height:100%; cursor:pointer; }
         .rack-picker summary::-webkit-details-marker { display:none; }
-        .rack-picker[open] { z-index:5; }
-        .rack-menu { position:absolute; top:calc(100% + 4px); left:0; right:0; display:grid; gap:3px; padding:5px; border:1px solid #31516e; border-radius:6px; background:#0b1a2a; box-shadow:0 10px 26px rgba(0,0,0,.32); }
-        .rack-menu a { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:4px 5px; border-radius:4px; color:#dff3ff; text-decoration:none; font-size:10px; font-weight:800; }
-        .rack-menu a:hover { background:rgba(39,183,255,.16); color:#fff; }
+        .rack-picker[open] { z-index:50; }
+        .rack-menu { position:absolute; top:calc(100% + 6px); left:50%; width:max-content; min-width:142px; max-width:210px; transform:translateX(-50%); display:grid; gap:4px; padding:7px; border:1px solid #4f8fc7; border-radius:7px; background:#071523; box-shadow:0 14px 34px rgba(0,0,0,.55), 0 0 0 1px rgba(36,230,239,.14); }
+        .rack-menu::before { content:""; position:absolute; top:-6px; left:50%; width:10px; height:10px; transform:translateX(-50%) rotate(45deg); background:#071523; border-left:1px solid #4f8fc7; border-top:1px solid #4f8fc7; }
+        .rack-menu a { position:relative; display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:6px 8px; border-radius:5px; background:#102b44; color:#effbff; text-decoration:none; font-size:12px; font-weight:900; text-align:left; }
+        .rack-menu a:hover { background:#1267b1; color:#fff; }
         .rack-room.ok { border-color:var(--dash-green); box-shadow:0 0 18px rgba(41,230,117,.22); }
         .rack-room.warn { border-color:var(--dash-yellow); box-shadow:0 0 18px rgba(255,191,49,.2); }
         .rack-room.critical { border-color:var(--dash-red); box-shadow:0 0 20px rgba(255,92,82,.28); }
