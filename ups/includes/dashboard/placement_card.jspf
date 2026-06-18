@@ -30,10 +30,10 @@
                             if ((placementPhase == 0) != targetEnabled) continue;
                         %>
                         <% if (locationDeviceCount > 1) { %>
-                        <details class="rack-room rack-picker <%= h(item.stateClass) %>" title="<%= h(item.names) %>">
-                            <summary><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></summary>
+                        <div class="rack-room rack-picker <%= h(item.stateClass) %>" tabindex="0" title="<%= h(item.names) %>">
+                            <div class="rack-summary"><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></div>
                             <div class="rack-menu"><%= locationMenu.toString() %></div>
-                        </details>
+                        </div>
                         <% } else { %>
                         <a class="rack-room <%= h(item.stateClass) %>" href="ups_dash.jsp?ups_id=<%= h(targetUpsId) %>" title="<%= h(item.names) %>"><strong><%= h(item.location) %></strong><span>UPS <%= item.count %>대</span></a>
                         <% } %>
