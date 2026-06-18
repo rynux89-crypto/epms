@@ -36,7 +36,7 @@ public final class UpsDashboardRenderSupport {
     }
 
     public static String kpiBatteryMiniBars(double fallback) {
-        return percentBars(fallback, 80.0, 44.0, 7);
+        return batteryGauge(fallback, 80.0, 44.0);
     }
 
     private static int intNum(Object value, int fallback) {
@@ -150,22 +150,24 @@ public final class UpsDashboardRenderSupport {
         return out.toString();
     }
 
-    private static String percentBars(double value, double width, double height, int barCount) {
-        int count = Math.max(1, barCount);
+    private static String batteryGauge(double value, double width, double height) {
         double pct = Math.max(0.0, Math.min(100.0, value));
-        double gap = 5.0;
-        double barWidth = Math.max(2.0, (width - (gap * (count + 1))) / count);
-        double maxHeight = height - 8.0;
-        double barHeight = maxHeight * (pct / 100.0);
-        double y = height - barHeight - 2.0;
         String color = pct <= 20.0 ? "#ff5c52" : (pct <= 50.0 ? "#ffbf31" : "#29e675");
+        double x = 5.0;
+        double y = 12.0;
+        double bodyWidth = width - 14.0;
+        double bodyHeight = 20.0;
+        double fillWidth = Math.max(0.0, (bodyWidth - 4.0) * (pct / 100.0));
         StringBuilder out = new StringBuilder();
-        for (int i = 0; i < count; i++) {
-            double x = gap + i * (barWidth + gap);
-            out.append(String.format(Locale.US,
-                "<rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%.1f\" fill=\"%s\"/>",
-                x, y, barWidth, barHeight, color));
-        }
+        out.append(String.format(Locale.US,
+            "<rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%.1f\" rx=\"4\" fill=\"none\" stroke=\"#2f4960\" stroke-width=\"2\"/>",
+            x, y, bodyWidth, bodyHeight));
+        out.append(String.format(Locale.US,
+            "<rect x=\"%.1f\" y=\"%.1f\" width=\"5.0\" height=\"10.0\" rx=\"2\" fill=\"#2f4960\"/>",
+            x + bodyWidth + 1.0, y + 5.0));
+        out.append(String.format(Locale.US,
+            "<rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%.1f\" rx=\"3\" fill=\"%s\"/>",
+            x + 2.0, y + 2.0, fillWidth, bodyHeight - 4.0, color));
         return out.toString();
     }
 }
