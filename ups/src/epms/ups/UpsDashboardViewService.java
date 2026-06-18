@@ -183,12 +183,14 @@ public final class UpsDashboardViewService {
             }
         }
 
-        model.hasLoad = model.selectedPower > 0.1 || model.selectedLoad > 0.1;
+        int outputStatusCode = intNum(model.selectedMeasurementModel.get("output_status_code"), 0);
+        boolean outputAvailable = (outputStatusCode & ((1 << 0) | (1 << 1))) == 0;
+        model.hasLoad = outputAvailable && (model.selectedPower > 0.1 || model.selectedLoad > 0.1);
         model.staticBypassFlowActive = model.selectedOnline && model.ssibClosed && model.bf2Closed && model.hasLoad;
         model.maintenanceBypassFlowActive = model.selectedOnline && model.mbbClosed && model.hasLoad;
         model.bypassFlowActive = model.staticBypassFlowActive || model.maintenanceBypassFlowActive;
         boolean inputAvailable = model.uibClosed && model.selectedInputVoltage > 0.1;
-        model.loadFlowActive = model.selectedOnline && model.uobClosed && model.hasLoad && !model.bypassFlowActive;
+        model.loadFlowActive = model.selectedOnline && outputAvailable && model.uobClosed && model.hasLoad && !model.bypassFlowActive;
         model.loadSuppliedActive = model.selectedOnline && model.hasLoad && (model.loadFlowActive || model.bypassFlowActive);
         model.batteryDischarging = model.selectedOnline && model.bbClosed && !model.bypassFlowActive
             && (selectedModeCode == 4 || model.selectedBatteryCurrent < -0.1 || (!inputAvailable && model.loadFlowActive));

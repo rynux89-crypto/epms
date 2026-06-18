@@ -344,14 +344,14 @@ class SimulatorState:
             "battery_temperature_c": regs.get(4864, 0) / 10,
             "remaining_minutes": get_u32(regs, 4872) / 60,
             "ups_operation_mode_code": (
-                6 if scenario in ("output_off", "epo")
+                6 if scenario in ("output_off", "epo", "output_fault")
                 else 7 if scenario == "battery_test"
                 else 5 if scenario in ("bypass", "maintenance_bypass")
                 else 4 if scenario in ("battery", "low_battery", "input_fault")
                 else 2
             ),
             "system_operation_mode_code": (
-                6 if scenario in ("output_off", "epo")
+                6 if scenario in ("output_off", "epo", "output_fault")
                 else 8 if scenario == "maintenance_bypass"
                 else 5 if scenario == "bypass"
                 else 2
@@ -440,6 +440,7 @@ class SimulatorState:
             output_current_l1 = output_current_l2 = output_current_l3 = 0
             output_power_total = output_power_l1 = output_power_l2 = output_power_l3 = 0
             output_kva_total = output_kva_l1 = output_kva_l2 = output_kva_l3 = 0
+            battery_current = 0
         elif scenario == "maintenance_bypass":
             ups_mode = 5
             system_mode = 8
@@ -487,6 +488,14 @@ class SimulatorState:
         elif scenario == "output_fault":
             ups_status |= 1 << 15
             output_status |= (1 << 0) | (1 << 1)
+            ups_mode = 6
+            system_mode = 6
+            output_load = 0
+            output_voltage_l12 = output_voltage_l23 = output_voltage_l31 = 0
+            output_current_l1 = output_current_l2 = output_current_l3 = 0
+            output_power_total = output_power_l1 = output_power_l2 = output_power_l3 = 0
+            output_kva_total = output_kva_l1 = output_kva_l2 = output_kva_l3 = 0
+            battery_current = 0
         elif scenario == "bypass_fault":
             ups_status |= 1 << 14
             bypass_status |= (1 << 0) | (1 << 2)
