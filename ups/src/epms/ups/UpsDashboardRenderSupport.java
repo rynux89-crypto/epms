@@ -154,19 +154,19 @@ public final class UpsDashboardRenderSupport {
         double pct = Math.max(0.0, Math.min(100.0, value));
         String color = pct <= 20.0 ? "#ff5c52" : (pct <= 50.0 ? "#ffbf31" : "#29e675");
         double x = 5.0;
-        double y = 12.0;
+        double y = 4.0;
         double bodyWidth = width - 14.0;
-        double bodyHeight = 20.0;
+        double bodyHeight = 36.0;
         double fillWidth = Math.max(0.0, (bodyWidth - 4.0) * (pct / 100.0));
         StringBuilder out = new StringBuilder();
         out.append(String.format(Locale.US,
-            "<rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%.1f\" rx=\"4\" fill=\"none\" stroke=\"#2f4960\" stroke-width=\"2\"/>",
+            "<rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%.1f\" rx=\"5\" fill=\"none\" stroke=\"#2f4960\" stroke-width=\"2\"/>",
             x, y, bodyWidth, bodyHeight));
         out.append(String.format(Locale.US,
-            "<rect x=\"%.1f\" y=\"%.1f\" width=\"5.0\" height=\"10.0\" rx=\"2\" fill=\"#2f4960\"/>",
-            x + bodyWidth + 1.0, y + 5.0));
+            "<rect x=\"%.1f\" y=\"%.1f\" width=\"5.0\" height=\"18.0\" rx=\"2\" fill=\"#2f4960\"/>",
+            x + bodyWidth + 1.0, y + 9.0));
         out.append(String.format(Locale.US,
-            "<rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%.1f\" rx=\"3\" fill=\"%s\"/>",
+            "<rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\"%.1f\" rx=\"4\" fill=\"%s\"/>",
             x + 2.0, y + 2.0, fillWidth, bodyHeight - 4.0, color));
         return out.toString();
     }
