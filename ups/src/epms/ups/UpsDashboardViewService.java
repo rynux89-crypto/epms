@@ -201,11 +201,12 @@ public final class UpsDashboardViewService {
         model.batteryFlowActive = model.selectedOnline && (model.batteryDischarging || model.batteryCharging);
 
         model.flowSummary = !model.selectedOnline ? "오프라인"
+            : (!model.selectedOutputAvailable ? "출력 차단 / 배터리 대기"
             : (model.maintenanceBypassFlowActive ? "MBB Close / 유지보수 바이패스"
             : (model.staticBypassFlowActive ? "SSIB+BF2 Close / 정적 바이패스"
             : (!model.uibClosed ? (model.batteryDischarging ? "UIB Open / 배터리 공급" : "UIB Open / 입력 차단")
             : (model.batteryDischarging ? "배터리 방전 공급"
-            : (model.batteryCharging ? "상용전원 공급 / 배터리 충전" : "상용전원 공급")))));
+            : (model.batteryCharging ? "상용전원 공급 / 배터리 충전" : "상용전원 공급"))))));
 
         model.flowUtilityDisplay = model.selectedOnline ? fmt(model.selectedInputVoltage, 0) + " V" : "--";
         model.flowLoadDisplay = model.selectedOnline ? fmt(model.selectedPower, 0) + " kW / " + fmt(model.selectedApparentPower, 0) + " kVA / " + fmt(model.selectedLoad, 0) + "%" : "--";
