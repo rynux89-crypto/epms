@@ -61,7 +61,7 @@ public final class UpsDeviceLookupService {
              PreparedStatement ps = conn.prepareStatement(
                      "SELECT d.ups_id, d.ups_name, d.location, d.ip_address, d.modbus_port, d.unit_id, d.enabled, " +
                      "d.last_comm_status, d.last_success_at, COALESCE(cs.consecutive_fail_count, 0) AS consecutive_fail_count, " +
-                     "p.profile_name, d.poll_interval_seconds " +
+                     "p.profile_name, d.poll_interval_seconds, d.rated_capacity_kva " +
                      "FROM dbo.ups_device d " +
                      "LEFT JOIN dbo.ups_modbus_profile p ON p.profile_id = d.profile_id " +
                      "LEFT JOIN dbo.ups_comm_status cs ON cs.ups_id = d.ups_id " +
@@ -80,7 +80,7 @@ public final class UpsDeviceLookupService {
              PreparedStatement ps = conn.prepareStatement(
                      "SELECT d.ups_id, d.ups_name, d.location, d.ip_address, d.modbus_port, d.unit_id, d.enabled, " +
                      "d.last_comm_status, d.last_success_at, COALESCE(cs.consecutive_fail_count, 0) AS consecutive_fail_count, " +
-                     "p.profile_name, d.poll_interval_seconds " +
+                     "p.profile_name, d.poll_interval_seconds, d.rated_capacity_kva " +
                      "FROM dbo.ups_device d " +
                      "LEFT JOIN dbo.ups_modbus_profile p ON p.profile_id = d.profile_id " +
                      "LEFT JOIN dbo.ups_comm_status cs ON cs.ups_id = d.ups_id " +

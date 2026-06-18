@@ -53,11 +53,11 @@ public final class UpsDashboardFragmentRenderModel {
         this.selectedFrequencyText = d.selectedOnline && d.selectedOutputAvailable ? fmt(d.selectedMeasurement.get("frequency"), 1) + " Hz" : "--";
         this.selectedLocationText = valueOrDefault(d.selectedDevice.get("location"), "전산실 A");
         this.selectedLinkQuery = hasDevices ? "?ups_id=" + selectedUpsId : "";
-        this.avgLoadText = fmt(Double.valueOf(d.avgLoad), 0);
+        this.avgLoadText = fmt(Double.valueOf(d.avgLoad), 1);
         this.avgBatteryText = fmt(Double.valueOf(d.avgBattery), 0);
         this.powerSumText = fmt(Double.valueOf(d.powerSum), 0);
         this.apparentPowerSumText = fmt(Double.valueOf(d.apparentPowerSum), 0);
-        this.kpiLoadMiniPoints = UpsDashboardRenderSupport.kpiLoadMiniPoints(d.avgLoad);
+        this.kpiLoadMiniPoints = d.kpiLoadMiniPoints;
         this.kpiBatteryMiniBars = UpsDashboardRenderSupport.kpiBatteryMiniBars(d.avgBattery);
 
         for (Map<String, Object> row : d.devices) {

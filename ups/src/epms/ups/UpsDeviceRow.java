@@ -19,11 +19,12 @@ public final class UpsDeviceRow {
     public final Integer consecutiveFailCount;
     public final String profileName;
     public final Integer pollIntervalSeconds;
+    public final Object ratedCapacityKva;
 
     private UpsDeviceRow(Integer upsId, String upsName, String location, String ipAddress,
             Integer modbusPort, Integer unitId, Boolean enabled, String lastCommStatus,
             Object lastSuccessAt, Integer consecutiveFailCount, String profileName,
-            Integer pollIntervalSeconds) {
+            Integer pollIntervalSeconds, Object ratedCapacityKva) {
         this.upsId = upsId;
         this.upsName = upsName;
         this.location = location;
@@ -36,6 +37,7 @@ public final class UpsDeviceRow {
         this.consecutiveFailCount = consecutiveFailCount;
         this.profileName = profileName;
         this.pollIntervalSeconds = pollIntervalSeconds;
+        this.ratedCapacityKva = ratedCapacityKva;
     }
 
     public static UpsDeviceRow basic(ResultSet rs) throws Exception {
@@ -45,6 +47,7 @@ public final class UpsDeviceRow {
             null,
             rs.getString("ip_address"),
             Integer.valueOf(rs.getInt("modbus_port")),
+            null,
             null,
             null,
             null,
@@ -67,7 +70,8 @@ public final class UpsDeviceRow {
             rs.getObject("last_success_at"),
             Integer.valueOf(rs.getInt("consecutive_fail_count")),
             rs.getString("profile_name"),
-            Integer.valueOf(Math.max(1, rs.getInt("poll_interval_seconds"))));
+            Integer.valueOf(Math.max(1, rs.getInt("poll_interval_seconds"))),
+            rs.getObject("rated_capacity_kva"));
     }
 
     public Map<String, Object> toMap() {
@@ -84,6 +88,7 @@ public final class UpsDeviceRow {
         row.put("consecutive_fail_count", consecutiveFailCount);
         row.put("profile_name", profileName);
         row.put("poll_interval_seconds", pollIntervalSeconds);
+        row.put("rated_capacity_kva", ratedCapacityKva);
         return row;
     }
 

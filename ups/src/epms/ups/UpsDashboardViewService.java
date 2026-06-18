@@ -100,6 +100,8 @@ public final class UpsDashboardViewService {
         double batterySum = 0;
         double voltageSum = 0;
         double freqSum = 0;
+        double capacityLoadPowerSum = 0;
+        double capacitySum = 0;
         int loadCount = 0;
         int batteryCount = 0;
         int voltageCount = 0;
@@ -119,6 +121,19 @@ public final class UpsDashboardViewService {
             if (measurement != null && measurement.get("load_percent") != null) {
                 loadSum += num(measurement.get("load_percent"), 0);
                 loadCount++;
+            }
+            double capacity = num(device.ratedCapacityKva, 0);
+            if (measurement != null && capacity > 0) {
+                double loadPower = -1;
+                if (measurement.get("output_power_kw") != null) {
+                    loadPower = num(measurement.get("output_power_kw"), 0);
+                } else if (measurement.get("load_percent") != null) {
+                    loadPower = capacity * num(measurement.get("load_percent"), 0) / 100.0;
+                }
+                if (loadPower >= 0) {
+                    capacityLoadPowerSum += loadPower;
+                    capacitySum += capacity;
+                }
             }
             if (measurement != null && measurement.get("battery_charge_percent") != null) {
                 batterySum += num(measurement.get("battery_charge_percent"), 0);
@@ -140,7 +155,7 @@ public final class UpsDashboardViewService {
             }
         }
 
-        model.avgLoad = loadCount == 0 ? 0 : loadSum / loadCount;
+        model.avgLoad = capacitySum > 0 ? (capacityLoadPowerSum / capacitySum) * 100.0 : (loadCount == 0 ? 0 : loadSum / loadCount);
         model.avgBattery = batteryCount == 0 ? 0 : batterySum / batteryCount;
         model.avgVoltage = voltageCount == 0 ? 220 : voltageSum / voltageCount;
         model.avgFreq = freqCount == 0 ? 60 : freqSum / freqCount;
@@ -221,7 +236,7 @@ public final class UpsDashboardViewService {
         model.voltageTrendDisplay = model.selectedOnline ? fmt(model.selectedVoltage, 0) + " V" : "--";
         model.batteryTrendDisplay = model.selectedOnline ? fmt(model.selectedBattery, 0) + "%" : "--";
         model.freqTrendDisplay = model.selectedOnline ? fmt(model.selectedFreq, 1) + " Hz" : "--";
-        List<Double> allLoadSeries = recentAggregateSeries("load_percent", model.avgLoad);
+        List<Double> allLoadSeries = recentCapacityLoadSeries(model.avgLoad);
         model.kpiLoadMiniPoints = sparkPoints(allLoadSeries, 80.0, 44.0, 4.0);
         model.kpiBatteryMiniBars = batteryGauge(model.avgBattery, 120.0, 44.0);
         model.loadSeriesPoints = model.selectedOnline ? percentSparkPoints(recentLastValueSeries(model.selectedId, "load_percent", model.selectedLoad)) : "";
@@ -732,6 +747,54 @@ public final class UpsDashboardViewService {
                 int minuteAgo = rs.getInt("minute_ago");
                 if (minuteAgo >= 0 && minuteAgo < 60) {
                     buckets[59 - minuteAgo] = Double.valueOf(rs.getDouble("measured_value"));
+                }
+            }
+        } catch (Exception ignore) {
+            return Arrays.asList(Double.valueOf(fallback), Double.valueOf(fallback));
+        }
+
+        Double carry = firstNonNull(buckets, Double.valueOf(fallback));
+        for (int i = 0; i < buckets.length; i++) {
+            if (buckets[i] == null) {
+                buckets[i] = carry;
+            } else {
+                carry = buckets[i];
+            }
+            values.add(buckets[i]);
+        }
+        return values;
+    }
+
+    private static List<Double> recentCapacityLoadSeries(double fallback) {
+        List<Double> values = new ArrayList<Double>();
+        Double[] buckets = new Double[60];
+        String sql =
+            "WITH per_device AS ( " +
+            "SELECT DATEDIFF(minute, m.measured_at, SYSDATETIME()) AS minute_ago, d.ups_id, " +
+            "MAX(CAST(d.rated_capacity_kva AS float)) AS capacity_kva, " +
+            "AVG(CAST(COALESCE(m.output_power_kw, m.load_percent * d.rated_capacity_kva / 100.0) AS float)) AS output_kw " +
+            "FROM dbo.ups_measurement m " +
+            "JOIN dbo.ups_device d ON d.ups_id = m.ups_id " +
+            "LEFT JOIN dbo.ups_comm_status cs ON cs.ups_id = d.ups_id " +
+            "WHERE d.enabled = 1 " +
+            "AND d.rated_capacity_kva IS NOT NULL AND d.rated_capacity_kva > 0 " +
+            "AND (cs.status IS NULL OR cs.status IN ('OK', 'NORMAL', 'ONLINE') OR ISNULL(cs.consecutive_fail_count, 0) < " + COMM_FAIL_OFFLINE_THRESHOLD + ") " +
+            "AND m.measured_at >= DATEADD(hour, -1, SYSDATETIME()) " +
+            "AND m.measured_at <= SYSDATETIME() " +
+            "AND (m.output_power_kw IS NOT NULL OR m.load_percent IS NOT NULL) " +
+            "GROUP BY DATEDIFF(minute, m.measured_at, SYSDATETIME()), d.ups_id " +
+            ") " +
+            "SELECT minute_ago, CASE WHEN SUM(capacity_kva) > 0 THEN SUM(output_kw) / SUM(capacity_kva) * 100.0 ELSE NULL END AS measured_value " +
+            "FROM per_device " +
+            "GROUP BY minute_ago";
+        try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                int minuteAgo = rs.getInt("minute_ago");
+                double value = rs.getDouble("measured_value");
+                if (!rs.wasNull() && minuteAgo >= 0 && minuteAgo < 60) {
+                    buckets[59 - minuteAgo] = Double.valueOf(value);
                 }
             }
         } catch (Exception ignore) {
