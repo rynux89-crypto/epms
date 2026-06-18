@@ -170,7 +170,7 @@
         .mini-stack { display:grid; grid-template-columns:1fr 1fr; gap:var(--dash-gap); min-width:0; }
         .alarm-panel, .event-panel { overflow:hidden; min-width:0; }
         .alarm-list, .event-list { display:grid; grid-template-rows:repeat(4, 34px); gap:4px; height:148px; }
-        .alarm-row, .event-row, .table-row { display:grid; grid-template-columns:minmax(68px,.72fr) minmax(0,1.78fr) 138px; gap:10px; align-items:center; padding:7px 8px; border-bottom:1px solid rgba(61,83,110,.35); font-size:13px; color:#d8e7f5; }
+        .alarm-row, .event-row, .table-row { display:grid; grid-template-columns:minmax(56px,.52fr) minmax(0,1.98fr) 138px; gap:10px; align-items:center; padding:7px 8px; border-bottom:1px solid rgba(61,83,110,.35); font-size:13px; color:#d8e7f5; }
         .row-link { color:inherit; text-decoration:none; cursor:pointer; transition:background .15s ease; }
         .row-link:hover { background:rgba(39,183,255,.08); color:#fff; }
         .alarm-row, .event-row { height:34px; min-height:0; box-sizing:border-box; }
@@ -266,7 +266,7 @@
             .mini-stack { gap:var(--dash-gap); min-height:0; }
             .alarm-panel, .event-panel { min-height:130px; padding-top:8px; padding-bottom:8px; }
             .alarm-list, .event-list { grid-template-rows:repeat(4, 20px); gap:2px; height:86px; }
-            .alarm-row, .event-row { grid-template-columns:minmax(54px,.65fr) minmax(0,1.45fr) 104px; height:20px; padding:2px 7px; font-size:11px; gap:8px; }
+            .alarm-row, .event-row { grid-template-columns:minmax(46px,.48fr) minmax(0,1.62fr) 104px; height:20px; padding:2px 7px; font-size:11px; gap:8px; }
             .alarm-row span:last-child, .event-row span:last-child { font-size:10px; }
             .table-row { padding:5px 7px; font-size:12px; gap:8px; }
             .table-head { padding:6px 7px; font-size:11px; gap:8px; }
