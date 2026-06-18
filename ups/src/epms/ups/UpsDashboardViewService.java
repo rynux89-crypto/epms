@@ -222,10 +222,10 @@ public final class UpsDashboardViewService {
         List<Double> allLoadSeries = recentAggregateSeries("load_percent", model.avgLoad);
         model.kpiLoadMiniPoints = sparkPoints(allLoadSeries, 80.0, 44.0, 4.0);
         model.kpiBatteryMiniBars = batteryGauge(model.avgBattery, 120.0, 44.0);
-        model.loadSeriesPoints = model.selectedOnline ? percentSparkPoints(recentSeries(model.selectedId, "load_percent", model.selectedLoad)) : "";
+        model.loadSeriesPoints = model.selectedOnline ? percentSparkPoints(recentLastValueSeries(model.selectedId, "load_percent", model.selectedLoad)) : "";
         model.voltageSeriesPoints = model.selectedOnline ? voltageSparkPoints(recentLastValueSeries(model.selectedId, "output_voltage", model.selectedVoltage)) : "";
-        model.batterySeriesPoints = model.selectedOnline ? percentSparkPoints(recentSeries(model.selectedId, "battery_charge_percent", model.selectedBattery)) : "";
-        model.freqSeriesPoints = model.selectedOnline ? frequencySparkPoints(recentSeries(model.selectedId, "frequency", model.selectedFreq)) : "";
+        model.batterySeriesPoints = model.selectedOnline ? percentSparkPoints(recentLastValueSeries(model.selectedId, "battery_charge_percent", model.selectedBattery)) : "";
+        model.freqSeriesPoints = model.selectedOnline ? frequencySparkPoints(recentLastValueSeries(model.selectedId, "frequency", model.selectedFreq)) : "";
     }
 
     private static void deriveAlarmCount(UpsDashboardModel model) {
