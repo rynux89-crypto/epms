@@ -29,7 +29,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .summary-item { background:#fff; border:1px solid #dbe5f2; border-radius:8px; padding:9px 11px; }
         .summary-item span { display:block; color:#64748b; font-size:11px; margin-bottom:2px; }
         .summary-item strong { font-size:21px; color:#172033; }
-        .tiles-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:10px; }
+        .tiles-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; }
         .ups-board.tiles { display:block; }
         .ups-tile { display:block; color:#172033; text-decoration:none; background:#fff; border:1px solid #dbe5f2; border-left:6px solid #94a3b8; border-radius:8px; padding:10px 11px; min-height:154px; }
         .ups-tile.normal { border-left-color:#16a34a; }
