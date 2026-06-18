@@ -49,8 +49,10 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .tile-metrics { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:9px; }
         .metric { border-top:1px solid #edf2f7; padding-top:6px; min-width:0; }
         .metric span { display:block; color:#64748b; font-size:11px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .metric strong { display:block; font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .unit { display:inline !important; color:#64748b; font-size:.72em !important; font-weight:700; margin-left:2px; }
+        .metric strong { display:flex; align-items:baseline; gap:3px; font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .metric strong [data-field] { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+        .unit { display:inline-block !important; color:#64748b; font-size:.72em !important; font-weight:700; flex:0 0 auto; margin-left:0; }
+        .overview-table .unit { vertical-align:baseline; margin-left:2px; }
         .tile-footer { display:flex; justify-content:space-between; gap:8px; color:#64748b; font-size:12px; margin-top:9px; padding-top:7px; border-top:1px solid #edf2f7; }
         .list-panel { display:none; background:#fff; border:1px solid #dbe5f2; border-radius:8px; overflow:auto; }
         .ups-board.list { display:block; }
