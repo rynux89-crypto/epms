@@ -60,8 +60,8 @@ if ("csv".equalsIgnoreCase(export)) {
         <label for="to">종료</label>
         <input id="to" name="to" type="datetime-local" value="<%= h(eventModel.toRaw) %>" <%= eventModel.explicitTo ? "" : "data-auto-now=\"1\"" %>>
         <button type="submit">검색</button>
-        <button type="submit" name="export" value="csv">CSV 다운로드</button>
         <button type="button" onclick="location.href='<%= h(allEventsUrl) %>'">전체</button>
+        <button type="submit" name="export" value="csv">CSV 다운로드</button>
         <span class="event-count" id="eventCount">조회 <%= rows.size() %>건</span>
     </form>
     <div class="ups-list-wrap" id="eventContent">
