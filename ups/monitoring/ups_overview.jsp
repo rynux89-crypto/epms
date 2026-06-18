@@ -48,7 +48,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .status-badge.disabled { background:#e5e7eb; color:#4b5563; }
         .tile-metrics { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px 8px; margin-top:6px; }
         .metric { border-top:1px solid #edf2f7; padding-top:4px; min-width:0; }
-        .metric span { display:block; color:#667085; font-size:12px; font-weight:700; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .metric > span { display:block; color:#667085; font-size:12px; font-weight:700; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .metric strong { display:flex; align-items:baseline; gap:3px; color:#172033; font-size:16px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .metric strong [data-field] { min-width:0; overflow:hidden; text-overflow:ellipsis; }
         .unit { display:inline-block !important; color:#64748b; font-size:.72em !important; font-weight:700; flex:0 0 auto; margin-left:0; }
