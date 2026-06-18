@@ -31,15 +31,15 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .summary-item strong { font-size:21px; color:#172033; }
         .tiles-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; }
         .ups-board.tiles { display:block; }
-        .ups-tile { display:block; color:#172033; text-decoration:none; background:#fff; border:1px solid #dbe5f2; border-left:6px solid #94a3b8; border-radius:8px; padding:10px 11px; min-height:154px; }
+        .ups-tile { display:block; color:#172033; text-decoration:none; background:#fff; border:1px solid #dbe5f2; border-left:6px solid #94a3b8; border-radius:8px; padding:10px 11px; min-height:154px; font-family:"Segoe UI","Noto Sans KR",Arial,sans-serif; }
         .ups-tile.normal { border-left-color:#16a34a; }
         .ups-tile.alarm { border-left-color:#f59e0b; }
         .ups-tile.comm { border-left-color:#dc2626; }
         .ups-tile.unknown { border-left-color:#64748b; }
-        .ups-tile.disabled { border-left-color:#94a3b8; opacity:.72; }
+        .ups-tile.disabled { border-left-color:#94a3b8; background:#fbfcfe; }
         .tile-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:6px; }
-        .tile-name { font-size:16px; font-weight:800; line-height:1.22; }
-        .tile-meta { color:#64748b; font-size:11px; margin-top:2px; line-height:1.22; }
+        .tile-name { font-size:17px; font-weight:800; line-height:1.18; letter-spacing:0; }
+        .tile-meta { color:#64748b; font-size:12px; margin-top:2px; line-height:1.2; }
         .status-badge { display:inline-flex; align-items:center; min-width:60px; justify-content:center; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:800; background:#eef2f7; color:#334155; white-space:nowrap; }
         .status-badge.normal { background:#dcfce7; color:#166534; }
         .status-badge.alarm { background:#fef3c7; color:#92400e; }
@@ -48,8 +48,8 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .status-badge.disabled { background:#e5e7eb; color:#4b5563; }
         .tile-metrics { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px 8px; margin-top:6px; }
         .metric { border-top:1px solid #edf2f7; padding-top:4px; min-width:0; }
-        .metric span { display:block; color:#64748b; font-size:11px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .metric strong { display:flex; align-items:baseline; gap:3px; font-size:16px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .metric span { display:block; color:#667085; font-size:12px; font-weight:700; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .metric strong { display:flex; align-items:baseline; gap:3px; color:#172033; font-size:16px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .metric strong [data-field] { min-width:0; overflow:hidden; text-overflow:ellipsis; }
         .unit { display:inline-block !important; color:#64748b; font-size:.72em !important; font-weight:700; flex:0 0 auto; margin-left:0; }
         .overview-table .unit { vertical-align:baseline; margin-left:2px; }
