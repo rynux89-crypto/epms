@@ -174,6 +174,12 @@ ALARM_TEST_BY_CODE = {item["code"]: item for item in ALARM_TESTS}
 
 MANUAL_FIELDS = {
     "output_frequency_hz": {"min": 45.0, "max": 65.0},
+    "input_voltage_l1n": {"min": 0.0, "max": 400.0},
+    "input_voltage_l2n": {"min": 0.0, "max": 400.0},
+    "input_voltage_l3n": {"min": 0.0, "max": 400.0},
+    "input_voltage_l12": {"min": 0.0, "max": 600.0},
+    "input_voltage_l23": {"min": 0.0, "max": 600.0},
+    "input_voltage_l31": {"min": 0.0, "max": 600.0},
     "output_voltage_l12": {"min": 0.0, "max": 600.0},
     "output_voltage_l23": {"min": 0.0, "max": 600.0},
     "output_voltage_l31": {"min": 0.0, "max": 600.0},
@@ -308,6 +314,12 @@ class SimulatorState:
             "breakers": breakers,
             "uptime_seconds": int(time.time() - self.started_at),
             "output_frequency_hz": regs.get(4608, 0) / 10,
+            "input_voltage_l1n": regs.get(4097, 0),
+            "input_voltage_l2n": regs.get(4098, 0),
+            "input_voltage_l3n": regs.get(4099, 0),
+            "input_voltage_l12": regs.get(4100, 0),
+            "input_voltage_l23": regs.get(4101, 0),
+            "input_voltage_l31": regs.get(4102, 0),
             "output_voltage_l12": regs.get(4612, 0),
             "output_voltage_l23": regs.get(4613, 0),
             "output_voltage_l31": regs.get(4614, 0),
@@ -382,6 +394,12 @@ class SimulatorState:
         power_module_status = 0
 
         output_load = 43
+        input_voltage_l1n = 220
+        input_voltage_l2n = 221
+        input_voltage_l3n = 219
+        input_voltage_l12 = 380
+        input_voltage_l23 = 381
+        input_voltage_l31 = 379
         output_voltage_l12 = 380
         output_voltage_l23 = 381
         output_voltage_l31 = 379
@@ -459,6 +477,8 @@ class SimulatorState:
         elif scenario == "input_fault":
             ups_status |= 1 << 14
             input_status |= (1 << 0) | (1 << 2)
+            input_voltage_l1n = input_voltage_l2n = input_voltage_l3n = 0
+            input_voltage_l12 = input_voltage_l23 = input_voltage_l31 = 0
         elif scenario == "output_fault":
             ups_status |= 1 << 15
             output_status |= (1 << 0) | (1 << 1)
@@ -583,6 +603,14 @@ class SimulatorState:
         regs[4355] = 219
         regs[4371] = 0
 
+        # Input.
+        regs[4097] = u16(input_voltage_l1n)
+        regs[4098] = u16(input_voltage_l2n)
+        regs[4099] = u16(input_voltage_l3n)
+        regs[4100] = u16(input_voltage_l12)
+        regs[4101] = u16(input_voltage_l23)
+        regs[4102] = u16(input_voltage_l31)
+
         # Output.
         regs[4608] = 600
         regs[4609] = 220
@@ -627,6 +655,12 @@ class SimulatorState:
         if "output_frequency_hz" in manual_values:
             regs[4608] = u16(round(manual_values["output_frequency_hz"] * 10))
         for key, address in {
+            "input_voltage_l1n": 4097,
+            "input_voltage_l2n": 4098,
+            "input_voltage_l3n": 4099,
+            "input_voltage_l12": 4100,
+            "input_voltage_l23": 4101,
+            "input_voltage_l31": 4102,
             "output_voltage_l12": 4612,
             "output_voltage_l23": 4613,
             "output_voltage_l31": 4614,
@@ -1017,6 +1051,12 @@ const editableMetrics = {json.dumps(sorted(MANUAL_FIELDS.keys()), ensure_ascii=F
 const editableMetricSet = new Set(editableMetrics);
 const metricNames = {{
   output_frequency_hz:'출력 주파수',
+  input_voltage_l1n:'입력 전압 L1-N',
+  input_voltage_l2n:'입력 전압 L2-N',
+  input_voltage_l3n:'입력 전압 L3-N',
+  input_voltage_l12:'입력 전압 L1-2',
+  input_voltage_l23:'입력 전압 L2-3',
+  input_voltage_l31:'입력 전압 L3-1',
   output_voltage_l12:'출력 전압 L1-2',
   output_voltage_l23:'출력 전압 L2-3',
   output_voltage_l31:'출력 전압 L3-1',
@@ -1057,7 +1097,8 @@ const breakerNames = {{
 }};
 const metricGroups = [
   ['Frequency', ['output_frequency_hz']],
-  ['Voltage', ['output_voltage_l12', 'output_voltage_l23', 'output_voltage_l31']],
+  ['Input Voltage', ['input_voltage_l1n', 'input_voltage_l2n', 'input_voltage_l3n', 'input_voltage_l12', 'input_voltage_l23', 'input_voltage_l31']],
+  ['Output Voltage', ['output_voltage_l12', 'output_voltage_l23', 'output_voltage_l31']],
   ['Current / Load', ['output_current_l1', 'output_current_l2', 'output_current_l3', 'output_load_percent', 'output_power_kw', 'output_apparent_total_kva']],
   ['Power Factor', ['output_pf_l1', 'output_pf_l2', 'output_pf_l3']],
   ['Battery', ['battery_voltage', 'battery_current', 'battery_charge_percent', 'battery_temperature_c', 'remaining_minutes']]
@@ -1078,6 +1119,12 @@ const statusMetricKeys = [
 ];
 const metricUnits = {{
   output_frequency_hz:'Hz',
+  input_voltage_l1n:'V',
+  input_voltage_l2n:'V',
+  input_voltage_l3n:'V',
+  input_voltage_l12:'V',
+  input_voltage_l23:'V',
+  input_voltage_l31:'V',
   output_voltage_l12:'V',
   output_voltage_l23:'V',
   output_voltage_l31:'V',
