@@ -26,8 +26,6 @@
         .side-status { margin-top:auto; border:1px solid #1f334a; border-radius:8px; padding:16px; background:#0c1826; }
         .side-status small { color:var(--dash-muted); }
         .side-status strong { display:block; margin:6px 0 18px; color:var(--dash-green); }
-        .user { border-top:1px solid #1b2b40; margin:0 -14px -16px; padding:18px 22px 0; display:flex; align-items:center; gap:10px; color:#dbe8f6; }
-        .avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(180deg,#e5edf6,#8396aa); }
         .main { padding:24px 28px 28px; min-width:0; }
         .main > footer { flex:0 0 auto; padding:8px 0 0; color:#7f91a6; font-size:12px; background:transparent; }
         #dashboardRefresh { display:flex; flex-direction:column; gap:var(--dash-gap); min-width:0; }
@@ -209,8 +207,6 @@
             .nav a { padding:10px 14px; font-size:13px; }
             .side-status { padding:12px; font-size:12px; }
             .side-status strong { margin:4px 0 10px; }
-            .user { padding:12px 18px 0; }
-            .avatar { width:30px; height:30px; }
             .main { height:100vh; padding:16px 20px; overflow:hidden; display:flex; flex-direction:column; gap:var(--dash-gap); }
             #dashboardRefresh { flex:1 1 auto; min-height:0; gap:var(--dash-gap); }
             .dash-content-frame.active { flex:1 1 auto; min-height:0; height:100%; }

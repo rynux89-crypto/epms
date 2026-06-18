@@ -42,7 +42,6 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
             <small>마지막 업데이트</small>
             <div><%= new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()) %></div>
         </div>
-        <div class="user"><div class="avatar"></div><div><strong>관리자</strong><br><span class="muted">admin</span></div></div>
     </aside>
 
     <main class="main">
