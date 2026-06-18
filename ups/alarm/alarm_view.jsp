@@ -52,6 +52,7 @@ if ("csv".equalsIgnoreCase(export)) {
 <div class="page-wrap">
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
     <form class="alarm-filter" method="get" id="alarmFilter">
+        <% if ("1".equals(request.getParameter("embed"))) { %><input type="hidden" name="embed" value="1"><% } %>
         <% if (alarmModel.activeOnly) { %><input type="hidden" id="activeStatus" name="status" value="ACTIVE"><% } %>
         <label for="ups">UPS 검색</label>
         <input id="ups" name="ups" value="<%= h(searchText) %>" placeholder="UPS 이름, 위치, IP, 알람">
