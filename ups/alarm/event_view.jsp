@@ -15,6 +15,7 @@ epms.ups.UpsAlarmEventPageModel eventModel = epms.ups.UpsAlarmEventPageService.e
 String err = eventModel.err;
 String searchText = eventModel.searchText;
 List<Map<String, Object>> rows = eventModel.rows;
+String allEventsUrl = "1".equals(request.getParameter("embed")) ? "event_view.jsp?embed=1" : "event_view.jsp";
 
 if ("csv".equalsIgnoreCase(export)) {
     epms.util.CsvDownloadSupport.begin(response, out, "ups_event_history.csv");
@@ -59,7 +60,7 @@ if ("csv".equalsIgnoreCase(export)) {
         <input id="to" name="to" type="datetime-local" value="<%= h(eventModel.toRaw) %>" <%= eventModel.explicitTo ? "" : "data-auto-now=\"1\"" %>>
         <button type="submit">검색</button>
         <button type="submit" name="export" value="csv">CSV 다운로드</button>
-        <button type="button" onclick="location.href='event_view.jsp'">전체</button>
+        <button type="button" onclick="location.href='<%= h(allEventsUrl) %>'">전체</button>
         <span class="event-count" id="eventCount">조회 <%= rows.size() %>건</span>
     </form>
     <div class="ups-list-wrap" id="eventContent">
