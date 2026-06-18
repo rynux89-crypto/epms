@@ -223,7 +223,7 @@ public final class UpsDashboardViewService {
         model.kpiLoadMiniPoints = sparkPoints(allLoadSeries, 80.0, 44.0, 4.0);
         model.kpiBatteryMiniBars = batteryGauge(model.avgBattery, 120.0, 44.0);
         model.loadSeriesPoints = model.selectedOnline ? percentSparkPoints(recentSeries(model.selectedId, "load_percent", model.selectedLoad)) : "";
-        model.voltageSeriesPoints = model.selectedOnline ? voltageSparkPoints(recentSeries(model.selectedId, "output_voltage", model.selectedVoltage)) : "";
+        model.voltageSeriesPoints = model.selectedOnline ? voltageSparkPoints(recentLastValueSeries(model.selectedId, "output_voltage", model.selectedVoltage)) : "";
         model.batterySeriesPoints = model.selectedOnline ? percentSparkPoints(recentSeries(model.selectedId, "battery_charge_percent", model.selectedBattery)) : "";
         model.freqSeriesPoints = model.selectedOnline ? frequencySparkPoints(recentSeries(model.selectedId, "frequency", model.selectedFreq)) : "";
     }
@@ -599,6 +599,53 @@ public final class UpsDashboardViewService {
             }
         }
         if (carry == null) carry = Double.valueOf(fallback);
+        for (int i = 0; i < buckets.length; i++) {
+            if (buckets[i] == null) {
+                buckets[i] = carry;
+            } else {
+                carry = buckets[i];
+            }
+            values.add(buckets[i]);
+        }
+        return values;
+    }
+
+    private static List<Double> recentLastValueSeries(String upsId, String key, double fallback) {
+        List<Double> values = new ArrayList<Double>();
+        String column = metricColumn(key);
+        if (upsId == null || upsId.trim().isEmpty() || column == null) {
+            values.add(Double.valueOf(fallback));
+            return values;
+        }
+
+        Double[] buckets = new Double[60];
+        String sql =
+            "WITH ranked AS ( " +
+            "SELECT DATEDIFF(minute, m.measured_at, SYSDATETIME()) AS minute_ago, " +
+            "CAST(m." + column + " AS float) AS measured_value, " +
+            "ROW_NUMBER() OVER (PARTITION BY DATEDIFF(minute, m.measured_at, SYSDATETIME()) ORDER BY m.measured_at DESC) AS rn " +
+            "FROM dbo.ups_measurement m " +
+            "WHERE m.ups_id = ? " +
+            "AND m.measured_at >= DATEADD(hour, -1, SYSDATETIME()) " +
+            "AND m.measured_at <= SYSDATETIME() " +
+            "AND " + column + " IS NOT NULL " +
+            ") SELECT minute_ago, measured_value FROM ranked WHERE rn = 1";
+        try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, Integer.parseInt(upsId.trim()));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int minuteAgo = rs.getInt("minute_ago");
+                    if (minuteAgo >= 0 && minuteAgo < 60) {
+                        buckets[59 - minuteAgo] = Double.valueOf(rs.getDouble("measured_value"));
+                    }
+                }
+            }
+        } catch (Exception ignore) {
+            return Arrays.asList(Double.valueOf(fallback), Double.valueOf(fallback));
+        }
+
+        Double carry = firstNonNull(buckets, Double.valueOf(fallback));
         for (int i = 0; i < buckets.length; i++) {
             if (buckets[i] == null) {
                 buckets[i] = carry;
