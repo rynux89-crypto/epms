@@ -1,5 +1,6 @@
 <%@ page import="java.sql.*" %>
 <%@ page import="java.util.*" %>
+<%@ page import="java.math.BigDecimal" %>
 <%@ page import="java.net.URLEncoder" %>
 <%@ page contentType="text/html;charset=UTF-8" pageEncoding="UTF-8" language="java" %>
 <%@ include file="../includes/ups_dbconfig.jspf" %>
@@ -19,40 +20,63 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             return;
         }
         String upsIdRaw = request.getParameter("ups_id");
-        boolean updated = upsIdRaw != null && upsIdRaw.trim().length() > 0;
-        if (!updated) {
-            String ipRaw = request.getParameter("ip_address");
-            String portRaw = request.getParameter("modbus_port");
-            String unitRaw = request.getParameter("unit_id");
-            if (ipRaw != null && ipRaw.trim().length() > 0) {
-                int modbusPort = (portRaw == null || portRaw.trim().length() == 0) ? 502 : Integer.parseInt(portRaw.trim());
-                int unitId = (unitRaw == null || unitRaw.trim().length() == 0) ? 1 : Integer.parseInt(unitRaw.trim());
-                try (Connection conn = openUpsDbConnection();
-                     PreparedStatement ps = conn.prepareStatement("SELECT ups_id FROM dbo.ups_device WHERE ip_address=? AND modbus_port=? AND unit_id=?")) {
-                    ps.setString(1, ipRaw.trim());
-                    ps.setInt(2, modbusPort);
-                    ps.setInt(3, unitId);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) {
-                            upsIdRaw = String.valueOf(rs.getInt("ups_id"));
-                            updated = true;
-                        }
-                    }
+        String upsName = request.getParameter("ups_name");
+        String location = request.getParameter("location");
+        String ipAddress = request.getParameter("ip_address");
+        String modbusPortRaw = request.getParameter("modbus_port");
+        String unitIdRaw = request.getParameter("unit_id");
+        String profileIdRaw = request.getParameter("profile_id");
+        String capacityRaw = request.getParameter("rated_capacity_kva");
+        String pollIntervalRaw = request.getParameter("poll_interval_seconds");
+        boolean enabled = "1".equals(request.getParameter("enabled"));
+        int modbusPort = (modbusPortRaw == null || modbusPortRaw.trim().isEmpty()) ? 502 : Integer.parseInt(modbusPortRaw.trim());
+        int unitId = (unitIdRaw == null || unitIdRaw.trim().isEmpty()) ? 1 : Integer.parseInt(unitIdRaw.trim());
+        Integer profileId = (profileIdRaw == null || profileIdRaw.trim().isEmpty()) ? null : Integer.valueOf(profileIdRaw.trim());
+        BigDecimal capacity = (capacityRaw == null || capacityRaw.trim().isEmpty()) ? null : new BigDecimal(capacityRaw.trim());
+        int pollIntervalSeconds = (pollIntervalRaw == null || pollIntervalRaw.trim().isEmpty()) ? 2 : Integer.parseInt(pollIntervalRaw.trim());
+        if (upsName == null || upsName.trim().isEmpty()) throw new IllegalArgumentException("UPS 이름을 입력하세요.");
+        if (ipAddress == null || ipAddress.trim().isEmpty()) throw new IllegalArgumentException("IP 주소를 입력하세요.");
+        if (pollIntervalSeconds < 1) throw new IllegalArgumentException("수집주기는 1초 이상 입력하세요.");
+        if (pollIntervalSeconds > 86400) throw new IllegalArgumentException("수집주기는 86400초 이하로 입력하세요.");
+
+        try (Connection conn = openUpsDbConnection()) {
+            try (Statement st = conn.createStatement()) {
+                st.execute("IF COL_LENGTH('dbo.ups_device', 'poll_interval_seconds') IS NULL ALTER TABLE dbo.ups_device ADD poll_interval_seconds int NOT NULL CONSTRAINT DF_ups_device_poll_interval_seconds DEFAULT (2)");
+            }
+            if (upsIdRaw == null || upsIdRaw.trim().isEmpty()) {
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO dbo.ups_device (ups_name, location, ip_address, modbus_port, unit_id, profile_id, rated_capacity_kva, poll_interval_seconds, enabled, updated_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, sysdatetime())")) {
+                    ps.setString(1, upsName.trim());
+                    ps.setString(2, (location == null || location.trim().isEmpty()) ? null : location.trim());
+                    ps.setString(3, ipAddress.trim());
+                    ps.setInt(4, modbusPort);
+                    ps.setInt(5, unitId);
+                    if (profileId == null) ps.setNull(6, Types.INTEGER); else ps.setInt(6, profileId.intValue());
+                    if (capacity == null) ps.setNull(7, Types.DECIMAL); else ps.setBigDecimal(7, capacity);
+                    ps.setInt(8, pollIntervalSeconds);
+                    ps.setBoolean(9, enabled);
+                    ps.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE dbo.ups_device SET ups_name=?, location=?, ip_address=?, modbus_port=?, unit_id=?, profile_id=?, rated_capacity_kva=?, poll_interval_seconds=?, enabled=?, updated_at=sysdatetime() " +
+                        "WHERE ups_id=?")) {
+                    ps.setString(1, upsName.trim());
+                    ps.setString(2, (location == null || location.trim().isEmpty()) ? null : location.trim());
+                    ps.setString(3, ipAddress.trim());
+                    ps.setInt(4, modbusPort);
+                    ps.setInt(5, unitId);
+                    if (profileId == null) ps.setNull(6, Types.INTEGER); else ps.setInt(6, profileId.intValue());
+                    if (capacity == null) ps.setNull(7, Types.DECIMAL); else ps.setBigDecimal(7, capacity);
+                    ps.setInt(8, pollIntervalSeconds);
+                    ps.setBoolean(9, enabled);
+                    ps.setInt(10, Integer.parseInt(upsIdRaw.trim()));
+                    if (ps.executeUpdate() == 0) throw new IllegalArgumentException("수정할 UPS를 찾을 수 없습니다.");
                 }
             }
         }
-        epms.ups.UpsDeviceService.saveDevice(
-            upsIdRaw,
-            request.getParameter("ups_name"),
-            request.getParameter("location"),
-            request.getParameter("ip_address"),
-            request.getParameter("modbus_port"),
-            request.getParameter("unit_id"),
-            request.getParameter("profile_id"),
-            request.getParameter("rated_capacity_kva"),
-            request.getParameter("poll_interval_seconds"),
-            request.getParameter("enabled"));
-        response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode(updated ? "UPS 정보가 수정되었습니다." : "UPS가 등록되었습니다.", "UTF-8"));
+        response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode((upsIdRaw == null || upsIdRaw.trim().isEmpty()) ? "UPS가 등록되었습니다." : "UPS 정보가 수정되었습니다.", "UTF-8"));
         return;
     } catch (Exception e) {
         response.sendRedirect("ups_register.jsp?err=" + URLEncoder.encode(e.getMessage(), "UTF-8"));

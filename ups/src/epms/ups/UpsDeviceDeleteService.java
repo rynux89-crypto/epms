@@ -19,6 +19,7 @@ public final class UpsDeviceDeleteService {
             try {
                 deleteByUpsId(conn, "dbo.ups_measurement", upsId);
                 deleteByUpsId(conn, "dbo.ups_alarm_log", upsId);
+                deleteByUpsId(conn, "dbo.ups_comm_status", upsId);
                 int deleted;
                 try (PreparedStatement ps = conn.prepareStatement("DELETE FROM dbo.ups_device WHERE ups_id=?")) {
                     ps.setInt(1, upsId);

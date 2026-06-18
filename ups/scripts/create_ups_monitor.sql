@@ -77,13 +77,16 @@ BEGIN
         updated_at datetime2(3) NOT NULL CONSTRAINT DF_ups_device_updated_at DEFAULT (sysdatetime()),
         CONSTRAINT FK_ups_device_profile FOREIGN KEY (profile_id) REFERENCES dbo.ups_modbus_profile(profile_id)
     );
-
-    CREATE UNIQUE INDEX UX_ups_device_ip_unit ON dbo.ups_device(ip_address, modbus_port, unit_id);
 END
 GO
 
 IF OBJECT_ID(N'dbo.ups_device', N'U') IS NOT NULL
 BEGIN
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_ups_device_ip_unit' AND object_id = OBJECT_ID(N'dbo.ups_device'))
+    BEGIN
+        DROP INDEX UX_ups_device_ip_unit ON dbo.ups_device;
+    END
+
     IF COL_LENGTH('dbo.ups_device', 'poll_interval_seconds') IS NULL
     BEGIN
         ALTER TABLE dbo.ups_device ADD poll_interval_seconds int NOT NULL CONSTRAINT DF_ups_device_poll_interval_seconds DEFAULT (2);
