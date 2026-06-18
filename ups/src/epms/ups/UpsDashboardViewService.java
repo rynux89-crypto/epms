@@ -50,6 +50,7 @@ public final class UpsDashboardViewService {
         model.placementDeviceModels = UpsDeviceLookupService.listDeviceRowsWithProfile();
         model.alarmModels = UpsAlarmEventService.alarmRowList(null, null, null);
         model.eventModels = UpsAlarmEventService.eventRowList(null, null, null);
+        sortPlacementDeviceRows(model.placementDeviceModels);
         model.devices = UpsDeviceRow.toMaps(model.deviceModels);
         model.alarms = UpsAlarmRow.toMaps(model.alarmModels);
         model.events = UpsAlarmRow.toMaps(model.eventModels);
@@ -275,6 +276,34 @@ public final class UpsDashboardViewService {
         } else {
             model.placementSummary = "위치 " + locationTotal + "곳 / UPS " + model.placementUpsTotal + "대";
         }
+    }
+
+    private static void sortPlacementDeviceRows(List<UpsDeviceRow> rows) {
+        if (rows == null || rows.size() < 2) return;
+        for (int i = 1; i < rows.size(); i++) {
+            UpsDeviceRow current = rows.get(i);
+            int j = i - 1;
+            while (j >= 0 && comparePlacementDeviceRows(rows.get(j), current) > 0) {
+                rows.set(j + 1, rows.get(j));
+                j--;
+            }
+            rows.set(j + 1, current);
+        }
+    }
+
+    private static int comparePlacementDeviceRows(UpsDeviceRow a, UpsDeviceRow b) {
+        int enabledA = Boolean.TRUE.equals(a.enabled) ? 0 : 1;
+        int enabledB = Boolean.TRUE.equals(b.enabled) ? 0 : 1;
+        if (enabledA != enabledB) return enabledA - enabledB;
+        int byLocation = normalizePlacementText(a.location).compareToIgnoreCase(normalizePlacementText(b.location));
+        if (byLocation != 0) return byLocation;
+        return normalizePlacementText(a.upsName).compareToIgnoreCase(normalizePlacementText(b.upsName));
+    }
+
+    private static String normalizePlacementText(Object value) {
+        if (value == null) return "";
+        String text = String.valueOf(value).trim();
+        return "null".equalsIgnoreCase(text) ? "" : text;
     }
 
     private static void deriveHealth(UpsDashboardModel model) {
