@@ -60,8 +60,8 @@ if ("csv".equalsIgnoreCase(export)) {
         <label for="to">종료</label>
         <input id="to" name="to" type="datetime-local" value="<%= h(alarmModel.toRaw) %>" <%= alarmModel.explicitTo ? "" : "data-auto-now=\"1\"" %>>
         <button type="submit" data-alarm-action="search">검색</button>
-        <button type="submit" name="export" value="csv" data-alarm-action="export">CSV 다운로드</button>
         <button type="submit" name="status" value="ACTIVE" data-alarm-action="active">활성알람만</button>
+        <button type="submit" name="export" value="csv" data-alarm-action="export">CSV 다운로드</button>
         <span class="alarm-count" id="alarmCount"><%= alarmModel.activeOnly ? "활성알람만" : "전체" %> <%= rows.size() %>건</span>
     </form>
     <div class="ups-list-wrap" id="alarmContent">
