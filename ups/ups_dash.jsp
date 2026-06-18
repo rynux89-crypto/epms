@@ -168,8 +168,11 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
         var params = new URLSearchParams(window.location.search);
         return params.get('ups_id') || root.getAttribute('data-ups-id') || '';
     }
+    function dashboardMenuActive() {
+        return !!document.querySelector('.ups-picker[open], .ups-picker:hover, .ups-picker:focus-within, .rack-picker:hover, .rack-picker:focus-within');
+    }
     function refreshDashboard() {
-        if (!dashboardVisible || busy || document.hidden || document.querySelector('.ups-picker[open], .rack-picker:hover, .rack-picker:focus-within')) return;
+        if (!dashboardVisible || busy || document.hidden || dashboardMenuActive()) return;
         busy = true;
         var url = 'api/dashboard_fragment.jsp';
         var upsId = selectedUpsId();
@@ -180,6 +183,7 @@ long dashCssVersion = new java.io.File(application.getRealPath("/css/ups_dash.cs
                 return response.text();
             })
             .then(function (html) {
+                if (dashboardMenuActive()) return;
                 if (html && html.indexOf('UPS 통합 모니터링') < 0) {
                     root.innerHTML = html;
                     lastOk = Date.now();
