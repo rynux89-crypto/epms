@@ -9,6 +9,7 @@ public final class UpsOverviewItem {
     public String unitId;
     public String statusClass;
     public String statusText;
+    public String enabledText;
     public String measuredAtText;
     public String loadText;
     public String batteryText;
@@ -26,6 +27,6 @@ public final class UpsOverviewItem {
     }
 
     public String filterText() {
-        return (upsName == null ? "" : upsName) + " " + (location == null ? "" : location);
+        return (upsName == null ? "" : upsName) + " " + (location == null ? "" : location) + " " + (enabledText == null ? "" : enabledText);
     }
 }

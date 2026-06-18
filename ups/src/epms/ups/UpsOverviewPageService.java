@@ -49,7 +49,7 @@ public final class UpsOverviewPageService {
             "OUTER APPLY (SELECT TOP 1 * FROM dbo.ups_measurement m WHERE m.ups_id = d.ups_id ORDER BY m.measured_at DESC) m " +
             "OUTER APPLY (SELECT COUNT(*) AS active_alarm_count FROM dbo.ups_alarm_log a WHERE a.ups_id = d.ups_id AND a.status = 'ACTIVE') a " +
             (includeInactive ? "" : "WHERE d.enabled = 1 ") +
-            "ORDER BY d.ups_name";
+            "ORDER BY CASE WHEN d.enabled = 1 THEN 0 ELSE 1 END, d.ups_name";
         try (Connection conn = UpsDataSourceProvider.resolveDataSource().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -73,6 +73,7 @@ public final class UpsOverviewPageService {
         item.unitId = str(row.get("unit_id"));
         item.statusClass = statusClass(row);
         item.statusText = statusText(item.statusClass);
+        item.enabledText = isEnabled(row.get("enabled")) ? "활성" : "비활성";
         item.measuredAtText = overviewDate(row, item.statusClass);
         item.loadText = overviewValue(row, item.statusClass, "load_percent", 1, "");
         item.batteryText = overviewValue(row, item.statusClass, "battery_charge_percent", 0, "");

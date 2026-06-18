@@ -25,6 +25,7 @@ for (int i = 0; i < overview.items.size(); i++) {
         .append("\"upsId\":\"").append(escJson(item.upsId)).append("\",")
         .append("\"statusClass\":\"").append(escJson(item.statusClass)).append("\",")
         .append("\"statusText\":\"").append(escJson(item.statusText)).append("\",")
+        .append("\"enabledText\":\"").append(escJson(item.enabledText)).append("\",")
         .append("\"measuredAtText\":\"").append(escJson(item.measuredAtText)).append("\",")
         .append("\"loadText\":\"").append(escJson(item.loadText)).append("\",")
         .append("\"batteryText\":\"").append(escJson(item.batteryText)).append("\",")

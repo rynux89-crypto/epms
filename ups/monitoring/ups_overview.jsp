@@ -54,6 +54,8 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .unit { display:inline-block !important; color:#64748b; font-size:.72em !important; font-weight:700; flex:0 0 auto; margin-left:0; }
         .overview-table .unit { vertical-align:baseline; margin-left:2px; }
         .tile-footer { display:flex; justify-content:space-between; gap:8px; color:#64748b; font-size:11px; margin-top:6px; padding-top:5px; border-top:1px solid #edf2f7; }
+        .enabled-text { color:#1267b1; font-weight:800; }
+        .ups-tile.disabled .enabled-text { color:#64748b; }
         .list-panel { display:none; background:#fff; border:1px solid #dbe5f2; border-radius:8px; overflow:auto; }
         .ups-board.list { display:block; }
         .ups-board.list .tiles-wrap { display:none; }
@@ -143,6 +145,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                     <div class="metric"><span>운전모드</span><strong data-field="operationModeText"><%= h(item.operationModeText) %></strong></div>
                 </div>
                 <div class="tile-footer">
+                    <span class="enabled-text" data-field="enabledText"><%= h(item.enabledText) %></span>
                     <span>알람 <span data-field="activeAlarmCount"><%= item.activeAlarmCount %></span></span>
                     <span data-field="measuredAtText"><%= h(item.measuredAtText) %></span>
                 </div>
@@ -154,6 +157,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
             <table class="overview-table">
                 <colgroup>
                     <col class="col-status">
+                    <col class="col-small">
                     <col class="col-name">
                     <col class="col-location">
                     <col class="col-ip">
@@ -171,7 +175,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 </colgroup>
                 <thead>
                     <tr>
-                        <th>상태</th><th>UPS</th><th>위치</th><th>IP</th><th>최근 수집</th>
+                        <th>상태</th><th>활성</th><th>UPS</th><th>위치</th><th>IP</th><th>최근 수집</th>
                         <th>부하율</th><th>출력전압</th><th>출력 kW</th><th>출력 kVA</th><th>출력 주파수</th><th>운전모드</th><th>배터리</th><th>온도</th><th>잔여시간</th><th>알람</th>
                     </tr>
                 </thead>
@@ -182,6 +186,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 %>
                     <tr data-ups-id="<%= h(item.upsId) %>" data-filter="<%= h(filterText) %>" onclick="location.href='<%= h(item.detailUrl()) %>'" style="cursor:pointer;">
                         <td><span class="status-badge <%= cls %>" data-field="statusText"><%= h(item.statusText) %></span></td>
+                        <td class="enabled-text" data-field="enabledText"><%= h(item.enabledText) %></td>
                         <td><%= h(item.upsName) %></td>
                         <td><%= h(item.location) %></td>
                         <td><%= h(item.ipAddress) %>:<%= h(item.modbusPort) %></td>
@@ -313,6 +318,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
             var oldMeasuredAt = root.getAttribute('data-measured-at') || '';
             setStatus(root, item.statusClass, item.statusText);
             setText(root, 'activeAlarmCount', item.activeAlarmCount);
+            setText(root, 'enabledText', item.enabledText);
             if (oldMeasuredAt !== item.measuredAtText) {
                 setText(root, 'measuredAtText', item.measuredAtText);
                 setText(root, 'loadText', item.loadText);
