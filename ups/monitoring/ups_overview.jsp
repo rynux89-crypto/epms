@@ -139,7 +139,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                     <div class="metric"><span>배터리</span><strong><span data-field="batteryText"><%= h(item.batteryText) %></span><small class="unit">%</small></strong></div>
                     <div class="metric"><span>출력전압</span><strong><span data-field="outputVoltageText"><%= h(item.outputVoltageText) %></span><small class="unit">V</small></strong></div>
                     <div class="metric"><span>출력</span><strong><span data-field="outputKwText"><%= h(item.outputKwText) %></span><small class="unit">kW</small></strong></div>
-                    <div class="metric"><span>주파수</span><strong><span data-field="frequencyText"><%= h(item.frequencyText) %></span><small class="unit">Hz</small></strong></div>
+                    <div class="metric"><span>출력 주파수</span><strong><span data-field="frequencyText"><%= h(item.frequencyText) %></span><small class="unit">Hz</small></strong></div>
                     <div class="metric"><span>운전모드</span><strong data-field="operationModeText"><%= h(item.operationModeText) %></strong></div>
                 </div>
                 <div class="tile-footer">
@@ -172,7 +172,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 <thead>
                     <tr>
                         <th>상태</th><th>UPS</th><th>위치</th><th>IP</th><th>최근 수집</th>
-                        <th>부하율</th><th>출력전압</th><th>출력 kW</th><th>출력 kVA</th><th>주파수</th><th>운전모드</th><th>배터리</th><th>온도</th><th>잔여시간</th><th>알람</th>
+                        <th>부하율</th><th>출력전압</th><th>출력 kW</th><th>출력 kVA</th><th>출력 주파수</th><th>운전모드</th><th>배터리</th><th>온도</th><th>잔여시간</th><th>알람</th>
                     </tr>
                 </thead>
                 <tbody>

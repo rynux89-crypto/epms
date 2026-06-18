@@ -24,7 +24,7 @@
                             <span>운전 모드</span><b><%= h(fragmentModel.selectedOperationModeText) %></b>
                             <span>입력 전압</span><b><%= h(fragmentModel.selectedInputVoltageText) %></b>
                             <span>출력 전압</span><b><%= h(fragmentModel.selectedOutputVoltageText) %></b>
-                            <span>주파수</span><b><%= h(fragmentModel.selectedFrequencyText) %></b>
+                            <span>출력 주파수</span><b><%= h(fragmentModel.selectedFrequencyText) %></b>
                             <span>설치 위치</span><b><%= h(fragmentModel.selectedLocationText) %></b>
                         </div>
                         <div class="device-actions">
