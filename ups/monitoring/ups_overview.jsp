@@ -50,6 +50,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         .metric { border-top:1px solid #edf2f7; padding-top:6px; min-width:0; }
         .metric span { display:block; color:#64748b; font-size:11px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .metric strong { display:block; font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .unit { display:inline !important; color:#64748b; font-size:.72em !important; font-weight:700; margin-left:2px; }
         .tile-footer { display:flex; justify-content:space-between; gap:8px; color:#64748b; font-size:12px; margin-top:9px; padding-top:7px; border-top:1px solid #edf2f7; }
         .list-panel { display:none; background:#fff; border:1px solid #dbe5f2; border-radius:8px; overflow:auto; }
         .ups-board.list { display:block; }
@@ -132,10 +133,11 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                     <span class="status-badge <%= cls %>" data-field="statusText"><%= h(item.statusText) %></span>
                 </div>
                 <div class="tile-metrics">
-                    <div class="metric"><span>부하율</span><strong data-field="loadText"><%= h(item.loadText) %></strong></div>
-                    <div class="metric"><span>배터리</span><strong data-field="batteryText"><%= h(item.batteryText) %></strong></div>
-                    <div class="metric"><span>출력</span><strong><span data-field="outputKwText"><%= h(item.outputKwText) %></span> kW</strong></div>
-                    <div class="metric"><span>주파수</span><strong><span data-field="frequencyText"><%= h(item.frequencyText) %></span> Hz</strong></div>
+                    <div class="metric"><span>부하율</span><strong><span data-field="loadText"><%= h(item.loadText) %></span><small class="unit">%</small></strong></div>
+                    <div class="metric"><span>배터리</span><strong><span data-field="batteryText"><%= h(item.batteryText) %></span><small class="unit">%</small></strong></div>
+                    <div class="metric"><span>출력전압</span><strong><span data-field="outputVoltageText"><%= h(item.outputVoltageText) %></span><small class="unit">V</small></strong></div>
+                    <div class="metric"><span>출력</span><strong><span data-field="outputKwText"><%= h(item.outputKwText) %></span><small class="unit">kW</small></strong></div>
+                    <div class="metric"><span>주파수</span><strong><span data-field="frequencyText"><%= h(item.frequencyText) %></span><small class="unit">Hz</small></strong></div>
                     <div class="metric"><span>운전모드</span><strong data-field="operationModeText"><%= h(item.operationModeText) %></strong></div>
                 </div>
                 <div class="tile-footer">
@@ -155,10 +157,11 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                     <col class="col-ip">
                     <col class="col-measured">
                     <col class="col-small">
+                    <col class="col-small">
+                    <col class="col-small">
+                    <col class="col-small">
+                    <col class="col-small">
                     <col class="col-mode">
-                    <col class="col-small">
-                    <col class="col-small">
-                    <col class="col-small">
                     <col class="col-small">
                     <col class="col-small">
                     <col class="col-remain">
@@ -167,7 +170,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 <thead>
                     <tr>
                         <th>상태</th><th>UPS</th><th>위치</th><th>IP</th><th>최근 수집</th>
-                        <th>부하율</th><th>출력 kW</th><th>출력 kVA</th><th>주파수</th><th>운전모드</th><th>배터리</th><th>온도</th><th>잔여시간</th><th>알람</th>
+                        <th>부하율</th><th>출력전압</th><th>출력 kW</th><th>출력 kVA</th><th>주파수</th><th>운전모드</th><th>배터리</th><th>온도</th><th>잔여시간</th><th>알람</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -181,14 +184,15 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                         <td><%= h(item.location) %></td>
                         <td><%= h(item.ipAddress) %>:<%= h(item.modbusPort) %></td>
                         <td class="measured-cell" data-field="measuredAtText"><%= h(item.measuredAtText) %></td>
-                        <td class="num" data-field="loadText"><%= h(item.loadText) %></td>
-                        <td class="num" data-field="outputKwText"><%= h(item.outputKwText) %></td>
-                        <td class="num" data-field="outputKvaText"><%= h(item.outputKvaText) %></td>
-                        <td class="num" data-field="frequencyText"><%= h(item.frequencyText) %></td>
+                        <td class="num"><span data-field="loadText"><%= h(item.loadText) %></span><small class="unit">%</small></td>
+                        <td class="num"><span data-field="outputVoltageText"><%= h(item.outputVoltageText) %></span><small class="unit">V</small></td>
+                        <td class="num"><span data-field="outputKwText"><%= h(item.outputKwText) %></span><small class="unit">kW</small></td>
+                        <td class="num"><span data-field="outputKvaText"><%= h(item.outputKvaText) %></span><small class="unit">kVA</small></td>
+                        <td class="num"><span data-field="frequencyText"><%= h(item.frequencyText) %></span><small class="unit">Hz</small></td>
                         <td data-field="operationModeText"><%= h(item.operationModeText) %></td>
-                        <td class="num" data-field="batteryText"><%= h(item.batteryText) %></td>
-                        <td class="num" data-field="batteryTempText"><%= h(item.batteryTempText) %></td>
-                        <td class="num" data-field="remainingText"><%= h(item.remainingText) %></td>
+                        <td class="num"><span data-field="batteryText"><%= h(item.batteryText) %></span><small class="unit">%</small></td>
+                        <td class="num"><span data-field="batteryTempText"><%= h(item.batteryTempText) %></span><small class="unit">℃</small></td>
+                        <td class="num"><span data-field="remainingText"><%= h(item.remainingText) %></span><small class="unit">Min</small></td>
                         <td class="num" data-field="activeAlarmCount"><%= item.activeAlarmCount %></td>
                     </tr>
                 <% } %>
@@ -240,6 +244,13 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
         if (board) board.style.display = visible === 0 && tiles.length > 0 ? 'none' : '';
         try { localStorage.setItem('upsOverviewFilter', filterInput ? filterInput.value : ''); } catch (ignore) {}
     }
+    function updateUnits(root) {
+        Array.prototype.slice.call((root || document).querySelectorAll('.unit')).forEach(function (unit) {
+            var valueNode = unit.previousElementSibling;
+            var value = valueNode ? valueNode.textContent.trim() : '';
+            unit.style.display = (!value || value === '-' || value === '--') ? 'none' : '';
+        });
+    }
     function bindControls() {
         var board = document.getElementById('upsBoard');
         var tileBtn = document.getElementById('tileBtn');
@@ -272,6 +283,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
             };
         }
         applyFilter();
+        updateUnits(document);
     }
     function setText(root, field, value) {
         if (!root) return;
@@ -303,6 +315,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 setText(root, 'measuredAtText', item.measuredAtText);
                 setText(root, 'loadText', item.loadText);
                 setText(root, 'batteryText', item.batteryText);
+                setText(root, 'outputVoltageText', item.outputVoltageText);
                 setText(root, 'outputKwText', item.outputKwText);
                 setText(root, 'outputKvaText', item.outputKvaText);
                 setText(root, 'frequencyText', item.frequencyText);
@@ -311,6 +324,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 setText(root, 'remainingText', item.remainingText);
                 root.setAttribute('data-measured-at', item.measuredAtText || '');
             }
+            updateUnits(root);
         });
     }
     function updateSummary(summary) {

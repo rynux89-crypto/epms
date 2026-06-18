@@ -12,6 +12,7 @@ public final class UpsOverviewItem {
     public String measuredAtText;
     public String loadText;
     public String batteryText;
+    public String outputVoltageText;
     public String outputKwText;
     public String outputKvaText;
     public String frequencyText;

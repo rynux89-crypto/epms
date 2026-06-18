@@ -28,6 +28,7 @@ for (int i = 0; i < overview.items.size(); i++) {
         .append("\"measuredAtText\":\"").append(escJson(item.measuredAtText)).append("\",")
         .append("\"loadText\":\"").append(escJson(item.loadText)).append("\",")
         .append("\"batteryText\":\"").append(escJson(item.batteryText)).append("\",")
+        .append("\"outputVoltageText\":\"").append(escJson(item.outputVoltageText)).append("\",")
         .append("\"outputKwText\":\"").append(escJson(item.outputKwText)).append("\",")
         .append("\"outputKvaText\":\"").append(escJson(item.outputKvaText)).append("\",")
         .append("\"frequencyText\":\"").append(escJson(item.frequencyText)).append("\",")

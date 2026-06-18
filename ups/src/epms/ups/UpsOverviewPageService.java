@@ -41,7 +41,7 @@ public final class UpsOverviewPageService {
         String sql =
             "SELECT d.ups_id, d.ups_name, d.location, d.ip_address, d.modbus_port, d.unit_id, d.enabled, d.last_comm_status, " +
             "COALESCE(cs.consecutive_fail_count, 0) AS consecutive_fail_count, " +
-            "m.measured_at, m.load_percent, m.output_power_kw, m.output_apparent_total_kva, m.frequency, " +
+            "m.measured_at, m.load_percent, m.output_voltage, m.output_power_kw, m.output_apparent_total_kva, m.frequency, " +
             "m.battery_charge_percent, m.battery_temperature, m.remaining_minutes, m.ups_operation_mode_code, " +
             "ISNULL(a.active_alarm_count, 0) AS active_alarm_count " +
             "FROM dbo.ups_device d " +
@@ -74,14 +74,15 @@ public final class UpsOverviewPageService {
         item.statusClass = statusClass(row);
         item.statusText = statusText(item.statusClass);
         item.measuredAtText = overviewDate(row, item.statusClass);
-        item.loadText = overviewValue(row, item.statusClass, "load_percent", 1, "%");
-        item.batteryText = overviewValue(row, item.statusClass, "battery_charge_percent", 0, "%");
+        item.loadText = overviewValue(row, item.statusClass, "load_percent", 1, "");
+        item.batteryText = overviewValue(row, item.statusClass, "battery_charge_percent", 0, "");
+        item.outputVoltageText = overviewValue(row, item.statusClass, "output_voltage", 0, "");
         item.outputKwText = overviewValue(row, item.statusClass, "output_power_kw", 0, "");
         item.outputKvaText = overviewValue(row, item.statusClass, "output_apparent_total_kva", 0, "");
         item.frequencyText = overviewValue(row, item.statusClass, "frequency", 1, "");
         item.operationModeText = overviewMode(row, item.statusClass);
-        item.batteryTempText = overviewValue(row, item.statusClass, "battery_temperature", 1, "\u00b0C");
-        item.remainingText = overviewValue(row, item.statusClass, "remaining_minutes", 0, " Min");
+        item.batteryTempText = overviewValue(row, item.statusClass, "battery_temperature", 1, "");
+        item.remainingText = overviewValue(row, item.statusClass, "remaining_minutes", 0, "");
         item.activeAlarmCount = intValue(row.get("active_alarm_count"));
         return item;
     }
@@ -148,6 +149,7 @@ public final class UpsOverviewPageService {
 
         String scenario = UpsSimulatorSupport.jsonText(simStatus, "scenario", "normal");
         UpsSimulatorSupport.putJsonDecimal(row, simStatus, "output_load_percent", "load_percent");
+        UpsSimulatorSupport.putJsonDecimal(row, simStatus, "output_voltage_l12", "output_voltage");
         UpsSimulatorSupport.putJsonDecimal(row, simStatus, "output_power_kw", "output_power_kw");
         UpsSimulatorSupport.putJsonDecimal(row, simStatus, "output_apparent_total_kva", "output_apparent_total_kva");
         UpsSimulatorSupport.putJsonDecimal(row, simStatus, "output_frequency_hz", "frequency");
@@ -169,6 +171,7 @@ public final class UpsOverviewPageService {
 
     private static void applySimulatorDefaults(Map<String, Object> target, String scenario) {
         putIfMissing(target, "load_percent", "42");
+        putIfMissing(target, "output_voltage", "380");
         putIfMissing(target, "output_power_kw", "40");
         putIfMissing(target, "output_apparent_total_kva", "43");
         putIfMissing(target, "frequency", "60.0");
@@ -191,6 +194,7 @@ public final class UpsOverviewPageService {
         } else if ("output_off".equals(scenario) || "epo".equals(scenario)) {
             target.put("remaining_minutes", new BigDecimal("120"));
             target.put("load_percent", BigDecimal.ZERO);
+            target.put("output_voltage", BigDecimal.ZERO);
             target.put("output_power_kw", BigDecimal.ZERO);
             target.put("output_apparent_total_kva", BigDecimal.ZERO);
             if (target.get("battery_charge_percent") == null) target.put("battery_charge_percent", new BigDecimal("96"));
