@@ -7,10 +7,13 @@ import epms.util.UpsSimulatorSupport;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -208,6 +211,7 @@ public final class UpsDashboardViewService {
 
     private static void deriveTrends(UpsDashboardModel model) {
         model.trendRangeText = model.selectedOnline ? "최근 1시간" : "오프라인";
+        model.trendAxisLabels = trendAxisLabels();
         model.loadTrendDisplay = model.selectedOnline ? fmt(model.selectedLoad, 0) + "%" : "--";
         model.voltageTrendDisplay = model.selectedOnline ? fmt(model.selectedVoltage, 0) + " V" : "--";
         model.batteryTrendDisplay = model.selectedOnline ? fmt(model.selectedBattery, 0) + "%" : "--";
@@ -671,6 +675,23 @@ public final class UpsDashboardViewService {
 
     private static String voltageSparkPoints(List<Double> values) {
         return fixedScaleSparkPoints(values, 260.0, 70.0, 8.0, 360.0, 400.0);
+    }
+
+    private static String trendAxisLabels() {
+        int[] minutesAgo = new int[] { 60, 45, 30, 15, 0 };
+        double[] xs = new double[] { 0.0, 65.0, 130.0, 195.0, 260.0 };
+        String[] anchors = new String[] { "start", "middle", "middle", "middle", "end" };
+        SimpleDateFormat format = new SimpleDateFormat("HH:mm", Locale.KOREA);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < minutesAgo.length; i++) {
+            Calendar cal = Calendar.getInstance();
+            cal.add(Calendar.MINUTE, -minutesAgo[i]);
+            Date time = cal.getTime();
+            out.append(String.format(Locale.US,
+                "<text class=\"spark-axis-label\" x=\"%.1f\" y=\"77\" text-anchor=\"%s\">%s</text>",
+                xs[i], anchors[i], format.format(time)));
+        }
+        return out.toString();
     }
 
     private static String sparkPoints(List<Double> values, double width, double height, double pad) {

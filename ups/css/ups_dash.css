@@ -141,6 +141,7 @@
         .chart-title strong { font-size:18px; color:var(--dash-cyan); }
         .chart-card .spark { width:100%; height:98px; margin-top:8px; display:block; }
         .spark-grid line { stroke:#38506a; stroke-width:1; opacity:.78; shape-rendering:crispEdges; }
+        .spark-axis-label { fill:#8fa4ba; font:700 8.5px "Segoe UI","Noto Sans KR",Arial; }
         .health { display:grid; grid-template-columns:170px 1fr; align-items:center; gap:16px; }
         .gauge { width:150px; height:150px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--gauge-color, var(--dash-green)) 0 var(--gauge-score, 0%), #2b3a4b var(--gauge-score, 0%) 100%); position:relative; }
         .gauge:after { content:""; position:absolute; inset:17px; background:#101d2c; border-radius:50%; }

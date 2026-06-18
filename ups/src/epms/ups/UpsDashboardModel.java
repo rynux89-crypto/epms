@@ -86,6 +86,7 @@ public final class UpsDashboardModel {
     public String voltageSeriesPoints = "";
     public String batterySeriesPoints = "";
     public String freqSeriesPoints = "";
+    public String trendAxisLabels = "";
     public String kpiLoadMiniPoints = "";
     public String kpiBatteryMiniBars = "";
     public String placementSummary = "등록된 UPS 없음";
