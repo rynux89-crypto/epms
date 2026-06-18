@@ -156,7 +156,8 @@
         .floor::-webkit-scrollbar { width:8px; }
         .floor::-webkit-scrollbar-thumb { background:#36536f; border-radius:999px; }
         .floor::-webkit-scrollbar-track { background:#132437; border-radius:999px; }
-        .rack-room { border:1px solid #31516e; background:#10233a; color:#cde5ff; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; font-weight:900; padding:4px; text-align:center; min-width:0; }
+        .rack-room { border:1px solid #31516e; background:#10233a; color:#cde5ff; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; font-weight:900; padding:4px; text-align:center; min-width:0; text-decoration:none; cursor:pointer; }
+        .rack-room:hover { filter:brightness(1.12); transform:translateY(-1px); }
         .rack-room strong { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
         .rack-room span { display:block; color:#9fb4ca; font-size:10px; font-weight:800; }
         .rack-room.ok { border-color:var(--dash-green); box-shadow:0 0 18px rgba(41,230,117,.22); }

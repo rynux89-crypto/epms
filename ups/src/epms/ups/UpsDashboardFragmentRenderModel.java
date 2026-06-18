@@ -110,7 +110,8 @@ public final class UpsDashboardFragmentRenderModel {
             String state = d.locationStates.get(loc);
             if (state == null || state.length() == 0) state = "ok";
             String names = d.locationNames.get(loc) == null ? "" : String.valueOf(d.locationNames.get(loc));
-            placementItems.add(new PlacementItem(loc, entry.getValue().intValue(), state, names));
+            String targetUpsId = d.locationTargetIds.get(loc) == null ? "" : String.valueOf(d.locationTargetIds.get(loc));
+            placementItems.add(new PlacementItem(loc, entry.getValue().intValue(), state, names, targetUpsId));
         }
     }
 
@@ -217,12 +218,14 @@ public final class UpsDashboardFragmentRenderModel {
         public final int count;
         public final String stateClass;
         public final String names;
+        public final String targetUpsId;
 
-        PlacementItem(String location, int count, String stateClass, String names) {
+        PlacementItem(String location, int count, String stateClass, String names, String targetUpsId) {
             this.location = location;
             this.count = count;
             this.stateClass = stateClass;
             this.names = names;
+            this.targetUpsId = targetUpsId;
         }
     }
 }

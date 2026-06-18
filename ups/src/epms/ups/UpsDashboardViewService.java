@@ -265,6 +265,10 @@ public final class UpsDashboardViewService {
             }
             if (names.length() > 0) names.append(", ");
             names.append(String.valueOf(device.upsName));
+
+            if (!model.locationTargetIds.containsKey(location)) {
+                model.locationTargetIds.put(location, String.valueOf(device.upsId));
+            }
         }
 
         int locationTotal = model.locationCounts.size();

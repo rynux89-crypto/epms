@@ -27,6 +27,7 @@ public final class UpsDashboardModel {
     public Map<String, Integer> locationCounts = new LinkedHashMap<String, Integer>();
     public Map<String, String> locationStates = new LinkedHashMap<String, String>();
     public Map<String, StringBuilder> locationNames = new LinkedHashMap<String, StringBuilder>();
+    public Map<String, String> locationTargetIds = new LinkedHashMap<String, String>();
 
     public int total;
     public int normal;
