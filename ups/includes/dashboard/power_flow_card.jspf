@@ -20,7 +20,7 @@
                         <path class="flow-line maintenance <%= dashModel.maintenanceBypassFlowActive ? "active" : "" %>" d="M 120 30 C 200 6, 320 6, 400 30" marker-end="<%= dashModel.maintenanceBypassFlowActive ? "url(#flowArrowRed)" : "" %>"/>
                         <line class="flow-line <%= dashModel.utilityFlowActive ? "active" : "" %>" x1="115" y1="85" x2="250" y2="85" marker-end="<%= dashModel.utilityFlowActive ? "url(#flowArrowGreen)" : "" %>"/>
                         <line class="flow-line <%= dashModel.loadFlowActive ? "active" : "" %>" x1="285" y1="85" x2="420" y2="85" marker-end="<%= dashModel.loadFlowActive ? "url(#flowArrowGreen)" : "" %>"/>
-                        <line class="flow-line battery <%= dashModel.batteryFlowActive ? "active" : "" %>" x1="260" y1="<%= dashModel.batteryDischarging ? 215 : 120 %>" x2="260" y2="<%= dashModel.batteryDischarging ? 120 : 215 %>" marker-end="<%= dashModel.batteryFlowActive ? "url(#flowArrowCyan)" : "" %>"/>
+                        <line class="flow-line battery <%= dashModel.batteryFlowActive ? "active" : "" %>" x1="260" y1="<%= dashModel.batteryDischarging ? 206 : 120 %>" x2="260" y2="<%= dashModel.batteryDischarging ? 120 : 206 %>" marker-end="<%= dashModel.batteryFlowActive ? "url(#flowArrowCyan)" : "" %>"/>
                         <circle class="node <%= (dashModel.utilityFlowActive || dashModel.bypassFlowActive) ? "on" : "idle" %>" cx="80" cy="85" r="55"/>
                         <rect class="node <%= dashModel.upsFlowActive ? "on" : "idle" %>" x="220" y="40" width="80" height="80" rx="12"/>
                         <circle class="node <%= dashModel.loadSuppliedActive ? "on" : "idle" %>" cx="455" cy="85" r="55"/>
