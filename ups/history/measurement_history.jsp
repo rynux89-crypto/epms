@@ -55,8 +55,8 @@ if ("csv".equalsIgnoreCase(export)) {
     <title>UPS 측정 이력</title>
     <%@ include file="../includes/ups_head_assets.jspf" %>
     <style>
-        body { background:#f2f4f7; }
-        .history-shell { max-width:none; width:100%; margin:0 auto; }
+        body { background:#f2f4f7; height:calc(100vh - 40px); overflow:hidden; }
+        .history-shell { max-width:none; width:100%; height:100%; margin:0 auto; display:flex; flex-direction:column; min-height:0; }
         .history-filter { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:#fff; border:1px solid #dbe5f2; border-radius:8px; padding:12px; margin-bottom:12px; }
         .history-filter label { font-size:13px; color:#475569; font-weight:800; }
         .history-filter input, .history-filter select { min-height:36px; border:1px solid #cbd8e6; border-radius:6px; padding:8px 10px; background:#fff; color:#111827; }
@@ -64,7 +64,7 @@ if ("csv".equalsIgnoreCase(export)) {
         .history-filter input[type="datetime-local"] { min-width:190px; }
         .history-filter select[name="limit"] { min-width:82px; }
         .history-filter button { min-height:36px; padding:8px 12px; }
-        .history-table-wrap { max-height:calc(100vh - 230px); }
+        .history-table-wrap { flex:1 1 auto; min-height:0; max-height:none; }
         .history-table { min-width:1980px; }
         .history-table th, .history-table td { text-align:right; }
         .history-table th:first-child, .history-table td:first-child,
