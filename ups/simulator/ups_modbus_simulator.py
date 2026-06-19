@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import socketserver
 import struct
@@ -807,6 +808,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/shutdown":
                 self._json({"ok": True})
                 self.server.stop_event.set()  # type: ignore[attr-defined]
+                threading.Thread(target=self.server.shutdown_process, daemon=True).start()  # type: ignore[attr-defined]
                 return
             self.send_error(404)
             return
@@ -1317,10 +1319,25 @@ setInterval(refresh, 2000);
 
 
 class ControlServer(ThreadingHTTPServer):
-    def __init__(self, server_address: tuple[str, int], state: SimulatorState, stop_event: threading.Event):
+    def __init__(self, server_address: tuple[str, int], state: SimulatorState, stop_event: threading.Event, modbus_server: ThreadedTcpServer):
         super().__init__(server_address, ControlHandler)
         self.state = state
         self.stop_event = stop_event
+        self.modbus_server = modbus_server
+
+    def shutdown_process(self) -> None:
+        time.sleep(0.2)
+        try:
+            self.modbus_server.shutdown()
+            self.modbus_server.server_close()
+        except Exception:
+            pass
+        try:
+            self.shutdown()
+            self.server_close()
+        except Exception:
+            pass
+        os._exit(0)
 
 
 def console_loop(state: SimulatorState, server: ThreadedTcpServer) -> None:
@@ -1375,7 +1392,7 @@ def main() -> int:
 
     if not args.no_control:
         try:
-            control_server = ControlServer((args.control_host, args.control_port), state, stop_event)
+            control_server = ControlServer((args.control_host, args.control_port), state, stop_event, server)
         except OSError as exc:
             print(f"failed to bind control UI {args.control_host}:{args.control_port}: {exc}", file=sys.stderr)
         else:
