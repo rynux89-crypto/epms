@@ -65,6 +65,7 @@ Object collectorInterval = setupStatus.get("collectorInterval");
 </head>
 <body>
 <div class="page-wrap">
+<div class="page-title"><h2>UPS 초기 설정</h2></div>
 <% if (msg != null) { %><div class="ok-box"><%= h(msg) %></div><% } %>
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 

@@ -87,7 +87,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
 <body>
 <div class="page-wrap">
     <div class="title-bar">
-        
+        <div class="page-title"><h2>UPS 전체 현황</h2></div>
         <div class="inline-actions overview-actions">
             <span class="refresh-state" id="refreshState">1초 알람 갱신</span>
             <div class="view-toggle" aria-label="보기 방식">

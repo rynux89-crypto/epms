@@ -81,6 +81,28 @@ header{
   font-weight: 700;
 }
 
+.page-title{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin:0 0 12px;
+  padding:2px 0 4px;
+}
+
+.page-title h2{
+  margin:0;
+  color:var(--text);
+  font-size:1.35rem;
+  font-weight:800;
+}
+
+.page-title small{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+}
+
 .title-with-icon{
   display: inline-flex;
   align-items: center;

@@ -69,6 +69,7 @@ if ("csv".equalsIgnoreCase(export)) {
 </head>
 <body>
 <div class="page-wrap report-shell">
+<div class="page-title"><h2>UPS 레포트</h2></div>
 <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <form class="report-filter" method="get" id="reportFilter">

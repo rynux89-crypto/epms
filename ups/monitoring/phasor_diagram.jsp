@@ -277,6 +277,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
 </head>
 <body>
 <div class="page-wrap phasor-shell">
+    <div class="page-title"><h2>UPS Phasor Diagram</h2></div>
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <div class="ups-controlbar phasor-toolbar">

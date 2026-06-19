@@ -50,6 +50,7 @@ if ("csv".equalsIgnoreCase(export)) {
 </head>
 <body>
 <div class="page-wrap">
+    <div class="page-title"><h2>UPS 이벤트</h2></div>
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
     <form class="event-filter" method="get" id="eventFilter">
         <% if ("1".equals(request.getParameter("embed"))) { %><input type="hidden" name="embed" value="1"><% } %>

@@ -15,5 +15,6 @@ try {
 html, body { min-height:100%; }
 body { margin:0 !important; overflow-x:hidden; }
 .page-wrap { padding:12px !important; }
+.page-title { display:none !important; }
 </style>
 <% } %>

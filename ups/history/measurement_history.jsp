@@ -84,6 +84,7 @@ if ("csv".equalsIgnoreCase(export)) {
 </head>
 <body>
 <div class="page-wrap history-shell">
+<div class="page-title"><h2>UPS 측정 이력</h2></div>
 <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <form class="history-filter" method="get" id="historyFilter">
