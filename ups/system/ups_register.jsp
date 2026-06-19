@@ -76,7 +76,11 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
                 }
             }
         }
-        response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode((upsIdRaw == null || upsIdRaw.trim().isEmpty()) ? "UPS가 등록되었습니다." : "UPS 정보가 수정되었습니다.", "UTF-8"));
+        if (upsIdRaw == null || upsIdRaw.trim().isEmpty()) {
+            response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode("UPS가 등록되었습니다.", "UTF-8"));
+        } else {
+            response.sendRedirect("ups_register.jsp");
+        }
         return;
     } catch (Exception e) {
         response.sendRedirect("ups_register.jsp?err=" + URLEncoder.encode(e.getMessage(), "UTF-8"));
