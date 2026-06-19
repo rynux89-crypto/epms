@@ -34,16 +34,22 @@
 
                 <div class="panel device-table">
                     <div class="panel-head"><h2>UPS 전체 현황 <small>(활성화된 UPS만)</small></h2><a href="monitoring/ups_overview.jsp">전체 보기 ››</a></div>
-                    <div class="table-head"><span>장비명</span><span>모델명</span><span>부하율</span><span>부하</span><span>배터리</span><span>상태</span><span>위치</span></div>
+                    <div class="table-head"><span>장비명</span><span>모델명</span><span>부하율</span><span>운전모드</span><span>배터리</span><span>상태</span><span>위치</span></div>
                     <div class="device-table-body">
                     <% if (fragmentModel.deviceItems.isEmpty()) { %>
                     <div class="table-row"><span>등록된 UPS 없음</span><span>--</span><span>--</span><span>--</span><span>--</span><span class="state-offline">미등록</span><span>--</span></div>
                     <% } else { for (epms.ups.UpsDashboardFragmentRenderModel.DeviceItem item : fragmentModel.deviceItems) { %>
+                    <%
+                        java.util.Map<String, Object> itemMeasurement = dashModel.latest.get(item.id);
+                        String itemOperationModeText = epms.ups.UpsDashboardRenderSupport.operationModeText(
+                            itemMeasurement == null ? null : itemMeasurement.get("ups_operation_mode_code"),
+                            !"offline".equals(item.statusClass));
+                    %>
                     <a class="table-row row-link" href="monitoring/ups_status.jsp?ups_id=<%= h(item.id) %>">
                         <span><%= h(item.name) %></span>
                         <span><%= h(item.profileName) %></span>
-                        <span><%= h(item.loadText) %></span>
                         <span><%= h(item.loadText) %><div class="bar"><i style="<%= h(item.loadStyle) %>"></i></div></span>
+                        <span><%= h(itemOperationModeText) %></span>
                         <span><%= h(item.batteryText) %><div class="bar battery"><i style="<%= h(item.batteryStyle) %>"></i></div></span>
                         <span class="state-<%= h(item.statusClass) %>"><%= h(item.statusText) %></span>
                         <span><%= h(item.location) %></span>
