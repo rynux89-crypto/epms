@@ -147,6 +147,27 @@ boolean editMode = editDevice != null;
             padding:8px 12px;
             width:100%;
         }
+        .ups-register-form .form-button {
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            width:100%;
+            height:38px;
+            padding:8px 12px;
+            border:1px solid #2563eb;
+            border-radius:6px;
+            background:#2563eb;
+            color:#fff;
+            font-weight:700;
+            text-decoration:none;
+            box-sizing:border-box;
+            white-space:nowrap;
+        }
+        .ups-register-form .form-button.secondary {
+            border-color:#cbd5e1;
+            background:#f8fafc;
+            color:#334155;
+        }
         .ups-device-table-wrap { overflow:auto; }
         .ups-device-table { min-width:1420px; table-layout:fixed; }
         .ups-device-table th, .ups-device-table td {
@@ -227,7 +248,7 @@ boolean editMode = editDevice != null;
             </label>
             <label class="enabled-field">활성 <input type="checkbox" name="enabled" value="1" <%= !editMode || Boolean.TRUE.equals(editDevice.get("enabled")) ? "checked" : "" %>></label>
             <button type="submit"><%= editMode ? "수정 저장" : "등록" %></button>
-            <% if (editMode) { %><button type="button" onclick="location.href='ups_register.jsp'">취소</button><% } %>
+            <% if (editMode) { %><a class="form-button secondary" href="ups_register.jsp">취소</a><% } %>
         </div>
     </form>
 
