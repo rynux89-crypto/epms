@@ -49,20 +49,21 @@ if ("csv".equalsIgnoreCase(export)) {
         .summary-card { background:#fff; border:1px solid #dbe5f2; border-radius:8px; padding:12px; }
         .summary-card span { display:block; color:#64748b; font-size:12px; font-weight:800; }
         .summary-card strong { display:block; margin-top:6px; color:#0f172a; font-size:24px; }
-        .report-table-wrap { max-height:calc(100vh - 270px); }
-        .report-table { min-width:2440px; }
+        .report-table-wrap { max-height:calc(100vh - 250px); }
+        .report-table { min-width:1900px; font-size:11px; }
+        .report-table th, .report-table td { padding:6px 5px; line-height:1.2; }
         .report-table th, .report-table td { text-align:center; }
         .report-table th:first-child, .report-table td:first-child,
         .report-table th:nth-child(2), .report-table td:nth-child(2),
         .report-table th:nth-child(3), .report-table td:nth-child(3) { text-align:left; }
-        .col-ups { width:150px; }
-        .col-location { width:150px; }
-        .col-ip { width:130px; }
-        .col-count { width:74px; }
-        .col-time { width:178px; }
-        .col-small { width:74px; }
-        .col-med { width:86px; }
-        .col-wide { width:96px; }
+        .col-ups { width:110px; }
+        .col-location { width:82px; }
+        .col-ip { width:106px; }
+        .col-count { width:54px; }
+        .col-time { width:122px; }
+        .col-small { width:48px; }
+        .col-med { width:56px; }
+        .col-wide { width:58px; }
         .empty { padding:24px; text-align:center; color:#64748b; }
     </style>
 </head>
