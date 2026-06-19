@@ -112,7 +112,7 @@ boolean editMode = editDevice != null;
     <style>
         .ups-register-form .toolbar {
             display:grid;
-            grid-template-columns:minmax(120px,1.05fr) minmax(110px,.95fr) minmax(140px,1.1fr) 76px 76px 96px 96px minmax(170px,1.25fr) 70px auto auto;
+            grid-template-columns:minmax(120px,1.05fr) minmax(110px,.95fr) minmax(140px,1.1fr) 76px 76px 96px 96px minmax(170px,1.25fr) 70px 86px 70px;
             gap:8px;
             align-items:end;
         }
@@ -145,6 +145,7 @@ boolean editMode = editDevice != null;
             white-space:nowrap;
             height:38px;
             padding:8px 12px;
+            width:100%;
         }
         .ups-device-table-wrap { overflow:auto; }
         .ups-device-table { min-width:1420px; table-layout:fixed; }
