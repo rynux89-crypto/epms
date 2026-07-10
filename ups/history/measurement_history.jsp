@@ -17,6 +17,7 @@
 <%
 request.setCharacterEncoding("UTF-8");
 String err = null;
+boolean embedded = "1".equals(request.getParameter("embed"));
 String selectedId = request.getParameter("ups_id");
 String upsSearch = request.getParameter("ups");
 String searchText = upsSearch == null ? "" : upsSearch.trim();
@@ -88,6 +89,7 @@ if ("csv".equalsIgnoreCase(export)) {
 <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <form class="history-filter" method="get" id="historyFilter">
+        <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
         <label for="ups">UPS 검색</label>
         <input id="ups" name="ups" value="<%= h(searchText) %>" placeholder="UPS 이름, IP">
         <% if (selectedId != null && !selectedId.trim().isEmpty()) { %>
@@ -104,7 +106,7 @@ if ("csv".equalsIgnoreCase(export)) {
             <% } %>
         </select>
         <button type="submit">검색</button>
-        <button type="button" onclick="location.href='measurement_history.jsp'">전체</button>
+        <button type="button" onclick="location.href='measurement_history.jsp<%= embedded ? "?embed=1" : "" %>'">전체</button>
         <button type="submit" name="export" value="csv">CSV 다운로드</button>
     </form>
 
