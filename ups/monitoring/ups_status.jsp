@@ -82,6 +82,7 @@
 request.setCharacterEncoding("UTF-8");
 String err = null;
 String selectedId = request.getParameter("ups_id");
+boolean embedded = "1".equals(request.getParameter("embed"));
 List<Map<String, Object>> devices = new ArrayList<Map<String, Object>>();
 Map<String, Object> selected = null;
 Map<String, Object> m = new HashMap<String, Object>();
@@ -100,7 +101,7 @@ try {
 if (devices == null) devices = new ArrayList<Map<String, Object>>();
 devices = activeDevices(devices);
 if (!devices.isEmpty() && !containsDeviceId(devices, selectedId)) {
-    response.sendRedirect("ups_status.jsp?ups_id=" + java.net.URLEncoder.encode(String.valueOf(devices.get(0).get("ups_id")), "UTF-8"));
+    response.sendRedirect("ups_status.jsp?ups_id=" + java.net.URLEncoder.encode(String.valueOf(devices.get(0).get("ups_id")), "UTF-8") + (embedded ? "&embed=1" : ""));
     return;
 }
 if (m == null) m = new HashMap<String, Object>();
@@ -268,6 +269,7 @@ String batteryPathClass = String.valueOf(statusView.get("batteryPathClass"));
 
     <div class="ups-controlbar hmi-toolbar">
         <form method="get">
+            <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
             <select name="ups_id" onchange="this.form.submit()">
                 <% if (devices.isEmpty()) { %>
                 <option value="">등록된 UPS 없음</option>
