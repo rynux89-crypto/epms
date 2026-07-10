@@ -13,6 +13,7 @@
 %>
 <%
 request.setCharacterEncoding("UTF-8");
+boolean embedded = "1".equals(request.getParameter("embed"));
 String upsSearch = request.getParameter("ups");
 String export = request.getParameter("export");
 
@@ -73,6 +74,7 @@ if ("csv".equalsIgnoreCase(export)) {
 <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <form class="report-filter" method="get" id="reportFilter">
+        <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
         <label for="ups">UPS 검색</label>
         <input id="ups" name="ups" value="<%= h(searchText) %>" placeholder="UPS 이름, 위치, IP">
         <label for="from">시작</label>
@@ -80,7 +82,7 @@ if ("csv".equalsIgnoreCase(export)) {
         <label for="to">종료</label>
         <input id="to" type="datetime-local" name="to" value="<%= h(reportModel.toRaw) %>" <%= reportModel.explicitTo ? "" : "data-auto-now=\"1\"" %>>
         <button type="submit">검색</button>
-        <button type="button" onclick="location.href='ups_report.jsp'">전체</button>
+        <button type="button" onclick="location.href='ups_report.jsp<%= embedded ? "?embed=1" : "" %>'">전체</button>
         <button type="submit" name="export" value="csv">CSV 다운로드</button>
     </form>
 

@@ -4,6 +4,7 @@
 <%@ include file="../includes/ups_html.jspf" %>
 <%
 request.setCharacterEncoding("UTF-8");
+boolean embedded = "1".equals(request.getParameter("embed"));
 epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.build("1".equals(request.getParameter("include_inactive")));
 %><!doctype html>
 <html lang="ko">
@@ -128,7 +129,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 String detailUrl = item.detailUrl();
                 String filterText = item.filterText();
             %>
-            <a class="ups-tile <%= cls %>" href="<%= detailUrl %>" data-ups-id="<%= h(item.upsId) %>" data-filter="<%= h(filterText) %>">
+            <a class="ups-tile <%= cls %>" href="<%= detailUrl %><%= embedded ? "&embed=1" : "" %>" data-ups-id="<%= h(item.upsId) %>" data-filter="<%= h(filterText) %>">
                 <div class="tile-head">
                     <div>
                         <div class="tile-name"><%= h(item.upsName) %></div>
@@ -184,7 +185,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                     String cls = item.statusClass;
                     String filterText = item.filterText();
                 %>
-                    <tr data-ups-id="<%= h(item.upsId) %>" data-filter="<%= h(filterText) %>" onclick="location.href='<%= h(item.detailUrl()) %>'" style="cursor:pointer;">
+                    <tr data-ups-id="<%= h(item.upsId) %>" data-filter="<%= h(filterText) %>" onclick="location.href='<%= h(item.detailUrl()) %><%= embedded ? "&embed=1" : "" %>'" style="cursor:pointer;">
                         <td><span class="status-badge <%= cls %>" data-field="statusText"><%= h(item.statusText) %></span></td>
                         <td class="enabled-text" data-field="enabledText"><%= h(item.enabledText) %></td>
                         <td><%= h(item.upsName) %></td>
@@ -286,6 +287,7 @@ epms.ups.UpsOverviewPageModel overviewModel = epms.ups.UpsOverviewPageService.bu
                 var url = new URL(window.location.href);
                 if (includeInactive.checked) url.searchParams.set('include_inactive', '1');
                 else url.searchParams.delete('include_inactive');
+                if (<%= embedded ? "true" : "false" %>) url.searchParams.set('embed', '1');
                 window.location.href = url.toString();
             };
         }

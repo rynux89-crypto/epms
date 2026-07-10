@@ -14,6 +14,7 @@
 %>
 <%
 request.setCharacterEncoding("UTF-8");
+boolean embedded = "1".equals(request.getParameter("embed"));
 String action = request.getParameter("action");
 String msg = null;
 String err = null;
@@ -105,10 +106,12 @@ Object collectorInterval = setupStatus.get("collectorInterval");
 
     <div class="setup-actions">
         <form method="post" onsubmit="return confirm('UPS_MONITOR 데이터베이스와 기본 테이블을 생성 또는 갱신할까요?');">
+            <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
             <input type="hidden" name="action" value="init_schema">
             <button type="submit">DB 초기화 실행</button>
         </form>
         <form method="post" onsubmit="return confirm('측정 이력, 알람 이력, 통신 상태를 삭제할까요? UPS 등록 정보와 Modbus 프로파일은 유지됩니다.');">
+            <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
             <input type="hidden" name="action" value="clear_history">
             <button type="submit">이력 데이터 삭제</button>
         </form>

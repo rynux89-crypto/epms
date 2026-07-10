@@ -7,6 +7,9 @@
 <%@ include file="../includes/ups_html.jspf" %>
 <%
 request.setCharacterEncoding("UTF-8");
+boolean embedded = "1".equals(request.getParameter("embed"));
+String embedSuffix = embedded ? "&embed=1" : "";
+String embedOnlyQuery = embedded ? "?embed=1" : "";
 String msg = request.getParameter("msg");
 String err = request.getParameter("err");
 String editId = request.getParameter("edit_id");
@@ -16,7 +19,7 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
         String action = request.getParameter("action");
         if ("delete".equals(action)) {
             epms.ups.UpsDeviceDeleteService.deleteDevice(request.getParameter("ups_id"));
-            response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode("UPS가 삭제되었습니다.", "UTF-8"));
+            response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode("UPS가 삭제되었습니다.", "UTF-8") + embedSuffix);
             return;
         }
         String upsIdRaw = request.getParameter("ups_id");
@@ -77,13 +80,13 @@ if ("POST".equalsIgnoreCase(request.getMethod())) {
             }
         }
         if (upsIdRaw == null || upsIdRaw.trim().isEmpty()) {
-            response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode("UPS가 등록되었습니다.", "UTF-8"));
+            response.sendRedirect("ups_register.jsp?msg=" + URLEncoder.encode("UPS가 등록되었습니다.", "UTF-8") + embedSuffix);
         } else {
-            response.sendRedirect("ups_register.jsp");
+            response.sendRedirect("ups_register.jsp" + embedOnlyQuery);
         }
         return;
     } catch (Exception e) {
-        response.sendRedirect("ups_register.jsp?err=" + URLEncoder.encode(e.getMessage(), "UTF-8"));
+        response.sendRedirect("ups_register.jsp?err=" + URLEncoder.encode(e.getMessage(), "UTF-8") + embedSuffix);
         return;
     }
 }
@@ -235,6 +238,7 @@ boolean editMode = editDevice != null;
     <% if (err != null) { %><div class="err-box"><%= h(err) %></div><% } %>
 
     <form method="post" class="panel ups-register-form">
+        <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
         <% if (editMode) { %><input type="hidden" name="ups_id" value="<%= h(editDevice.get("ups_id")) %>"><% } %>
         <div class="toolbar">
             <label>UPS 이름 <input name="ups_name" required value="<%= editMode ? h(editDevice.get("ups_name")) : "" %>"></label>
@@ -253,7 +257,7 @@ boolean editMode = editDevice != null;
             </label>
             <label class="enabled-field">활성 <input type="checkbox" name="enabled" value="1" <%= !editMode || Boolean.TRUE.equals(editDevice.get("enabled")) ? "checked" : "" %>></label>
             <button type="submit"><%= editMode ? "수정 저장" : "등록" %></button>
-            <% if (editMode) { %><a class="form-button secondary" href="ups_register.jsp">취소</a><% } %>
+            <% if (editMode) { %><a class="form-button secondary" href="ups_register.jsp<%= h(embedOnlyQuery) %>">취소</a><% } %>
         </div>
     </form>
 
@@ -285,8 +289,9 @@ boolean editMode = editDevice != null;
                 <td><%= Boolean.TRUE.equals(d.get("enabled")) ? "Y" : "N" %></td>
                 <td>
                     <div class="manage-actions">
-                        <button type="button" onclick="location.href='ups_register.jsp?edit_id=<%= h(d.get("ups_id")) %>'">수정</button>
+                        <button type="button" onclick="location.href='ups_register.jsp?edit_id=<%= h(d.get("ups_id")) %><%= h(embedSuffix) %>'">수정</button>
                         <form method="post" onsubmit="return confirm('UPS <%= h(d.get("ups_name")) %> 및 관련 측정/알람 이력을 삭제하시겠습니까?');">
+                            <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="ups_id" value="<%= h(d.get("ups_id")) %>">
                             <button type="submit" class="delete-btn">삭제</button>
