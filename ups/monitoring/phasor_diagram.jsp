@@ -153,12 +153,13 @@
 %>
 <%
 request.setCharacterEncoding("UTF-8");
+boolean embedded = "1".equals(request.getParameter("embed"));
 epms.ups.UpsPhasorPageModel phasorModel = epms.ups.UpsPhasorPageService.build(request.getParameter("ups_id"));
 String err = phasorModel.err;
 String selectedId = phasorModel.selectedId;
 List<Map<String, Object>> devices = activeDevices(phasorModel.devices);
 if (!devices.isEmpty() && !containsDeviceId(devices, selectedId)) {
-    response.sendRedirect("phasor_diagram.jsp?ups_id=" + java.net.URLEncoder.encode(String.valueOf(devices.get(0).get("ups_id")), "UTF-8"));
+    response.sendRedirect("phasor_diagram.jsp?ups_id=" + java.net.URLEncoder.encode(String.valueOf(devices.get(0).get("ups_id")), "UTF-8") + (embedded ? "&embed=1" : ""));
     return;
 }
 Map<String, Object> m = devices.isEmpty() ? new HashMap<String, Object>() : phasorModel.measurement;
@@ -282,6 +283,7 @@ double waveITop = Math.max(1d, iMax * 1.2d);
 
     <div class="ups-controlbar phasor-toolbar">
         <form method="get">
+            <% if (embedded) { %><input type="hidden" name="embed" value="1"><% } %>
             <select name="ups_id" onchange="this.form.submit()">
                 <% if (devices.isEmpty()) { %>
                 <option value="">등록된 UPS 없음</option>
